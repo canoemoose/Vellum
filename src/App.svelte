@@ -36,8 +36,21 @@
       await viewer.open(path);
       getCurrentWindow().setTitle(`${viewer.fileName} - Vellum`).catch(() => {});
     } catch (e) {
+      // No pdfium.dll (not fetched, or not bundled): fall back to pdf.js rather than fail.
+      if (viewer.renderer.name === "pdfium" && /pdfium\.dll not found|could not load|LoadLibrary/i.test(String(e))) {
+        console.warn("PDFium unavailable, falling back to pdf.js:", String(e));
+        await viewer.setRenderer(await createRenderer("pdfjs"));
+        return;
+      }
       console.error("open failed", e);
     }
+  }
+
+  /** Ctrl+Shift+R: switch renderer on the open document, for side-by-side comparison. */
+  async function toggleRenderer() {
+    if (!viewer) return;
+    const next = viewer.renderer.name === "pdfium" ? "pdfjs" : "pdfium";
+    await viewer.setRenderer(await createRenderer(next));
   }
 
   async function openDialog() {
@@ -80,7 +93,11 @@
       ro = new ResizeObserver(measure);
       ro.observe(host);
       measure();
-      detachInput = attachInput(host, v, { open: openDialog, toggleDebug: () => (debug = !debug) });
+      detachInput = attachInput(host, v, {
+        open: openDialog,
+        toggleDebug: () => (debug = !debug),
+        toggleRenderer,
+      });
 
       // Log every settle-to-sharp event while the debug overlay is up.
       v.onSharp = (e) => {

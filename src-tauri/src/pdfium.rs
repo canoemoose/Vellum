@@ -73,6 +73,8 @@ enum WorkerReq {
     Render { strip: Strip, reply: Sender<Result<(), String>> },
     /// Close parsed pages, which frees PDFium's decoded-image caches.
     Trim,
+    /// How many bands to split this page into (see `bands_for_page`).
+    Bands { page: usize, max: usize, reply: Sender<Result<usize, String>> },
 }
 
 #[derive(Clone)]
@@ -90,6 +92,7 @@ struct Inner {
     workers: OnceLock<Result<Vec<Sender<WorkerReq>>, String>>,
     cancelled: Mutex<HashSet<u64>>,
     sizes: Mutex<Vec<PageSize>>,
+    bands: Mutex<HashMap<usize, usize>>,
 }
 
 impl PdfiumState {
@@ -115,6 +118,7 @@ impl PdfiumState {
                 workers: OnceLock::new(),
                 cancelled: Mutex::new(HashSet::new()),
                 sizes: Mutex::new(Vec::new()),
+                bands: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -149,6 +153,7 @@ impl PdfiumState {
         let mut info = info.ok_or("no workers")?;
         info.workers = workers.len();
         *self.inner.sizes.lock().unwrap() = info.sizes.clone();
+        self.inner.bands.lock().unwrap().clear();
         Ok(info)
     }
 
@@ -169,7 +174,7 @@ impl PdfiumState {
         // owns band s. Every region is split at band boundaries, so a full-page render runs
         // on all workers at once, and each image is decoded and cached by the one worker
         // whose band it sits in, render after render.
-        let n = workers.len();
+        let n = self.bands(workers, a.page)?;
         let size = self.inner.sizes.lock().unwrap().get(a.page).copied().ok_or("bad page")?;
         let (pw_dev, ph_dev) = (size.w as f64 * a.rs, size.h as f64 * a.rs);
         let along_x = pw_dev >= ph_dev;
@@ -221,6 +226,20 @@ impl PdfiumState {
             Some(e) => Err(e),
             None => Ok(Some(buf)),
         }
+    }
+
+    /// Band count for a page, asked of worker 0 once per page and remembered.
+    fn bands(&self, workers: &[Sender<WorkerReq>], page: usize) -> Result<usize, String> {
+        if let Some(&b) = self.inner.bands.lock().unwrap().get(&page) {
+            return Ok(b);
+        }
+        let (tx, rx) = channel();
+        workers[0]
+            .send(WorkerReq::Bands { page, max: workers.len(), reply: tx })
+            .map_err(|e| e.to_string())?;
+        let b = rx.recv().map_err(|e| e.to_string())??.clamp(1, workers.len());
+        self.inner.bands.lock().unwrap().insert(page, b);
+        Ok(b)
     }
 
     pub fn trims(&self) -> usize {
@@ -350,6 +369,13 @@ fn worker(lib: PathBuf, rx: Receiver<WorkerReq>, ready: Sender<Result<(), String
                     }
                 }
             }
+            WorkerReq::Bands { page, max, reply } => {
+                let r = match doc.as_mut() {
+                    Some(d) => bands_for_page(b.as_ref(), d, page, max),
+                    None => Err("no document open".into()),
+                };
+                let _ = reply.send(r);
+            }
             WorkerReq::Render { strip, reply } => {
                 let r = match doc.as_mut() {
                     Some(d) => render_strip(b.as_ref(), d, &strip),
@@ -409,6 +435,34 @@ fn get_page(b: &dyn PdfiumLibraryBindings, d: &mut Doc, i: usize) -> Result<FPDF
     }
     d.pages.insert(i, p);
     Ok(p)
+}
+
+/// PDFium decodes an image in full even when only part of it is visible, so an image that
+/// spans several bands would be decoded (and cached) once per band. Pages dominated by a
+/// large image therefore render on one worker; everything else uses all of them.
+fn bands_for_page(b: &dyn PdfiumLibraryBindings, d: &mut Doc, page: usize, max: usize) -> Result<usize, String> {
+    const FPDF_PAGEOBJ_IMAGE: i32 = 3;
+    let p = get_page(b, d, page)?;
+    let page_area = unsafe { b.FPDF_GetPageWidthF(p) * b.FPDF_GetPageHeightF(p) } as f64;
+    let n = unsafe { b.FPDFPage_CountObjects(p) };
+    for i in 0..n {
+        let o = unsafe { b.FPDFPage_GetObject(p, i) };
+        if o.is_null() || unsafe { b.FPDFPageObj_GetType(o) } != FPDF_PAGEOBJ_IMAGE {
+            continue;
+        }
+        let (mut l, mut bo, mut r, mut t) = (0f32, 0f32, 0f32, 0f32);
+        if unsafe { b.FPDFPageObj_GetBounds(o, &mut l, &mut bo, &mut r, &mut t) } == 0 {
+            continue;
+        }
+        let area = ((r - l) as f64 * (t - bo) as f64).abs();
+        if area > page_area * 0.25 {
+            if timing() {
+                eprintln!("[pdfium] page {} has a large image: 1 band", page + 1);
+            }
+            return Ok(1);
+        }
+    }
+    Ok(max)
 }
 
 fn close_doc(b: &dyn PdfiumLibraryBindings, d: Doc) {
