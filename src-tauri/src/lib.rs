@@ -22,12 +22,14 @@ pub struct LaunchArgs {
     /// Pretend the display has this device pixel ratio (benchmarking HiDPI cost on a
     /// 100% display). The canvas is rendered at this density and scaled by CSS.
     pub dpr: Option<f64>,
+    /// Number of parallel PDFium instances (default: half the logical CPUs, max 8).
+    pub pdfium_threads: Option<usize>,
     /// Wall-clock time (ms since epoch) when `run` started; lets the front end
     /// split cold start into process/Rust init and WebView startup.
     pub process_start_epoch_ms: f64,
 }
 
-fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
+pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
     let mut out = LaunchArgs::default();
     let mut it = args.skip(1);
     while let Some(a) = it.next() {
@@ -37,6 +39,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
             "--renderer" => out.renderer = it.next(),
             "--debug" => out.debug = true,
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
+            "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
             s if s.starts_with("--") => {} // ignore unknown flags
             _ => {
                 if out.file.is_none() {
@@ -169,9 +172,10 @@ fn pdfium_cancel(state: tauri::State<PdfiumState>, id: u64) {
     state.cancel(id);
 }
 
+/// How many times the PDFium memory guard has trimmed page caches (benchmark reporting).
 #[tauri::command]
-fn pdfium_cancel_upto(state: tauri::State<PdfiumState>, id: u64) {
-    state.cancel_upto(id);
+fn pdfium_trims(state: tauri::State<PdfiumState>) -> usize {
+    state.trims()
 }
 
 #[tauri::command]
@@ -184,15 +188,17 @@ pub fn run() {
     let mut args = parse_args(std::env::args());
     args.process_start_epoch_ms = epoch_ms();
     let bench = args.bench;
+    let pdfium_threads = args.pdfium_threads;
 
     let mem = MemState::default();
     memory::start_sampler(mem.0.clone(), Duration::from_millis(200));
+    let pdfium_state = PdfiumState::new(pdfium_threads, mem.0.clone());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Launch(args))
         .manage(mem)
-        .manage(PdfiumState::default())
+        .manage(pdfium_state)
         .setup(move |app| {
             if bench {
                 // Fixed, on-top window so benchmark runs are comparable and
@@ -217,35 +223,8 @@ pub fn run() {
             pdfium_open,
             pdfium_render,
             pdfium_cancel,
-            pdfium_cancel_upto,
+            pdfium_trims,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn p(v: &[&str]) -> LaunchArgs {
-        parse_args(v.iter().map(|s| s.to_string()))
-    }
-
-    #[test]
-    fn first_positional_is_file() {
-        let a = p(&["vellum.exe", "C:\\a b\\x.pdf"]);
-        assert_eq!(a.file.as_deref(), Some("C:\\a b\\x.pdf"));
-        assert!(!a.bench);
-    }
-
-    #[test]
-    fn bench_flags() {
-        let a = p(&[
-            "v", "--bench", "f.pdf", "--bench-out", "o.json", "--renderer", "pdfium",
-        ]);
-        assert!(a.bench);
-        assert_eq!(a.file.as_deref(), Some("f.pdf"));
-        assert_eq!(a.bench_out.as_deref(), Some("o.json"));
-        assert_eq!(a.renderer.as_deref(), Some("pdfium"));
-    }
 }

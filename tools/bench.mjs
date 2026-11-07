@@ -28,7 +28,8 @@ const renderer = opt("renderer", "pdfjs");
 const exe = resolve(opt("exe", join(root, "src-tauri", "target", "release", "vellum.exe")));
 const only = opt("only", null);
 const dpr = opt("dpr", null);
-const tag = renderer + (dpr ? `-dpr${dpr}` : "");
+const threads = opt("pdfium-threads", null);
+const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "");
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
 let files = argv.map((f) => resolve(f));
@@ -60,6 +61,7 @@ function runOnce(file, outJson) {
     const t0 = Date.now();
     const args = [file, "--bench", "--bench-out", outJson, "--renderer", renderer];
     if (dpr) args.push("--dpr", dpr);
+    if (threads) args.push("--pdfium-threads", threads);
     const p = spawn(exe, args, {
       stdio: "ignore",
       windowsHide: false,
@@ -80,7 +82,7 @@ function runOnce(file, outJson) {
 await new Promise((res) => spawn(exe, ["--bench"], { stdio: "ignore" }).on("exit", res));
 await sleep(1500);
 
-const summary = { renderer, dpr, runs, exe, date: new Date().toISOString(), files: [] };
+const summary = { renderer, dpr, threads, runs, exe, date: new Date().toISOString(), files: [] };
 
 for (const file of files) {
   const base = basename(file, ".pdf");

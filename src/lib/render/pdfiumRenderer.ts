@@ -10,9 +10,13 @@ export class PdfiumRenderer implements Renderer {
   /** Two in flight: one rendering in Rust while the other's bytes are being turned into bitmaps. */
   readonly concurrency = 2;
   private nextId = 1;
+  /** Parallel PDFium instances in the backend (reported by open). */
+  workers = 0;
 
-  open(path: string): Promise<DocInfo> {
-    return invoke<DocInfo>("pdfium_open", { path });
+  async open(path: string): Promise<DocInfo> {
+    const info = await invoke<DocInfo & { workers: number }>("pdfium_open", { path });
+    this.workers = info.workers;
+    return info;
   }
 
   async renderRegion(req: RegionRequest, signal: AbortSignal): Promise<ImageBitmap[] | null> {

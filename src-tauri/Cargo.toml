@@ -10,6 +10,9 @@ edition = "2024"
 # hits the MinGW export-ordinal limit on the GNU toolchain.
 name = "vellum_lib"
 crate-type = ["rlib"]
+# Unit tests live in tests/ (see build.rs for why: Windows manifest for test binaries).
+test = false
+doctest = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

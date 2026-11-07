@@ -2,6 +2,7 @@
 // programmatically, writes a JSON result to --bench-out, appends to the perf CSV, exits.
 // tools/bench.mjs launches the release build repeatedly and aggregates the JSON.
 
+import { invoke } from "@tauri-apps/api/core";
 import type { Viewer } from "../engine/viewer";
 import { fitRect } from "../view/viewMath";
 import {
@@ -191,6 +192,10 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     const st = v.stats();
     out.cache = { tiles: st.tiles, mb: st.cacheMB, evictions: st.evictions, previews: st.previews, previewMb: st.previewMB };
     out.renderErrors = st.renderErrors;
+    if (v.renderer.name === "pdfium") {
+      out.pdfiumWorkers = (v.renderer as unknown as { workers: number }).workers;
+      out.pdfiumTrims = await invoke<number>("pdfium_trims");
+    }
   } catch (e) {
     out.error = String((e as Error)?.stack ?? e);
     code = 1;
