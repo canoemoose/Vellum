@@ -1,0 +1,36 @@
+[package]
+name = "vellum"
+version = "0.1.0"
+description = "Vellum PDF viewer (phase 0 rendering spike)"
+authors = ["Event Engineering"]
+edition = "2024"
+
+[lib]
+# rlib only: the cdylib/staticlib outputs are for mobile targets and the cdylib
+# hits the MinGW export-ordinal limit on the GNU toolchain.
+name = "vellum_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Threading",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

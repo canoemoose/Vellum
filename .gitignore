@@ -1,0 +1,9 @@
+node_modules
+/dist
+/public/pdfjs
+/test-files
+/bench-output
+/src-tauri/pdfium
+.DS_Store
+*.log
+vite.config.ts.timestamp-*
