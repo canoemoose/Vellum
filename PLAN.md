@@ -49,26 +49,41 @@ or must rendering move to PDFium in the Rust backend? Answer with numbers.
 
 ## Environment findings
 
-- No Rust or MSVC Build Tools on this machine; not elevated. Plan: per-user rustup install.
-  Try the `x86_64-pc-windows-gnu` toolchain first (no admin); fall back to MSVC if Tauri won't build.
+- No Rust or MSVC Build Tools on this machine; not elevated. Installed rustup per-user with the
+  `x86_64-pc-windows-gnu` toolchain, plus a portable WinLibs MinGW in `~/.vellum-toolchain/mingw64`
+  (needed for `dlltool`/`as`/`windres`). Build env: `source ~/.vellum-toolchain/env.sh`.
+  `crate-type = ["rlib"]` because the MinGW linker can't emit the mobile cdylib (export limit).
 - `npm` 12.0.2 warns it does not support Node 24.13.0. Pin a matching pair with Volta in package.json.
 - Real file: `test-files/projectlayoutmarch2021.pdf`, 36 MB, 1 page, MediaBox 14400 x 746 pt
   (the PDF maximum width), 844 image XObjects. No `.gitignore` existed despite the brief; adding one.
 - GPU: Windows only reports the Radeon 890M iGPU (the RTX 4060 isn't listed by WMI). WebView2 likely
   composites on the iGPU. Note in RESULTS.md.
+- Displays: bench window lands on a 2560x1440 monitor at 100% and 60 Hz (dpr 1, fps capped at 60).
+  `--dpr 2` override exists to measure HiDPI rendering cost.
+- The first launch of a freshly built exe takes ~1 s longer (Defender scan). Harness does a warm-up launch.
+- Real file analysis: 844 images = 731 JPEG tiles 1024x1024 + 113 Flate, 837 MP total. Fit-page
+  render is JPEG-decode-bound in both engines (~1.2 s of decode).
 
 ## Stages
 
-1. [ ] Toolchain + scaffold: Tauri 2 + Svelte 5 + TS, window opens a PDF (CLI arg, dialog, drag-drop).
-2. [ ] View maths module + unit tests; input handling (CAD + Document modes, keyboard).
-3. [ ] Tile grid, LRU cache, compositor, pdf.js region renderer, settle/cancel scheduler, previews.
-4. [ ] Top bar (file, page n of N, zoom %, Fit page, Fit width, single/continuous, CAD/Doc).
-5. [ ] Instrumentation overlay + CSV perf log.
-6. [ ] `tools/gen-synthetic.mjs` (5 files) and `tools/bench.mjs` harness; bench mode in app.
-7. [ ] Run measurements (3 runs, median), write RESULTS.md.
-8. [ ] If pdf.js fails: PDFium renderer in Rust, measure again.
-9. [ ] README.md, ARCHITECTURE.md, final summary.
+1. [x] Toolchain + scaffold: Tauri 2 + Svelte 5 + TS, window opens a PDF (CLI arg, dialog, drag-drop).
+2. [x] View maths module + unit tests; input handling (CAD + Document modes, keyboard).
+3. [x] Tile grid, LRU cache, compositor, pdf.js region renderer, settle/cancel scheduler, previews.
+4. [x] Top bar (file, page n of N, zoom %, Fit page, Fit width, single/continuous, CAD/Doc).
+5. [x] Instrumentation overlay + CSV perf log.
+6. [x] `tools/gen-synthetic.mjs` (5 files) and `tools/bench.mjs` harness; bench mode in app.
+7. [x] pdf.js measured. FAILS on the real file: first page 4.0 s, settle 1046/637/612 ms, 6.5 GB.
+       Synthetic 2 (50k text) fails settle at fit (462 ms). Synthetic 1, 4 pass.
+8. [x] PDFium renderer built and measured: single instance, then a pool of 8 instances (renamed DLL
+       copies) with spatial-affinity bands, plus a large-image rule (one band). Real file: 664/138/97 ms,
+       first page 2.4 s, 3.0 GB. Memory guard implemented but off (re-parse cost).
+9. [x] README.md, ARCHITECTURE.md, RESULTS.md written. Installer builds (NSIS, pdfium.dll bundled).
+       Recommendation: PDFium only; next phase = image level of detail for fit-page on image-heavy files.
 
 ## Open questions (batch for the end)
 
-- (filled in as found)
+- More heavy real files, especially vector-dense CAD exports (rigging plots, venue plans). The
+  only real file is image-dominated, so it may not be typical.
+- Install MSVC Build Tools on the dev machine (the spike used the GNU toolchain + portable MinGW).
+- Why PDFium x8 at DPR 2 is faster than at DPR 1 on the real file (unexplained).
+- Does wheel zoom classify correctly on Matt's mice (debug overlay shows the last wheel event)?

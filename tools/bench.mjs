@@ -158,7 +158,7 @@ for (const file of files) {
 
 // Markdown tables for RESULTS.md
 const n = (v, d = 0) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
-let md = `### ${renderer} (median of ${runs} runs)\n\n`;
+let md = `### ${tag} (median of ${runs} runs)\n\n`;
 md += "| File | Cold start (ms) | First page (ms) | Pan fps fit / 400% / 1600% | Settle→sharp ms fit / 400% / 1600% | Peak memory (MB) | Faults |\n";
 md += "|---|---:|---:|---|---|---:|---|\n";
 for (const e of summary.files) {
