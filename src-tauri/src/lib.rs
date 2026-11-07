@@ -1,6 +1,8 @@
 mod memory;
+mod pdfium;
 
 use memory::{MemState, MemStats};
+use pdfium::{PdfiumState, RegionArgs};
 use serde::Serialize;
 use std::io::Write;
 use std::path::PathBuf;
@@ -61,8 +63,9 @@ fn launch_args(state: tauri::State<Launch>) -> LaunchArgs {
 }
 
 /// Return a file's bytes as a binary IPC response (no JSON/base64 overhead).
+/// Async so the read happens off the main (window event loop) thread.
 #[tauri::command]
-fn read_file(path: String) -> Result<tauri::ipc::Response, String> {
+async fn read_file(path: String) -> Result<tauri::ipc::Response, String> {
     std::fs::read(&path)
         .map(tauri::ipc::Response::new)
         .map_err(|e| format!("{path}: {e}"))
@@ -133,6 +136,44 @@ fn reset_memory_peak(state: tauri::State<MemState>) {
     state.reset_peak();
 }
 
+/// Open a document in the PDFium backend. Async + spawn_blocking: the PDFium thread
+/// may take a while and sync commands would block the window's event loop.
+#[tauri::command]
+async fn pdfium_open(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PdfiumState>,
+    path: String,
+) -> Result<pdfium::DocInfo, String> {
+    let st = state.inner().clone();
+    let res_dir = app.path().resource_dir().ok();
+    tauri::async_runtime::spawn_blocking(move || st.open(res_dir, path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Render a region; returns raw RGBA bytes (w*h*4), or an empty body if cancelled.
+#[tauri::command]
+async fn pdfium_render(
+    state: tauri::State<'_, PdfiumState>,
+    args: RegionArgs,
+) -> Result<tauri::ipc::Response, String> {
+    let st = state.inner().clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || st.render(args))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(bytes.unwrap_or_default()))
+}
+
+#[tauri::command]
+fn pdfium_cancel(state: tauri::State<PdfiumState>, id: u64) {
+    state.cancel(id);
+}
+
+#[tauri::command]
+fn pdfium_cancel_upto(state: tauri::State<PdfiumState>, id: u64) {
+    state.cancel_upto(id);
+}
+
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle, code: i32) {
     app.exit(code);
@@ -151,6 +192,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Launch(args))
         .manage(mem)
+        .manage(PdfiumState::default())
         .setup(move |app| {
             if bench {
                 // Fixed, on-top window so benchmark runs are comparable and
@@ -172,6 +214,10 @@ pub fn run() {
             memory_stats,
             reset_memory_peak,
             exit_app,
+            pdfium_open,
+            pdfium_render,
+            pdfium_cancel,
+            pdfium_cancel_upto,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -75,6 +75,11 @@ function runOnce(file, outJson) {
   });
 }
 
+// Warm-up: the first launch of a freshly built exe is slowed by Defender's scan, which
+// would otherwise land in run 1's cold-start figure. --bench with no file exits at once.
+await new Promise((res) => spawn(exe, ["--bench"], { stdio: "ignore" }).on("exit", res));
+await sleep(1500);
+
 const summary = { renderer, dpr, runs, exe, date: new Date().toISOString(), files: [] };
 
 for (const file of files) {

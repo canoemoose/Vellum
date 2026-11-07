@@ -126,7 +126,7 @@ export class Viewer {
 
   // Render queue
   private queue: Job[] = [];
-  private active: Job | null = null;
+  private active = new Set<Job>();
   private gen = 0;
 
   // Frame loop
@@ -203,8 +203,8 @@ export class Viewer {
 
   private resetRendering(): void {
     this.gen++;
-    this.active?.ac?.abort();
-    this.active = null;
+    for (const j of this.active) j.ac?.abort();
+    this.active.clear();
     this.queue = [];
     this.cache.clear();
     for (const p of this.previews.values()) p.bitmap.close();
@@ -215,8 +215,8 @@ export class Viewer {
 
   /** Drop all cached tiles but keep previews (benchmark: forces a cold render at a scale). */
   dropTiles(): void {
-    this.active?.ac?.abort();
-    this.active = null;
+    for (const j of this.active) j.ac?.abort();
+    this.active.clear();
     this.queue = [];
     this.cache.clear();
     this.requestFrame();
@@ -350,10 +350,12 @@ export class Viewer {
   private inputActivity(scaleChanged: boolean): void {
     this.lastInput = performance.now();
     this.measuring = false;
+    this.pendingSharp = null;
     // Queued jobs were planned for the old view; re-plan at settle.
     this.queue = [];
-    if (scaleChanged && this.active && this.active.rs !== scaleKey(this.view.scale * this.dpr)) {
-      this.active.ac?.abort();
+    if (scaleChanged) {
+      const rs = scaleKey(this.view.scale * this.dpr);
+      for (const j of this.active) if (j.rs !== rs) j.ac?.abort();
     }
     this.scheduleSettle();
   }
@@ -372,7 +374,7 @@ export class Viewer {
     this.measuring = true;
     this.regionsThisSettle = 0;
     this.plan();
-    if (this.queue.length === 0 && !this.active) this.finishMeasure();
+    if (this.queue.length === 0 && this.active.size === 0) this.finishMeasure();
     else this.pump();
   }
 
@@ -432,15 +434,24 @@ export class Viewer {
     this.queue = jobs;
   }
 
+  private get concurrency(): number {
+    return (this.renderer as { concurrency?: number }).concurrency ?? 1;
+  }
+
   private pump(): void {
-    if (this.active || this.interacting) return;
-    const job = this.queue.shift();
-    if (!job) return;
-    // A preview may have been composed from tiles since this job was planned.
-    if (job.kind === "preview" && this.previews.has(job.page)) return this.pump();
+    if (this.interacting) return;
+    while (this.active.size < this.concurrency && this.queue.length) {
+      const job = this.queue.shift()!;
+      // A preview may have been composed from tiles since this job was planned.
+      if (job.kind === "preview" && this.previews.has(job.page)) continue;
+      this.start(job);
+    }
+  }
+
+  private start(job: Job): void {
     const gen = this.gen;
     job.ac = new AbortController();
-    this.active = job;
+    this.active.add(job);
     const t0 = performance.now();
     this.renderer
       .renderRegion(job.req, job.ac.signal)
@@ -472,22 +483,38 @@ export class Viewer {
         console.error("render failed", e);
       })
       .finally(() => {
-        if (this.active === job) this.active = null;
-        if (this.measuring && !this.queue.some((j) => j.prio === 0)) this.finishMeasure();
+        this.active.delete(job);
+        if (
+          this.measuring &&
+          !this.queue.some((j) => j.prio === 0) &&
+          ![...this.active].some((j) => j.prio === 0)
+        )
+          this.finishMeasure();
         this.pump();
       });
   }
 
-  /** Called once all core (visible) tiles for this settle have been rendered. */
+  /**
+   * Called once all core (visible) tiles for this settle are in the cache. The clock stops
+   * only when the frame showing them has been presented: we draw it, then wait for the
+   * following rAF. With GPU canvases some rasterisation is deferred to the GPU process,
+   * and Chromium paces rAF on GPU acks, so this includes that work.
+   */
   private finishMeasure(): void {
     if (!this.measuring) return;
     this.measuring = false;
+    this.pendingSharp = { complete: this.visibleComplete(), regions: this.regionsThisSettle };
+    this.requestFrame();
+  }
+
+  private pendingSharp: { complete: boolean; regions: number } | null = null;
+
+  private reportSharp(p: { complete: boolean; regions: number }): void {
     const ms = performance.now() - this.settleAt;
-    const complete = this.visibleComplete();
     this.lastSettleToSharpMs = ms;
     this.settleHistory.push(ms);
     if (this.settleHistory.length > 50) this.settleHistory.shift();
-    const ev: SharpEvent = { settleToSharpMs: ms, complete, regions: this.regionsThisSettle };
+    const ev: SharpEvent = { settleToSharpMs: ms, complete: p.complete, regions: p.regions };
     this.onSharp?.(ev);
     const w = this.sharpWaiters;
     this.sharpWaiters = [];
@@ -518,7 +545,7 @@ export class Viewer {
   async whenIdle(timeoutMs = 120000): Promise<boolean> {
     const t0 = performance.now();
     for (;;) {
-      if (!this.interacting && !this.settleTimer && !this.active && this.queue.length === 0) return true;
+      if (!this.interacting && !this.settleTimer && this.active.size === 0 && this.queue.length === 0) return true;
       if (performance.now() - t0 > timeoutMs) return false;
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -529,7 +556,7 @@ export class Viewer {
   }
 
   get rendering(): boolean {
-    return this.active !== null;
+    return this.active.size > 0;
   }
 
   // ---------------------------------------------------------------- previews
@@ -612,8 +639,13 @@ export class Viewer {
     const drawMs = performance.now() - d0;
     this.frames.push({ t, drawMs });
     if (this.frames.length > 600) this.frames.splice(0, this.frames.length - 600);
+    if (this.pendingSharp) {
+      const p = this.pendingSharp;
+      this.pendingSharp = null;
+      requestAnimationFrame(() => this.reportSharp(p));
+    }
     // Kick the queue if a render was waiting for interaction to end.
-    if (!this.active && this.queue.length && !this.interacting) this.pump();
+    if (this.active.size < this.concurrency && this.queue.length && !this.interacting) this.pump();
   }
 
   /** Frames per second over the last second of frames (0 when idle). */
@@ -747,7 +779,7 @@ export class Viewer {
       previews: this.previews.size,
       previewMB: previewBytes / 1048576,
       queue: this.queue.length,
-      rendering: this.active !== null,
+      rendering: this.active.size > 0,
       lastRenderMs: this.lastRenderMs,
       rendersDone: this.rendersDone,
       renderErrors: this.renderErrors,
