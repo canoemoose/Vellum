@@ -152,7 +152,7 @@ export function sanitisePresets(raw: unknown): Preset[] {
 /** Standard drawing scales offered for To scale. */
 export const SCALE_PRESETS = [1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 1000];
 
-const STANDARD = [1, 2, 2.5, 5, 10, 20, 25, 50, 75, 100, 125, 150, 200, 250, 500, 750, 1000, 1250, 1500, 2000, 2500, 5000, 10000];
+const STANDARD = [1, 2, 2.5, 5, 10, 20, 25, 50, 75, 100, 125, 150, 200, 250, 400, 500, 750, 1000, 1250, 1500, 2000, 2500, 5000, 10000];
 
 /** The smallest standard scale (largest picture) a page at 1:`n` still fits at: next N up. */
 export function nextStandardRatio(n: number): number | null {

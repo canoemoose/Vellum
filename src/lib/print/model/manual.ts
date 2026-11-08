@@ -6,7 +6,7 @@ import {
   type Box, type Margins, type Rotation, type Size, areaOf, box, boxH, boxW, centreX, centreY, describeSize,
   effectiveRatio, factorForRatio, fmtPercent, fmtRatio, intersect, isoName, overlaps, quarter, rotatedSize,
 } from "./geom";
-import { type Job, type JobLine, type JobText, type PageRef, boxLines, jobItem, stampText } from "./job";
+import { type Job, type JobLine, type JobSheet, type JobText, type PageRef, boxLines, jobItem, stampText } from "./job";
 import { nextStandardRatio } from "./settings";
 
 export interface ManualItem {
@@ -367,29 +367,30 @@ export function sheetStamp(l: ManualLayout, si: number, stamp: StampInfo): strin
   return [title, `sheet ${si + 1}`, stamp.date].filter((x) => x).join(" · ");
 }
 
+/** One sheet as the composer takes it (items, borders, labels, stamp). */
+export function sheetJob(l: ManualLayout, si: number, stamp: StampInfo): JobSheet {
+  const area = areaOfLayout(l);
+  const s = l.sheets[si] ?? { id: 0, items: [] };
+  const lines: JobLine[] = [];
+  const texts: JobText[] = [];
+  for (const it of s.items) {
+    if (it.border) lines.push(...boxLines(itemBox(it)));
+    if (it.label) texts.push(labelText(it, area));
+  }
+  if (stamp.enabled) texts.push(stampText(sheetStamp(l, si, stamp), area));
+  return {
+    w: l.paper.w,
+    h: l.paper.h,
+    items: s.items.map((it) => jobItem(it.ref, it.crop, it.x, it.y, it.scale, it.rotation)),
+    clip: null,
+    lines,
+    texts,
+  };
+}
+
 /** The job for the composer. Empty sheets are left out. */
 export function manualToJob(l: ManualLayout, stamp: StampInfo): Job {
-  const area = areaOfLayout(l);
-  const sheets = l.sheets
-    .map((s, si) => ({ s, si }))
-    .filter(({ s }) => s.items.length > 0)
-    .map(({ s, si }) => {
-      const lines: JobLine[] = [];
-      const texts: JobText[] = [];
-      for (const it of s.items) {
-        if (it.border) lines.push(...boxLines(itemBox(it)));
-        if (it.label) texts.push(labelText(it, area));
-      }
-      if (stamp.enabled) texts.push(stampText(sheetStamp(l, si, stamp), area));
-      return {
-        w: l.paper.w,
-        h: l.paper.h,
-        items: s.items.map((it) => jobItem(it.ref, it.crop, it.x, it.y, it.scale, it.rotation)),
-        clip: null,
-        lines,
-        texts,
-      };
-    });
+  const sheets = l.sheets.flatMap((s, si) => (s.items.length > 0 ? [sheetJob(l, si, stamp)] : []));
   return { sheets };
 }
 

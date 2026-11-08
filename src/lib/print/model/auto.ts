@@ -388,7 +388,7 @@ export function sizingInfo(o: AutoOptions, sheet: SheetInfo | undefined): string
     const eff = effectiveRatio(n, p.factor);
     if (Math.abs(eff - n) / n < 0.005) return `${on} prints at ${fmtRatio(eff)}, the drawing's own scale.`;
     const std = nearestStandardRatio(eff);
-    const hint = Math.abs(std - eff) / eff > 0.001 ? ` Choose “To scale” for exactly ${fmtRatio(std)}.` : "";
+    const hint = fmtRatio(std) !== fmtRatio(eff) ? ` Choose “To scale” for exactly ${fmtRatio(std)}.` : "";
     return `${on} prints at ${fmtRatio(eff)}.${hint}`;
   }
   if (o.sizing === "fit") return `${on} prints at ${fmtPercent(p.factor)} of actual size.`;
