@@ -116,6 +116,9 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     if (!args.file) throw new Error("--bench needs a file");
     // Every run renders from cold, as in RESULTS.md: no previews from earlier runs.
     v.diskPreviews = false;
+    // --no-progressive: whole-region renders, to compare against streaming.
+    if ((args as unknown as { noProgressive?: boolean }).noProgressive) v.progressive = false;
+    out.progressive = v.progressive;
     out.refreshHz = await measureRefresh();
     await resetMemoryPeak();
 

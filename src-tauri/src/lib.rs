@@ -30,6 +30,8 @@ pub struct LaunchArgs {
     pub dpr: Option<f64>,
     /// Number of parallel PDFium instances (default: half the logical CPUs, max 8).
     pub pdfium_threads: Option<usize>,
+    /// Render whole regions instead of streaming bands (benchmark comparison).
+    pub no_progressive: bool,
     /// Wall-clock time (ms since epoch) when `run` started; lets the front end
     /// split cold start into process/Rust init and WebView startup.
     pub process_start_epoch_ms: f64,
@@ -48,6 +50,7 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
                 it.next();
             }
             "--debug" => out.debug = true,
+            "--no-progressive" => out.no_progressive = true,
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
             "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
             s if s.starts_with("--") => {} // ignore unknown flags

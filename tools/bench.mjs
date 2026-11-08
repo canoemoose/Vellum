@@ -37,7 +37,10 @@ const exe = resolve(opt("exe", join(targetDir, "release", "vellum.exe")));
 const only = opt("only", null);
 const dpr = opt("dpr", null);
 const threads = opt("pdfium-threads", null);
-const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "");
+// --no-progressive: whole-region renders instead of streamed bands (for comparison).
+const noProgressive = argv.includes("--no-progressive");
+if (noProgressive) argv.splice(argv.indexOf("--no-progressive"), 1);
+const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "") + (noProgressive ? "-noprog" : "");
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
 let files = argv.map((f) => resolve(f));
@@ -70,6 +73,7 @@ function runOnce(file, outJson) {
     const args = [file, "--bench", "--bench-out", outJson];
     if (dpr) args.push("--dpr", dpr);
     if (threads) args.push("--pdfium-threads", threads);
+    if (noProgressive) args.push("--no-progressive");
     const p = spawn(exe, args, {
       stdio: "ignore",
       windowsHide: false,
