@@ -187,6 +187,8 @@ enum WorkerReq {
     /// How many bands to split this page into (see `bands_for_page`).
     Bands { doc_id: u64, page: usize, max: usize, reply: Sender<Result<usize, String>> },
     Run(Job),
+    /// Parse a page into the cache ahead of its first render (no reply).
+    Prefetch { doc_id: u64, page: usize },
 }
 
 /// Per-document facts the coordinator needs without asking a worker.
@@ -306,6 +308,16 @@ impl PdfiumState {
             return Err(e);
         }
         let info = info.ok_or("no workers")?;
+        // Parsing a heavy page takes most of a second. Worker 0 parses the first page anyway
+        // (to decide its band count before the first render); have the others parse it at
+        // the same time instead of after, so their bands are ready to render sooner.
+        // VELLUM_PDFIUM_PREFETCH=0 turns this off (it trades a later first band for an
+        // earlier fully sharp page on heavy drawings; see docs/v0.1-handoff/engine.md).
+        if info.num_pages > 0 && std::env::var("VELLUM_PDFIUM_PREFETCH").map_or(true, |v| v != "0") {
+            for w in workers.iter().skip(1) {
+                let _ = w.send(WorkerReq::Prefetch { doc_id, page: 0 });
+            }
+        }
         self.inner
             .docs
             .lock()
@@ -909,6 +921,11 @@ fn worker(index: usize, lib: PathBuf, rx: Receiver<WorkerReq>, ready: Sender<Res
                     None => Err("document not open".into()),
                 };
                 let _ = reply.send((tag, r));
+            }
+            WorkerReq::Prefetch { doc_id, page } => {
+                if let Some(d) = docs.get_mut(&doc_id) {
+                    let _ = get_page(b.as_ref(), d, page);
+                }
             }
             WorkerReq::Run(job) => {
                 let mut ctx = WorkerCtx { b: b.as_ref(), docs: &mut docs, index };
