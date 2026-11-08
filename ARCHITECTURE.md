@@ -1,7 +1,9 @@
-# Vellum rendering architecture (phase 0)
+# Vellum rendering architecture
 
-How a PDF gets from disk to pixels, so later phases build on this rather than around it.
-The measurements that shaped it are in [RESULTS.md](RESULTS.md).
+How a PDF or image gets from disk to pixels, so later phases build on this rather than around
+it. The phase 0 measurements that shaped it are in [RESULTS.md](RESULTS.md); v0.1 removed
+pdf.js (PDFium is the only PDF engine) and added document ids, image documents, text access
+and progressive paint.
 
 ```
  input (wheel / drag / keys)
@@ -19,9 +21,10 @@ The measurements that shaped it are in [RESULTS.md](RESULTS.md).
           group them into regions, render each region once, slice into 512 px tiles
                 │
                 ▼
-          Renderer interface          src/lib/render/types.ts
-            ├─ PdfjsRenderer          pdf.js; parse in worker, draw on main thread
-            └─ PdfiumRenderer         PDFium on a Rust thread, RGBA over binary IPC
+          Renderer interface          src/lib/render/types.ts   (every call takes a docId)
+            └─ BackendRenderer        doc_* commands, RGBA over binary IPC
+                 ├─ PdfiumRenderer    PDFs: PDFium pool in Rust (pdfium.rs)
+                 └─ ImageRenderer     images: decoded and resampled in Rust (imagedoc.rs)
                 │
                 ▼
           TileCache (LRU, 512 MB)     src/lib/render/tiles.ts
@@ -70,16 +73,16 @@ same (instant, slightly soft, then sharp), and it has three advantages:
   CSS layers antialias their edges independently and show hairline gaps.
 - **One canvas, always within limits.** The canvas is the size of the window, so Chromium's
   16k px / 268 MP canvas caps never apply, whatever the zoom.
-- **Renderer-agnostic.** pdf.js and PDFium both produce `ImageBitmap`s; the compositor
-  doesn't know which made them.
+- **Renderer-agnostic.** PDF and image renderers both produce `ImageBitmap`s; the
+  compositor doesn't know which made them.
 
 Cost: a `drawImage` per visible tile per frame. Measured at 0.1 to 0.3 ms per frame at
 1600x960, so it is nowhere near the frame budget.
 
 ## Regions, not tiles, per render call
 
-pdf.js walks the page's entire operator list on every render call regardless of clip, so
-rendering N tiles separately costs N full passes. The scheduler instead groups missing
+Rendering N tiles separately would cost N calls, each with its own setup (pdf.js, the phase 0
+alternative, walked the whole operator list per call regardless of clip). The scheduler instead groups missing
 tiles into rectangles of up to 8 x 8 tiles (4096 px), renders each rectangle in one pass,
 and slices it into tiles with `createImageBitmap(source, sx, sy, sw, sh)`. PDFium gets
 the same requests; for it, region area matters more than call count.
@@ -103,25 +106,29 @@ Previews have their own 96 MB budget.
 
 ## Renderers
 
-### pdf.js (`pdfjsRenderer.ts`)
-
-- `pdfjs-dist` with its worker. The file is read by Rust and handed over as bytes.
-- One reusable canvas for regions; `page.render()` with a translate transform for the region
-  offset. `enableHWA: true` (GPU canvases); pdf.js's default is CPU canvases.
-- Renders one region at a time: canvas drawing runs on the main thread (pdf.js slices it
-  into ~15 ms chunks), so concurrency would only interleave the same thread.
-
-### PDFium (`pdfiumRenderer.ts`, `src-tauri/src/pdfium.rs`)
+### PDFium (`pdfiumRenderer.ts`, `backendRenderer.ts`, `src-tauri/src/pdfium.rs`)
 
 - `pdfium.dll` (prebuilt, from bblanchon/pdfium-binaries) loaded at runtime through the
   `pdfium-render` crate's raw bindings. Fetch it with `node tools/fetch-pdfium.mjs`.
+- If `pdfium.dll` can't be found, opening fails with "pdfium.dll not found: run
+  `node tools/fetch-pdfium.mjs`" (the directories searched go to stderr). There is no
+  fallback renderer.
 - **A pool of PDFium instances.** PDFium keeps all its state in DLL globals and is not
-  thread-safe. Loading renamed copies (`pdfium.dll`, `%TEMP%\vellum-pdfium\pdfium-1.dll`, …)
-  gives each worker thread its own module, so N instances render truly in parallel. Default
-  N = half the logical CPUs, at most 8 (`--pdfium-threads` overrides). Each worker owns its
-  instance, the open document and up to 16 parsed pages.
+  thread-safe. Loading renamed copies (`pdfium.dll`, then
+  `%TEMP%\vellum-pdfium\p<pid>\pdfium-1.dll`, …) gives each worker thread its own module, so
+  N instances render truly in parallel. Default N = half the logical CPUs, at most 8
+  (`--pdfium-threads` overrides). Each worker owns its instance, a map of open documents
+  (document id → its own handle) and up to 16 parsed pages per document (least recently
+  used evicted).
+- **Per-process DLL copies.** The copies live in a folder named after the process id, so
+  several Vellum processes at once (benchmarks, parallel test builds) never overwrite a DLL
+  another has loaded. Loaded DLLs can't be deleted while their process runs, so each start
+  deletes the other processes' folders that are more than a minute old (a folder still in
+  use fails to delete and is skipped) plus the pre-v0.1 flat-layout copies.
 - **Spatial affinity.** The page is cut into N fixed bands along its long axis and worker *s*
-  owns band *s*. Every region is split at band boundaries, each part goes to its band's
+  owns band *s*. Every region is split at band boundaries (`split_region`, a pure function
+  with its own tests in `src-tauri/tests/bands.rs`: an off-by-one there would make two
+  workers write the same bytes or one write past the buffer), each part goes to its band's
   worker, and all of them write straight into one shared RGBA buffer
   (`FPDFBitmap_CreateEx` over an external buffer with the full row stride). A whole-page
   render runs on all workers at once, and each image is decoded and cached by one worker
@@ -129,7 +136,7 @@ Previews have their own 96 MB budget.
   decoding every image, 13.6 GB on the real test file.)
 - `FPDF_RenderPageBitmapWithMatrix` renders in RGBA order (`FPDF_REVERSE_BYTE_ORDER`); the
   buffer goes back as a raw binary IPC response and is wrapped in `ImageData` with no
-  conversion. Commands are `async` + `spawn_blocking`, so the window's event loop is never
+  conversion. Streaming (progressive paint) is described below. Commands are `async` + `spawn_blocking`, so the window's event loop is never
   blocked.
 - Two region requests in flight from the front end, so one renders while the other's bytes
   become bitmaps.
@@ -141,6 +148,72 @@ Previews have their own 96 MB budget.
   re-parses pages when the process tree passes *n* MB. On that file re-parsing costs 0.7 to
   1.9 s, which made fit renders 7 s, so it stays off; see RESULTS.md for the better fix.
 - `VELLUM_PDFIUM_TIMING=1` prints per-call parse and render times to stderr.
+
+## Documents (v0.1)
+
+PDFs and images share one id space and one set of commands. `src-tauri/src/docs.rs` holds
+the registry: `doc_open` decides the kind (extension first, `imagedoc::handles`; unknown
+extensions are sniffed for `%PDF-` or image magic), allocates an id that is never reused in
+the process, and opens the document on every PDFium worker (PDF) or decodes it once in
+`imagedoc.rs` (image). Every other command takes the id and dispatches on kind; images
+answer text, outline and scale queries with empty results.
+
+| Command | Returns |
+|---|---|
+| `doc_open(path, password?)` | `DocInfo { docId, kind: "pdf"\|"image", numPages, sizes, meta, workers }`; `meta` = `{ fileSize, pdfVersion, title, author, subject, producer, creator, note }` |
+| `doc_render(docId, region)` | raw RGBA, `w*h*4`; empty body if cancelled |
+| `doc_render_stream(docId, region, onBand)` | bands over the channel (see Streaming); resolves to the band count, or null if cancelled |
+| `doc_cancel(id)` | skips a region request (by `region.id`) that hasn't started |
+| `doc_thumbnail(docId, page, maxSide)` | RGBA plus an 8-byte trailer: `w`, `h` as little-endian u32 |
+| `doc_page_text(docId, page)` | the page's text (`FPDFText_GetText`) |
+| `doc_outline(docId)` | `OutlineNode[]`: `{ title, page \| null, y \| null, children }`, y in points from the page top |
+| `doc_find_scale(docId, page)` | `[{ ratio, text, bbox: [x0, y0, x1, y1] }]` best first; bbox in page points, y down |
+| `doc_close(docId)` | frees the document on every worker |
+
+`region` is `{ id, page, rs, x, y, w, h }`: a device-pixel rect of the page bitmap at `rs`
+device pixels per point, and a request id for cancellation (0 = never cancelled). Errors are
+strings the UI shows as they are: "Password required", "Wrong password", "Not a PDF or
+supported image", "pdfium.dll not found: run `node tools/fetch-pdfium.mjs`".
+
+On the front end, `Renderer` (`src/lib/render/types.ts`) mirrors these with a `docId` on every
+call. `BackendRenderer` implements it once over the commands; `PdfiumRenderer` and
+`ImageRenderer` only differ in `name`, and `rendererFor(path)` picks one by extension. They
+hold no per-document state, so one instance of each serves every tab. `Viewer.open(path,
+password?)` closes the viewer's previous document in the backend.
+
+### Text and drawing scale
+
+`doc_page_text` and `doc_find_scale` load the page's text layer (`FPDFText_LoadPage`) on a
+PDFium worker, like everything else. Scale detection reads one character per PDFium char
+index (`FPDFText_GetUnicode`), so match positions map straight to `FPDFText_GetCharBox`.
+The matching and ranking are pure (`src-tauri/src/scale.rs`, tested in `tests/scale.rs`):
+`1:NNN`, `1 : NNN`, `1∶NNN`, and `1/NNN` for standard ratios from 1/10 only; times,
+dates, paper sizes ("A1:50") and parts of larger numbers are rejected. Candidates outside
+1..100000 are dropped; the rest are ordered by a score: position (0 at the top-left, 2 at
+the bottom-right, since title blocks live there), +1.5 when "scale" appears in the 24
+characters before, +0.5 for a standard ratio, −1.5 for 1:1.
+
+### Running code on a PDFium worker (`run_on_worker`)
+
+PDFium is not thread-safe, so other Rust modules (printing, composition) must never call it
+from their own threads. `PdfiumState::run_on_worker(|ctx: &mut WorkerCtx| -> R) -> Result<R,
+String>` runs a closure on one worker (round robin) and waits for its result;
+`run_on_worker_index(i, f)` picks the worker. `WorkerCtx` gives `bindings()` (that
+instance's raw PDFium API, `&dyn PdfiumLibraryBindings` from `pdfium-render`),
+`document(doc_id)` (that worker's `FPDF_DOCUMENT` for an open id) and `page(doc_id, index)`
+(a cached parsed page; don't close it). Handles are only valid on that worker and during the
+call. The closure runs between renders on that worker, so long jobs delay the tiles queued
+behind them; it blocks the caller, so call it from `spawn_blocking`. A PDF built in memory
+(for example a composed print job saved with `FPDF_SaveAsCopy`) becomes an ordinary
+document with `Docs::open_pdf_bytes(&pdfium, bytes) -> DocInfo`: renderable, printable and
+closed with `doc_close`.
+
+### Page-load hook
+
+Every page any worker renders, measures or reads is parsed in one place:
+`pdfium.rs::load_page(bindings, doc, index)`, called only from the per-document page cache.
+Work that must happen once per parsed page (WP-LOD's downsampled image swap) hooks in
+there.
 
 ## Navigation (`input.ts`)
 
@@ -171,7 +244,6 @@ pans with pointer capture; its mousedown is cancelled to stop Windows autoscroll
 
 | Dependency | Why |
 |---|---|
-| `pdfjs-dist` | The renderer under test. |
 | `@tauri-apps/plugin-dialog` | File → Open dialog. |
 | `@fontsource/inter`, `@fontsource/jetbrains-mono` | The brief's UI fonts, bundled so they work offline. |
 | `vitest` (dev) | Unit tests; shares Vite's config, nothing else to set up. |
