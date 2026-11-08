@@ -25,7 +25,7 @@ use pdfium_render::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -40,6 +40,15 @@ const FPDF_ERR_SECURITY: u64 = 5;
 
 /// Parsed pages kept per document per worker; parsing is the expensive part for heavy pages.
 const PAGES_PER_DOC: usize = 16;
+
+/// Regions up to this many pixels render on one worker (see `PdfiumState::plan`).
+const SMALL_REGION_PX: i64 = 512 * 1024;
+
+/// The worker that owns a page: one-strip renders and the band-count check go there, so a
+/// page that isn't banded is parsed by one worker only.
+fn page_worker(page: usize, workers: usize) -> usize {
+    page % workers.max(1)
+}
 
 pub const ERR_DLL_MISSING: &str = "pdfium.dll not found: run `node tools/fetch-pdfium.mjs`";
 pub const ERR_PASSWORD_REQUIRED: &str = "Password required";
@@ -168,6 +177,9 @@ struct Strip {
     /// Address of the strip's top-left pixel in the target buffer, and the row stride.
     ptr: usize,
     stride: i32,
+    /// Set when the request this strip belongs to is cancelled: a worker that hasn't
+    /// started the strip yet skips it.
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 enum DocSource {
@@ -211,7 +223,11 @@ struct Inner {
     last_trim: Mutex<Option<std::time::Instant>>,
     resource_dir: Mutex<Option<PathBuf>>,
     workers: OnceLock<Result<Vec<Sender<WorkerReq>>, String>>,
+    /// Ids cancelled before their request started. Guarded by the `running` lock too (taken
+    /// first), so a cancel can't fall between a request's check and its registration.
     cancelled: Mutex<HashSet<u64>>,
+    /// Cancel flags of requests whose strips are queued on or running in the workers.
+    running: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     docs: Mutex<HashMap<u64, DocMeta>>,
     /// Round-robin cursor for single-worker jobs (text, outline, run_on_worker).
     next_worker: AtomicUsize,
@@ -240,6 +256,7 @@ impl PdfiumState {
                 resource_dir: Mutex::new(None),
                 workers: OnceLock::new(),
                 cancelled: Mutex::new(HashSet::new()),
+                running: Mutex::new(HashMap::new()),
                 docs: Mutex::new(HashMap::new()),
                 next_worker: AtomicUsize::new(0),
             }),
@@ -346,28 +363,64 @@ impl PdfiumState {
         d.sizes.get(page).copied().ok_or_else(|| format!("no page {}", page + 1))
     }
 
-    fn take_cancelled(&self, id: u64) -> bool {
-        id != 0 && self.inner.cancelled.lock().unwrap().remove(&id)
+    /// Start tracking request `id`: its cancel flag, or None if it was cancelled before it
+    /// started (or has no id, in which case it can't be cancelled and gets no flag).
+    fn begin(&self, id: u64) -> Result<Option<Arc<AtomicBool>>, ()> {
+        if id == 0 {
+            return Ok(None);
+        }
+        let mut running = self.inner.running.lock().unwrap();
+        if self.inner.cancelled.lock().unwrap().remove(&id) {
+            return Err(());
+        }
+        let flag = Arc::new(AtomicBool::new(false));
+        running.insert(id, flag.clone());
+        Ok(Some(flag))
     }
 
-    /// Plan a region render: band parts in band order.
-    fn plan(&self, doc_id: u64, a: &RegionArgs) -> Result<Vec<BandPart>, String> {
+    /// Stop tracking request `id`; true if it was cancelled while it ran.
+    fn end(&self, id: u64, flag: &Option<Arc<AtomicBool>>) -> bool {
+        if id != 0 {
+            self.inner.running.lock().unwrap().remove(&id);
+        }
+        flag.as_ref().is_some_and(|f| f.load(Ordering::Relaxed))
+    }
+
+    /// Plan a region render: band parts in band order, and the worker each part goes to.
+    fn plan(&self, doc_id: u64, a: &RegionArgs) -> Result<(Vec<BandPart>, Vec<usize>), String> {
         if a.w <= 0 || a.h <= 0 {
             return Err("empty region".into());
         }
         let workers = self.workers()?;
-        let n = self.bands(workers, doc_id, a.page)?;
+        // A small region (zoomed out, often many pages on screen) goes whole to the page's own
+        // worker: banding it would make every worker parse every visible page, and with more
+        // pages on screen than a worker keeps parsed (PAGES_PER_DOC) they thrash, reparsing
+        // pages for seconds. One worker per page keeps each page parsed once, and different
+        // pages still render in parallel on different workers.
+        let small = (a.w as i64) * (a.h as i64) <= SMALL_REGION_PX;
+        let n = if small { 1 } else { self.bands(workers, doc_id, a.page)? };
         let size = self.page_size(doc_id, a.page)?;
-        Ok(split_region(size.w as f64 * a.rs, size.h as f64 * a.rs, n, a.x, a.y, a.w, a.h))
+        let parts = split_region(size.w as f64 * a.rs, size.h as f64 * a.rs, n, a.x, a.y, a.w, a.h);
+        // Banded: band k renders on worker k. Unbanded: the page's own worker.
+        let to = parts.iter().map(|p| if n == 1 { page_worker(a.page, workers.len()) } else { p.band }).collect();
+        Ok((parts, to))
     }
 
     /// Render a region into one RGBA buffer (w*h*4, opaque white background). None if the
     /// request was cancelled before it started.
     pub fn render(&self, doc_id: u64, a: RegionArgs) -> Result<Option<Vec<u8>>, String> {
-        if self.take_cancelled(a.id) {
+        let Ok(cancel) = self.begin(a.id) else {
             return Ok(None);
+        };
+        let r = self.render_inner(doc_id, &a, &cancel);
+        if self.end(a.id, &cancel) {
+            return Ok(None); // some strips were skipped: the buffer is incomplete
         }
-        let parts = self.plan(doc_id, &a)?;
+        r
+    }
+
+    fn render_inner(&self, doc_id: u64, a: &RegionArgs, cancel: &Option<Arc<AtomicBool>>) -> Result<Option<Vec<u8>>, String> {
+        let (parts, to) = self.plan(doc_id, a)?;
         let workers = self.workers()?;
         let stride = a.w * 4;
         let mut buf = vec![0xFFu8; stride as usize * a.h as usize];
@@ -375,9 +428,9 @@ impl PdfiumState {
         let (tx, rx) = channel();
         let mut sent = 0;
         let mut err = None;
-        for p in &parts {
-            let strip = Strip { page: a.page, rs: a.rs, x: p.x, y: p.y, w: p.w, h: p.h, ptr: base + p.offset, stride };
-            if let Err(e) = workers[p.band].send(WorkerReq::Render { doc_id, strip, tag: p.band, reply: tx.clone() }) {
+        for (p, &w) in parts.iter().zip(&to) {
+            let strip = Strip { page: a.page, rs: a.rs, x: p.x, y: p.y, w: p.w, h: p.h, ptr: base + p.offset, stride, cancel: cancel.clone() };
+            if let Err(e) = workers[w].send(WorkerReq::Render { doc_id, strip, tag: p.band, reply: tx.clone() }) {
                 // Don't return yet: strips already sent may still be writing into `buf`.
                 err = Some(e.to_string());
                 break;
@@ -409,12 +462,24 @@ impl PdfiumState {
         &self,
         doc_id: u64,
         a: RegionArgs,
+        on_band: impl FnMut(&BandPart, Vec<u8>) -> bool,
+    ) -> Result<Option<usize>, String> {
+        let Ok(cancel) = self.begin(a.id) else {
+            return Ok(None);
+        };
+        let r = self.render_stream_inner(doc_id, &a, &cancel, on_band);
+        self.end(a.id, &cancel);
+        r
+    }
+
+    fn render_stream_inner(
+        &self,
+        doc_id: u64,
+        a: &RegionArgs,
+        cancel: &Option<Arc<AtomicBool>>,
         mut on_band: impl FnMut(&BandPart, Vec<u8>) -> bool,
     ) -> Result<Option<usize>, String> {
-        if self.take_cancelled(a.id) {
-            return Ok(None);
-        }
-        let parts = self.plan(doc_id, &a)?;
+        let (parts, to) = self.plan(doc_id, a)?;
         let workers = self.workers()?;
         // Allocate every buffer before taking pointers so none moves while workers write.
         // Spare capacity lets the IPC layer append its trailer without copying the band.
@@ -432,8 +497,8 @@ impl PdfiumState {
         let mut err = None;
         for (k, p) in parts.iter().enumerate() {
             let ptr = bufs[k].as_mut().unwrap().as_mut_ptr() as usize;
-            let strip = Strip { page: a.page, rs: a.rs, x: p.x, y: p.y, w: p.w, h: p.h, ptr, stride: p.w * 4 };
-            if let Err(e) = workers[p.band].send(WorkerReq::Render { doc_id, strip, tag: k, reply: tx.clone() }) {
+            let strip = Strip { page: a.page, rs: a.rs, x: p.x, y: p.y, w: p.w, h: p.h, ptr, stride: p.w * 4, cancel: cancel.clone() };
+            if let Err(e) = workers[to[k]].send(WorkerReq::Render { doc_id, strip, tag: k, reply: tx.clone() }) {
                 err = Some(e.to_string());
                 break;
             }
@@ -445,7 +510,9 @@ impl PdfiumState {
         for _ in 0..sent {
             match rx.recv() {
                 Ok((k, Ok(()))) => {
-                    if open && err.is_none() {
+                    // A cancelled request's skipped strips are blank: never deliver them.
+                    let cancelled = cancel.as_ref().is_some_and(|f| f.load(Ordering::Relaxed));
+                    if open && err.is_none() && !cancelled {
                         let b = bufs[k].take().unwrap();
                         open = on_band(&parts[k], b);
                         if open {
@@ -495,13 +562,13 @@ impl PdfiumState {
         }
     }
 
-    /// Band count for a page, asked of worker 0 once per page and remembered.
+    /// Band count for a page, asked of the page's own worker once and remembered.
     fn bands(&self, workers: &[Sender<WorkerReq>], doc_id: u64, page: usize) -> Result<usize, String> {
         if let Some(&b) = self.inner.docs.lock().unwrap().get(&doc_id).and_then(|d| d.bands.get(&page)) {
             return Ok(b);
         }
         let (tx, rx) = channel();
-        workers[0]
+        workers[page_worker(page, workers.len())]
             .send(WorkerReq::Bands { doc_id, page, max: workers.len(), reply: tx })
             .map_err(|e| e.to_string())?;
         let b = rx.recv().map_err(|e| e.to_string())??.clamp(1, workers.len());
@@ -515,8 +582,14 @@ impl PdfiumState {
         self.inner.trims.load(Ordering::Relaxed)
     }
 
-    /// Skip a request that hasn't started yet. (A render already inside PDFium completes.)
+    /// Cancel a request. One that hasn't started is skipped; one that has skips every strip
+    /// a worker hasn't begun yet. (A strip already inside PDFium completes.)
     pub fn cancel(&self, id: u64) {
+        let running = self.inner.running.lock().unwrap();
+        if let Some(f) = running.get(&id) {
+            f.store(true, Ordering::Relaxed);
+            return;
+        }
         let mut c = self.inner.cancelled.lock().unwrap();
         // Cancels that arrive after their render finished are never consumed; don't let
         // them accumulate for the life of the process.
@@ -956,9 +1029,14 @@ fn worker(index: usize, lib: PathBuf, rx: Receiver<WorkerReq>, ready: Sender<Res
                 let _ = reply.send(r);
             }
             WorkerReq::Render { doc_id, strip, tag, reply } => {
-                let r = match docs.get_mut(&doc_id) {
-                    Some(d) => render_strip(b.as_ref(), d, &strip),
-                    None => Err("document not open".into()),
+                let skip = strip.cancel.as_ref().is_some_and(|f| f.load(Ordering::Relaxed));
+                let r = if skip {
+                    Ok(())
+                } else {
+                    match docs.get_mut(&doc_id) {
+                        Some(d) => render_strip(b.as_ref(), d, &strip),
+                        None => Err("document not open".into()),
+                    }
                 };
                 let _ = reply.send((tag, r));
             }
