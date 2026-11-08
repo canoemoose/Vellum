@@ -52,10 +52,12 @@ changes. It is the one bit of maths everything else depends on, so it has the mo
    already cached, and queues region renders: visible tiles first, nearest the centre
    first, then the ring, then a page preview if the page has none.
 
-Any input clears the queue (it was planned for a view that no longer exists). A zoom also
-aborts in-flight renders at the old scale; a pan lets them finish because their tiles are
-still useful. "Settle to sharp" is measured from the settle moment to the last visible
-tile landing.
+A zoom clears the queue (it was planned for a view that no longer exists) and aborts
+in-flight renders at the old scale. A pan does neither: its tiles stay valid, so rendering
+carries on throughout a drag, re-planned every frame so the tiles nearest the viewport
+centre come first, and the strip you uncover fills in as you go. Only the settle timer is
+restarted, for the measurement and previews. "Settle to sharp" is measured from the settle
+moment to the last visible tile landing.
 
 ## Why one compositor canvas instead of CSS-transformed tiles
 
@@ -142,9 +144,15 @@ Previews have their own 96 MB budget.
 
 ## Navigation (`input.ts`)
 
-Wheel events are classified as notched mouse wheel or touchpad: deltaMode 1/2, or a
-single-axis integer delta of at least 50 px, counts as a notch. In CAD mode notches zoom,
-touchpad scrolls pan. Ctrl+wheel always zooms (pinch arrives as ctrl+wheel). Middle button
+Wheel events are classified as notched mouse wheel or touchpad. Per event: deltaMode 1/2,
+a single-axis whole multiple of 33.33 px (Chromium's pixels per system "line"; 100 at the
+default of 3 lines), or a single-axis integer delta of at least 50 px, counts as a notch.
+Per gesture (`WheelClassifier`): a touchpad scroll is a dense stream whose deltas ramp up,
+so once any event is smooth, every event in the next 150 ms is smooth too, whatever its
+size. Without that rule a fast two-finger flick crossed 50 px and zoomed. In CAD mode notches
+zoom, touchpad scrolls pan. Touchpad pinch arrives as ctrl+wheel only if the window's
+`zoomHotkeysEnabled` is on (wry ties WebView2's pinch-zoom setting to it); the wheel and key
+handlers cancel the browser's own page zoom so the setting only serves to let the gesture through. Ctrl+wheel always zooms (pinch arrives as ctrl+wheel). Middle button
 pans with pointer capture; its mousedown is cancelled to stop Windows autoscroll.
 
 ## Instrumentation

@@ -13,8 +13,8 @@
 
 import type { Viewer } from "./viewer";
 import {
+  WheelClassifier,
   deltaToPixels,
-  isNotchedWheel,
   pinchZoomFactor,
   wheelZoomFactor,
 } from "../view/viewMath";
@@ -32,6 +32,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   let dragging: { id: number; x: number; y: number } | null = null;
   let spaceHeld = false;
   let lastMiddle = { t: 0, x: 0, y: 0 };
+  const wheel = new WheelClassifier();
 
   const local = (e: MouseEvent): [number, number] => {
     const r = el.getBoundingClientRect();
@@ -45,8 +46,9 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   const onWheel = (e: WheelEvent) => {
     e.preventDefault(); // also stops WebView2's own ctrl+wheel page zoom
     const [x, y] = local(e);
-    const notched = isNotchedWheel(e.deltaX, e.deltaY, e.deltaMode);
-    viewer.lastWheel = `dx=${e.deltaX} dy=${e.deltaY} mode=${e.deltaMode}${e.ctrlKey ? " ctrl" : ""}${e.shiftKey ? " shift" : ""} -> ${notched ? "notch" : "smooth"}`;
+    const kind = wheel.classify(e.deltaX, e.deltaY, e.deltaMode, e.timeStamp);
+    const notched = kind === "notch";
+    viewer.lastWheel = `dx=${e.deltaX} dy=${e.deltaY} mode=${e.deltaMode}${e.ctrlKey ? " ctrl" : ""}${e.shiftKey ? " shift" : ""} -> ${kind}`;
 
     if (e.ctrlKey) {
       // Ctrl+wheel, or a touchpad pinch (Chromium sends pinch as ctrl+wheel).

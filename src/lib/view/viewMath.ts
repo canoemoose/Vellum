@@ -105,8 +105,37 @@ export function isNotchedWheel(deltaX: number, deltaY: number, deltaMode: number
   if (deltaX !== 0) return false;
   const a = Math.abs(deltaY);
   if (a < 50) return false;
-  // Notches are integers; touchpad deltas at fractional DPI scales are usually not.
+  // Chromium on Windows gives 100/3 px per "line" of the system wheel setting, so a notch
+  // is a whole multiple of 33.33 px (100 at the default of 3 lines). Touchpad deltas are
+  // whole pixels, so a fractional multiple of 33.33 can only be a wheel.
+  const lines = (a * 3) / 100;
+  if (Math.abs(lines - Math.round(lines)) < 1e-6) return true;
+  // Otherwise notches are integers; touchpad deltas at fractional DPI scales usually aren't.
   return a % 1 === 0;
+}
+
+/** A smooth (touchpad) gesture is assumed to continue for this long after its last event. */
+export const SMOOTH_GESTURE_GAP_MS = 150;
+
+/**
+ * Stateful wheel classification: judge the gesture, not the single event. A touchpad
+ * scroll is a dense stream of events (a few ms apart) whose magnitudes ramp up from small
+ * values, so a fast flick soon crosses the 50 px per-event threshold and would read as a
+ * notch on its own. Once any event in a stream is smooth, the whole stream is smooth until
+ * there has been a SMOOTH_GESTURE_GAP_MS pause. A mouse notch is an isolated event with a
+ * fixed magnitude, so it is unaffected unless it lands inside a touchpad gesture.
+ */
+export class WheelClassifier {
+  private smoothUntil = -Infinity;
+
+  classify(deltaX: number, deltaY: number, deltaMode: number, now: number): "notch" | "smooth" {
+    if (deltaMode !== 0) return "notch";
+    if (now < this.smoothUntil || !isNotchedWheel(deltaX, deltaY, deltaMode)) {
+      this.smoothUntil = now + SMOOTH_GESTURE_GAP_MS;
+      return "smooth";
+    }
+    return "notch";
+  }
 }
 
 export type FitMode = "page" | "width";

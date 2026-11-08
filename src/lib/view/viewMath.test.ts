@@ -8,6 +8,8 @@ import {
   constrainView,
   fitRect,
   isNotchedWheel,
+  SMOOTH_GESTURE_GAP_MS,
+  WheelClassifier,
   screenToWorld,
   wheelZoomFactor,
   worldToScreen,
@@ -89,6 +91,32 @@ describe("wheel", () => {
     expect(isNotchedWheel(0, 4.5, 0)).toBe(false); // touchpad
     expect(isNotchedWheel(12, 30, 0)).toBe(false); // two-axis touchpad scroll
     expect(isNotchedWheel(0, 133.33, 0)).toBe(false);
+    // System wheel setting of 4 lines: Chromium reports 4 * 100/3 px per notch.
+    expect(isNotchedWheel(0, 133.33333333333334, 0)).toBe(true);
+    expect(isNotchedWheel(0, -33.333333333333336, 0)).toBe(false); // under 50 px: treated as smooth
+  });
+
+  it("a touchpad flick stays smooth once it crosses the per-event threshold", () => {
+    const c = new WheelClassifier();
+    // Precision touchpad: whole-pixel deltas ramping up, about 8 ms apart.
+    const stream = [4, 9, 18, 31, 47, 66, 88, 104, 97, 70, 42, 20, 8];
+    const kinds = stream.map((dy, i) => c.classify(0, dy, 0, i * 8));
+    expect(kinds.every((k) => k === "smooth")).toBe(true);
+  });
+
+  it("mouse notches are still notches, before and after a touchpad gesture", () => {
+    const c = new WheelClassifier();
+    expect(c.classify(0, 100, 0, 0)).toBe("notch");
+    expect(c.classify(0, 100, 0, 60)).toBe("notch");
+    expect(c.classify(0, 12, 0, 500)).toBe("smooth");
+    expect(c.classify(0, 80, 0, 508)).toBe("smooth"); // inside the gesture
+    expect(c.classify(0, 100, 0, 508 + SMOOTH_GESTURE_GAP_MS + 1)).toBe("notch"); // after the gap
+  });
+
+  it("line and page mode are always notches", () => {
+    const c = new WheelClassifier();
+    expect(c.classify(0, 5, 0, 0)).toBe("smooth");
+    expect(c.classify(0, 3, 1, 4)).toBe("notch");
   });
 });
 

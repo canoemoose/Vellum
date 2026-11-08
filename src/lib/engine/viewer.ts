@@ -118,6 +118,10 @@ export class Viewer {
 
   // Interaction and settle state
   private lastInput = 0;
+  /** Last input that changed the render scale (or jumped); rendering waits for these to settle. */
+  private lastScaleInput = 0;
+  /** A pan moved the view since the last plan: re-plan on the next frame, without waiting. */
+  private panPending = false;
   private anim: { target: number; ax: number; ay: number } | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private settleAt = 0;
@@ -189,6 +193,7 @@ export class Viewer {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.lastInput = 0;
+    this.lastScaleInput = 0; // the fit on open was a "jump"; don't let it block the first render
     this.onSettle();
   }
 
@@ -252,7 +257,7 @@ export class Viewer {
     const prevRs = scaleKey(this.view.scale * this.dpr);
     this.view = this.doc ? constrainView(v, this.layout.bounds, this.vw, this.vh) : v;
     const rsChanged = scaleKey(this.view.scale * this.dpr) !== prevRs;
-    this.inputActivity(rsChanged || kind === "jump");
+    this.inputActivity(rsChanged || kind === "jump", rsChanged ? "zoom" : kind);
     this.requestFrame();
     this.emitUi();
   }
@@ -340,22 +345,41 @@ export class Viewer {
     return this.page;
   }
 
+  /** Any input in the last settle window, or a zoom animation in flight. */
   get interacting(): boolean {
     return this.anim !== null || performance.now() - this.lastInput < this.opts.settleMs;
   }
 
+  /**
+   * Rendering holds off only while the scale is changing: a zoom invalidates every tile,
+   * so rendering mid-zoom would be wasted. A pan keeps every tile valid, so rendering
+   * carries on throughout a drag and the newly uncovered strip fills in as you go.
+   */
+  private get renderBlocked(): boolean {
+    return this.anim !== null || performance.now() - this.lastScaleInput < this.opts.settleMs;
+  }
+
   // ---------------------------------------------------------------- settle / schedule
 
-  /** Any input: postpone rendering until things settle; optionally drop pending work. */
-  private inputActivity(scaleChanged: boolean): void {
+  /**
+   * Any input restarts the settle timer (which drives the settle-to-sharp measurement and
+   * previews). A zoom or jump also drops the queue, since it was planned for a view that
+   * no longer exists, and aborts renders at other scales. A pan keeps the queue and
+   * re-plans on the next frame so visible tiles stay first.
+   */
+  private inputActivity(scaleChanged: boolean, kind: "pan" | "zoom" | "jump" = "zoom"): void {
     this.lastInput = performance.now();
     this.measuring = false;
     this.pendingSharp = null;
-    // Queued jobs were planned for the old view; re-plan at settle.
-    this.queue = [];
-    if (scaleChanged) {
-      const rs = scaleKey(this.view.scale * this.dpr);
-      for (const j of this.active) if (j.rs !== rs) j.ac?.abort();
+    if (kind === "pan") {
+      this.panPending = true;
+    } else {
+      this.lastScaleInput = this.lastInput;
+      this.queue = [];
+      if (scaleChanged) {
+        const rs = scaleKey(this.view.scale * this.dpr);
+        for (const j of this.active) if (j.rs !== rs) j.ac?.abort();
+      }
     }
     this.scheduleSettle();
   }
@@ -373,6 +397,7 @@ export class Viewer {
     this.settleAt = performance.now();
     this.measuring = true;
     this.regionsThisSettle = 0;
+    this.panPending = false;
     this.plan();
     if (this.queue.length === 0 && this.active.size === 0) this.finishMeasure();
     else this.pump();
@@ -439,7 +464,7 @@ export class Viewer {
   }
 
   private pump(): void {
-    if (this.interacting) return;
+    if (this.renderBlocked) return;
     while (this.active.size < this.concurrency && this.queue.length) {
       const job = this.queue.shift()!;
       // A preview may have been composed from tiles since this job was planned.
@@ -644,8 +669,14 @@ export class Viewer {
       this.pendingSharp = null;
       requestAnimationFrame(() => this.reportSharp(p));
     }
-    // Kick the queue if a render was waiting for interaction to end.
-    if (this.active.size < this.concurrency && this.queue.length && !this.interacting) this.pump();
+    // Mid-pan: re-plan for the new view (visible tiles first, nearest the centre first)
+    // and keep the renderer busy. Cheap: a few tile-range loops per visible page.
+    if (this.panPending && this.doc && !this.renderBlocked) {
+      this.panPending = false;
+      this.plan();
+    }
+    // Kick the queue if a render was waiting for a zoom to end.
+    if (this.active.size < this.concurrency && this.queue.length && !this.renderBlocked) this.pump();
   }
 
   /** Frames per second over the last second of frames (0 when idle). */
