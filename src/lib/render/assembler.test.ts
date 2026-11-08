@@ -71,6 +71,16 @@ describe("RegionAssembler", () => {
     expect(asm.pixels[9 * 4]).toBe(3);
   });
 
+  it("bandDone says whether a band still shows anything the tiles don't", () => {
+    const { tiles, region } = wholePage();
+    const asm = new RegionAssembler(region, tiles);
+    asm.addBand(0, 0, 300, 700, band(300, 700, 1));
+    expect(asm.bandDone(0, 0, 300, 700)).toBe(false); // tile column 0 still needs 300..512
+    asm.addBand(300, 0, 900, 700, band(900, 700, 2));
+    expect(asm.bandDone(0, 0, 300, 700)).toBe(true);
+    expect(asm.bandDone(300, 0, 900, 700)).toBe(true);
+  });
+
   it("rejects a band with too few bytes", () => {
     const asm = new RegionAssembler({ x: 0, y: 0, w: 10, h: 10 }, []);
     expect(() => asm.addBand(0, 0, 10, 10, new Uint8ClampedArray(10))).toThrow();

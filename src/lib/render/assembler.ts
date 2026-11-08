@@ -36,6 +36,16 @@ export class RegionAssembler {
     return this.remaining === 0;
   }
 
+  /** True when every requested tile the band rect (region-relative) touches is complete. */
+  bandDone(rx: number, ry: number, bw: number, bh: number): boolean {
+    const R = this.region;
+    const bx0 = R.x + rx, by0 = R.y + ry, bx1 = bx0 + bw, by1 = by0 + bh;
+    return this.tiles.every((t, k) => {
+      const hit = Math.min(bx1, t.x + t.w) > Math.max(bx0, t.x) && Math.min(by1, t.y + t.h) > Math.max(by0, t.y);
+      return !hit || this.done[k];
+    });
+  }
+
   /**
    * Copy a band (rx, ry relative to the region; `src` tightly packed RGBA, bw x bh) into the
    * region and return the indices of tiles it completed. Parts of a band outside the region

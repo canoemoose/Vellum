@@ -51,14 +51,16 @@ export interface RegionRequest {
  * One band of a progressive region render. The band's pixels are drawn at (x, y, w, h) in
  * device pixels of the page bitmap at the request's rs (page-relative, like tile rects).
  * `tiles` lists the requested tiles this band completed: index into `req.tiles` plus the
- * finished bitmap. Ownership of every bitmap passes to the callee, which must close them.
+ * finished bitmap. `bitmap` is null when the band holds nothing the tiles don't already
+ * show (every requested tile it touches is complete). Ownership of every bitmap passes to the
+ * callee, which must close them.
  */
 export interface BandBitmap {
   x: number;
   y: number;
   w: number;
   h: number;
-  bitmap: ImageBitmap;
+  bitmap: ImageBitmap | null;
   tiles: { index: number; bitmap: ImageBitmap }[];
 }
 
