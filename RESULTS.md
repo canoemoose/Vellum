@@ -12,7 +12,7 @@ fixes. pdf.js's failures are structural.
 
 ## Headline
 
-On the one real drawing supplied (`projectlayoutmarch2021.pdf`):
+On the heaviest real drawing supplied (`projectlayoutmarch2021.pdf`):
 
 | | pdf.js | PDFium, 8 instances | Target |
 |---|---:|---:|---:|
@@ -29,6 +29,11 @@ On the one real drawing supplied (`projectlayoutmarch2021.pdf`):
   imagery (731 JPEG tiles at 1024²). At fit page every one of those pixels is decoded and
   resampled down to about 50 × 960 screen pixels. That's an image pipeline problem, not a vector
   one, and it needs level-of-detail decoding (see "What would close the gap").
+- **On a real vector-dense drawing (the stage plan, 74k paths) both engines pass
+  everything.** PDFium matches pdf.js on speed (124 against 118 ms at fit) and uses 852 MB
+  against 1482 MB, so the recommendation isn't only about image-heavy files.
+- **By eye, it beats Edge.** Matt found the viewer noticeably more responsive than Edge's
+  built-in PDF viewer (also PDFium) on the same drawing, on the test machine.
 - **Panning is never the problem.** Every file, engine and zoom holds 58–60 fps, which is this
   display's refresh cap. The compositor spends 0.2–0.4 ms per frame.
 - **pdf.js's strengths are narrow.** It beat PDFium on pure vector lines (98 against 148 ms at
@@ -84,6 +89,27 @@ image on a single band. (The earlier pooled build decoded that image once per ba
 | Peak memory (MB) | < 1536 | 6176 ✗ | 2984 ✗ | 3034 ✗ |
 | Worst pan frame (ms) | – | 34 | 32 | 34 |
 | Missing tiles / errors | none | none | none | none |
+
+#### Stage Plan Plenary & Breakout.pdf (real file, added later)
+
+A real vector-dense CAD export: one A1 landscape sheet, 1 MB, about 74,000 paths and
+126,000 drawing operators, almost no images. Supplied after the main runs, so it was measured
+on the final build only (PDFium ×8, no ×1 column). Both engines pass every criterion;
+PDFium uses little over half the memory, and pdf.js sits within 4% of the ceiling on a 1 MB file.
+
+| Measure | Target | pdf.js | PDFium ×8 |
+|---|---|---:|---:|
+| Cold start (ms) | ≤ 1000 | 598 ✓ | 673 ✓ |
+| First page visible (ms) | ≤ 1500 | 430 ✓ | 331 ✓ |
+| Pan fps, fit page | ≥ 50 | 60 ✓ | 60 ✓ |
+| Pan fps, 400% | ≥ 50 | 60 ✓ | 60 ✓ |
+| Pan fps, 1600% | ≥ 50 | 60 ✓ | 60 ✓ |
+| Settle → sharp, fit (ms) | ≤ 300 | 118 ✓ | 124 ✓ |
+| Settle → sharp, 400% (ms) | – | 101 | 96 |
+| Settle → sharp, 1600% (ms) | ≤ 500 | 112 ✓ | 93 ✓ |
+| Peak memory (MB) | < 1536 | 1482 ✓ | 852 ✓ |
+| Worst pan frame (ms) | – | 50 | 47 |
+| Missing tiles / errors | none | none | none |
 
 #### 1-a1-200k-lines.pdf (acceptance file)
 

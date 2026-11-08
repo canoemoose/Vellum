@@ -82,8 +82,9 @@ or must rendering move to PDFium in the Rust backend? Answer with numbers.
 
 ## Open questions (batch for the end)
 
-- More heavy real files, especially vector-dense CAD exports (rigging plots, venue plans). The
-  only real file is image-dominated, so it may not be typical.
+- More heavy real files. The stage plan (vector-dense, 74k paths) was added after the main
+  runs and passes everything on both engines (RESULTS.md). Heavier rigging plots and venue plans
+  would still be useful.
 - Install MSVC Build Tools on the dev machine (the spike used the GNU toolchain + portable MinGW).
 - Why PDFium x8 at DPR 2 is faster than at DPR 1 on the real file (unexplained).
 - Does wheel zoom classify correctly on Matt's mice (debug overlay shows the last wheel event)?
