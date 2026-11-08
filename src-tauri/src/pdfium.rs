@@ -181,6 +181,7 @@ impl PdfiumState {
         let page_len = if along_x { pw_dev } else { ph_dev };
         let (r0, r1) = if along_x { (a.x, a.x + a.w as i64) } else { (a.y, a.y + a.h as i64) };
         let mut pending = Vec::with_capacity(n);
+        let mut send_err = None;
         for s in 0..n {
             let b0 = if s == 0 { i64::MIN } else { (page_len * s as f64 / n as f64).round() as i64 };
             let b1 = if s + 1 == n { i64::MAX } else { (page_len * (s + 1) as f64 / n as f64).round() as i64 };
@@ -197,11 +198,15 @@ impl PdfiumState {
                 Strip { page: a.page, rs: a.rs, x: a.x, y: p0, w: a.w, h: len, ptr: base + off * stride as usize, stride }
             };
             let (tx, rx) = channel();
-            workers[s].send(WorkerReq::Render { strip, reply: tx }).map_err(|e| e.to_string())?;
+            if let Err(e) = workers[s].send(WorkerReq::Render { strip, reply: tx }) {
+                // Don't return yet: strips already sent may still be writing into `buf`.
+                send_err = Some(e.to_string());
+                break;
+            }
             pending.push(rx);
         }
         // Wait for every strip before touching or returning `buf`: workers write into it.
-        let mut err = None;
+        let mut err = send_err;
         for rx in pending {
             match rx.recv() {
                 Ok(Ok(())) => {}
