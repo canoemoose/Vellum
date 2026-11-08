@@ -5,8 +5,13 @@
 //   view change -> draw cached tiles transformed (instant, maybe soft)
 //               -> 150 ms with no input = "settle"
 //               -> plan missing tiles at the exact current scale, grouped into regions
-//               -> renderer renders a region, slices it into tiles -> LRU cache
+//               -> renderer renders a region band by band; each band is drawn as it lands and
+//                  the tiles it completes go into the LRU cache
 //               -> compositor redraws; when every visible tile is sharp, record settle-to-sharp
+//
+// Coordinates: tiles, previews and every page-point API are in unrotated page points (y down
+// from the page's top-left). The view rotation (rotation.ts) only changes the layout and the
+// compositor's mapping, so rotating never invalidates a cached tile.
 
 import {
   type FitMode,
@@ -16,38 +21,74 @@ import {
   clampScale,
   constrainView,
   fitRect,
+  nextZoomPreset,
   scaleToZoom,
+  screenToWorld,
   visibleWorldRect,
   zoomAt,
   zoomToScale,
 } from "../view/viewMath";
 import { type Layout, type LayoutMode, computeLayout, currentPage, pagesInRect } from "../view/layout";
 import {
+  type Rotation,
+  normRotation,
+  rotatePoint,
+  rotatedDrawTransform,
+  rotatedSize,
+  unrotatePoint,
+  unrotateRect,
+} from "../view/rotation";
+import {
   TILE,
   TileCache,
+  type TileGrid,
   type TileIndexRange,
   type TileSpec,
   groupIntoRegions,
   scaleKey,
   tileGrid,
   tileKey,
+  tileRangeForRect,
   tileSpec,
-  visibleTileRange,
 } from "../render/tiles";
-import type { DocInfo, RegionRequest, Renderer } from "../render/types";
+import type { DocInfo, DocKind, RegionRequest, Renderer } from "../render/types";
 import { rendererFor } from "../render/createRenderer";
+import { ThumbnailQueue } from "./thumbnails";
 
 export type NavMode = "cad" | "document";
 
+/** A point on a page, in unrotated page points (y down from the page's top-left). */
+export interface PagePoint {
+  page: number;
+  x: number;
+  y: number;
+}
+
 export interface UiState {
   fileName: string;
+  /** Backend document id of the attached document, null when none. */
+  docId: number | null;
+  kind: DocKind | null;
   page: number;
   numPages: number;
   zoom: number;
+  rotation: Rotation;
   layoutMode: LayoutMode;
   navMode: NavMode;
   loading: boolean;
   error: string | null;
+  /** Where the pointer is over a page (set through setPointer), null when off every page. */
+  cursor: PagePoint | null;
+  /** The viewport on the current page, in its page points (may extend past the page). */
+  pageViewport: Rect | null;
+}
+
+/** The UI state before any document is open (for a component's initial state). */
+export function initialUiState(): UiState {
+  return {
+    fileName: "", docId: null, kind: null, page: 0, numPages: 0, zoom: 1, rotation: 0,
+    layoutMode: "continuous", navMode: "cad", loading: false, error: null, cursor: null, pageViewport: null,
+  };
 }
 
 export interface ViewerOptions {
@@ -56,6 +97,8 @@ export interface ViewerOptions {
   settleMs: number;
   /** Largest render region side in device pixels (one renderer pass). */
   maxRegion: number;
+  /** Previews kept per detached document (tab in the background), bytes. */
+  detachedPreviewBytes: number;
 }
 
 const DEFAULTS: ViewerOptions = {
@@ -63,12 +106,15 @@ const DEFAULTS: ViewerOptions = {
   previewBytes: 96 * 1024 * 1024,
   settleMs: 150,
   maxRegion: 4096,
+  detachedPreviewBytes: 32 * 1024 * 1024,
 };
 
 /** Longest side of a page's low-resolution preview, in device pixels. */
 const PREVIEW_MAX_SIDE = 2048;
 /** Padding used by Fit page / Fit width, CSS px. */
 const FIT_PAD = 16;
+/** Background work (thumbnails) waits this long after the last input. */
+const IDLE_AFTER_INPUT_MS = 300;
 
 interface Job {
   kind: "tiles" | "preview";
@@ -86,8 +132,39 @@ interface Preview {
   bytes: number;
 }
 
+/** A band of a region still rendering, drawn until the region's tiles are all in. */
+interface PartialBand {
+  job: Job;
+  page: number;
+  rs: number;
+  /** Device-pixel rect in the page bitmap at rs. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  bitmap: ImageBitmap;
+}
+
+/**
+ * A document's view, detached from the viewer (a tab in the background). The document stays
+ * open in the backend; reattach it with attach() or free it with closeDetached().
+ */
+export interface DocView {
+  readonly doc: DocInfo;
+  readonly renderer: Renderer;
+  readonly path: string;
+  readonly fileName: string;
+  readonly view: View;
+  readonly page: number;
+  readonly rotation: Rotation;
+  /** Previews kept so the tab shows something at once when it comes back (owned here). */
+  readonly previews: Map<number, Preview>;
+}
+
 export interface SharpEvent {
   settleToSharpMs: number;
+  /** Settle to the first band (or region) on screen; null if nothing needed rendering. */
+  settleToFirstBandMs: number | null;
   complete: boolean;
   regions: number;
 }
@@ -100,9 +177,11 @@ export interface FrameSample {
 export class Viewer {
   readonly opts: ViewerOptions;
   readonly cache: TileCache;
+  readonly thumbnails: ThumbnailQueue;
   private ctx: CanvasRenderingContext2D;
   private previews = new Map<number, Preview>();
   private previewBytes = 0;
+  private partials = new Set<PartialBand>();
 
   vw = 1;
   vh = 1;
@@ -111,16 +190,20 @@ export class Viewer {
   doc: DocInfo | null = null;
   layout: Layout = computeLayout([], "continuous");
   fileName = "";
+  currentPath = "";
   navMode: NavMode = "cad";
   layoutMode: LayoutMode = "continuous";
+  private rotationDeg: Rotation = 0;
   private page = 0;
   private loading = false;
   private error: string | null = null;
+  /** Pointer position in screen (CSS) px, or null when outside the canvas. */
+  private pointer: { x: number; y: number } | null = null;
 
   // Interaction and settle state
-  private lastInput = 0;
+  private lastInput = -Infinity;
   /** Last input that changed the render scale (or jumped); rendering waits for these to settle. */
-  private lastScaleInput = 0;
+  private lastScaleInput = -Infinity;
   /** A pan moved the view since the last plan: re-plan on the next frame, without waiting. */
   private panPending = false;
   private anim: { target: number; ax: number; ay: number } | null = null;
@@ -128,6 +211,7 @@ export class Viewer {
   private settleAt = 0;
   private measuring = false;
   private regionsThisSettle = 0;
+  private firstBandThisSettle: number | null = null;
 
   // Render queue
   private queue: Job[] = [];
@@ -143,18 +227,24 @@ export class Viewer {
   // Stats
   frames: FrameSample[] = [];
   lastSettleToSharpMs: number | null = null;
+  lastSettleToFirstBandMs: number | null = null;
   settleHistory: number[] = [];
   lastRenderMs = 0;
   rendersDone = 0;
   renderErrors = 0;
+  bandsDrawn = 0;
   lastWheel = "";
   private sharpWaiters: ((e: SharpEvent) => void)[] = [];
+  private bandWaiters: ((ms: number) => void)[] = [];
+  private pendingBand = false;
   onUi: ((s: UiState) => void) | null = null;
   onSharp: ((e: SharpEvent) => void) | null = null;
   private uiPending = false;
 
-  /** The renderer of the open document (chosen per file by rendererFor). */
+  /** The renderer of the attached document (chosen per file by rendererFor). */
   renderer: Renderer;
+  /** Use progressive (band by band) renders when the renderer supports them. */
+  progressive = true;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -165,13 +255,18 @@ export class Viewer {
     this.opts = { ...DEFAULTS, ...opts };
     this.cache = new TileCache(this.opts.cacheBytes);
     this.ctx = canvas.getContext("2d", { alpha: false })!;
+    this.thumbnails = new ThumbnailQueue({
+      isIdle: () => this.idleForBackground,
+      fromPreview: (docId, page, maxSide) => this.thumbnailFromPreview(docId, page, maxSide),
+    });
   }
 
   // ---------------------------------------------------------------- document
 
   /**
-   * Open a file, closing the current document. Rejects with the backend's UI-ready message
-   * ("Password required", "Wrong password", ...); `renderer` defaults to rendererFor(path).
+   * Open a file, closing the attached document (detach() it first to keep it open in a tab).
+   * Rejects with the backend's UI-ready message ("Password required", "Wrong password", ...);
+   * `renderer` defaults to rendererFor(path).
    */
   async open(path: string, password?: string, renderer: Renderer = rendererFor(path)): Promise<void> {
     this.resetRendering();
@@ -181,16 +276,27 @@ export class Viewer {
     this.error = null;
     this.fileName = path.split(/[\\/]/).pop() ?? path;
     this.currentPath = path;
+    this.rotationDeg = 0;
     this.emitUi();
+    const gen = this.gen;
+    let doc: DocInfo;
     try {
-      this.doc = await renderer.open(path, password);
+      doc = await renderer.open(path, password);
     } catch (e) {
-      this.doc = null;
-      this.error = String((e as Error)?.message ?? e);
-      this.loading = false;
-      this.emitUi();
+      if (gen === this.gen) {
+        this.doc = null;
+        this.error = String((e as Error)?.message ?? e);
+        this.loading = false;
+        this.emitUi();
+      }
       throw e;
     }
+    if (gen !== this.gen) {
+      // Something else was opened or attached meanwhile: this one isn't wanted any more.
+      renderer.close(doc.docId).catch(() => {});
+      return;
+    }
+    this.doc = doc;
     this.page = 0;
     this.relayout();
     this.loading = false;
@@ -208,13 +314,19 @@ export class Viewer {
     this.onSettle();
   }
 
-  /** Close the open document (if any) and free it in the backend. */
+  /** Close the attached document (if any) and free it in the backend. */
   close(): void {
     this.resetRendering();
     this.closeDoc();
+    this.clearAttached();
+  }
+
+  private clearAttached(): void {
     this.currentPath = "";
     this.fileName = "";
     this.error = null;
+    this.loading = false;
+    this.rotationDeg = 0;
     this.layout = computeLayout([], this.layoutMode);
     this.requestFrame();
     this.emitUi();
@@ -223,12 +335,85 @@ export class Viewer {
   private closeDoc(): void {
     if (this.doc) {
       const id = this.doc.docId;
+      this.thumbnails.cancelDoc(id);
       this.renderer.close(id).catch((e) => console.error("close failed", e));
     }
     this.doc = null;
   }
 
-  currentPath = "";
+  /**
+   * Detach the attached document (a tab going to the background) and return its view state.
+   * The document stays open in the backend and keeps its page previews (trimmed to
+   * detachedPreviewBytes), so attach() shows it again at once. Tiles are dropped.
+   */
+  detach(): DocView | null {
+    if (!this.doc) return null;
+    const previews = this.previews;
+    this.previews = new Map();
+    this.previewBytes = 0;
+    this.resetRendering();
+    // Keep the most recently used previews, the current page's first.
+    let bytes = 0;
+    const keep = new Map<number, Preview>();
+    const order = [this.page, ...[...previews.keys()].reverse().filter((p) => p !== this.page)];
+    for (const p of order) {
+      const pv = previews.get(p);
+      if (!pv) continue;
+      if (bytes + pv.bytes > this.opts.detachedPreviewBytes && keep.size > 0) continue;
+      keep.set(p, pv);
+      bytes += pv.bytes;
+    }
+    for (const [p, pv] of previews) if (!keep.has(p)) pv.bitmap.close();
+    const state: DocView = {
+      doc: this.doc,
+      renderer: this.renderer,
+      path: this.currentPath,
+      fileName: this.fileName,
+      view: { ...this.view },
+      page: this.page,
+      rotation: this.rotationDeg,
+      previews: keep,
+    };
+    this.doc = null;
+    this.clearAttached();
+    return state;
+  }
+
+  /**
+   * Attach a detached document (switching to its tab), closing whatever is attached now
+   * (detach() it first to keep it). The DocView must not be used again afterwards.
+   */
+  attach(state: DocView): void {
+    this.resetRendering();
+    this.closeDoc();
+    this.renderer = state.renderer;
+    this.doc = state.doc;
+    this.currentPath = state.path;
+    this.fileName = state.fileName;
+    this.error = null;
+    this.loading = false;
+    this.rotationDeg = state.rotation;
+    this.page = Math.min(state.page, state.doc.numPages - 1);
+    for (const [p, pv] of state.previews) {
+      this.previews.set(p, pv);
+      this.previewBytes += pv.bytes;
+    }
+    state.previews.clear();
+    this.relayout();
+    this.view = constrainView(state.view, this.layout.bounds, this.vw, this.vh);
+    this.anim = null;
+    this.requestFrame();
+    this.emitUi();
+    this.settleNow();
+  }
+
+  /** Free a detached document in the backend (closing a background tab). */
+  closeDetached(state: DocView): void {
+    for (const pv of state.previews.values()) pv.bitmap.close();
+    state.previews.clear();
+    this.thumbnails.cancelDoc(state.doc.docId);
+    state.renderer.close(state.doc.docId).catch((e) => console.error("close failed", e));
+  }
 
   private resetRendering(): void {
     this.gen++;
@@ -236,10 +421,20 @@ export class Viewer {
     this.active.clear();
     this.queue = [];
     this.cache.clear();
+    this.clearPartials();
     for (const p of this.previews.values()) p.bitmap.close();
     this.previews.clear();
     this.previewBytes = 0;
     this.measuring = false;
+    this.pendingSharp = null;
+  }
+
+  private clearPartials(job?: Job): void {
+    for (const b of [...this.partials]) {
+      if (job && b.job !== job) continue;
+      b.bitmap.close();
+      this.partials.delete(b);
+    }
   }
 
   /** Drop all cached tiles but keep previews (benchmark: forces a cold render at a scale). */
@@ -248,11 +443,13 @@ export class Viewer {
     this.active.clear();
     this.queue = [];
     this.cache.clear();
+    this.clearPartials();
     this.requestFrame();
   }
 
   private relayout(): void {
-    this.layout = computeLayout(this.doc?.sizes ?? [], this.layoutMode, this.page);
+    const sizes = (this.doc?.sizes ?? []).map((s) => rotatedSize(s, this.rotationDeg));
+    this.layout = computeLayout(sizes, this.layoutMode, this.page);
   }
 
   // ---------------------------------------------------------------- viewport
@@ -312,9 +509,16 @@ export class Viewer {
     this.zoomAt(this.vw / 2, this.vh / 2, dir > 0 ? 1.25 : 1 / 1.25, true);
   }
 
+  /** Set the zoom (1 = 100%, actual size) keeping screen point (sx, sy) fixed. */
   setZoom(zoom: number, sx = this.vw / 2, sy = this.vh / 2): void {
     this.anim = null;
     this.setView(zoomAt(this.view, sx, sy, zoomToScale(zoom)), "zoom");
+  }
+
+  /** Step to the next zoom preset (ZOOM_PRESETS) above or below the current zoom. */
+  zoomPreset(dir: 1 | -1): void {
+    const z = nextZoomPreset(this.zoom, dir);
+    if (z !== null) this.setZoom(z);
   }
 
   fit(mode: FitMode, jump = false): void {
@@ -349,6 +553,37 @@ export class Viewer {
   firstPage(): void { this.gotoPage(0); }
   lastPage(): void { this.gotoPage((this.doc?.numPages ?? 1) - 1); }
 
+  /**
+   * Centre the view on a page point (unrotated page points), keeping the zoom: outline
+   * targets, the mini map's drag. Switches page in single-page layout.
+   */
+  centreOn(page: number, x: number, y: number): void {
+    if (!this.doc || page < 0 || page >= this.doc.numPages) return;
+    if (this.layoutMode === "single" && page !== this.page) {
+      this.page = page;
+      this.relayout();
+    }
+    const r = this.layout.rects[page];
+    if (!r) return;
+    const [X, Y] = rotatePoint(x, y, this.doc.sizes[page], this.rotationDeg);
+    const s = this.view.scale;
+    this.anim = null;
+    this.setView({ scale: s, tx: this.vw / 2 - (r.x + X) * s, ty: this.vh / 2 - (r.y + Y) * s }, "pan");
+  }
+
+  /** Show a page point at the top of the viewport (bookmark targets with a y). */
+  gotoPagePoint(page: number, y: number | null): void {
+    if (!this.doc) return;
+    if (y === null) return this.gotoPage(page);
+    this.gotoPage(page);
+    const r = this.layout.rects[page];
+    if (!r) return;
+    const size = this.doc.sizes[page];
+    const [X, Y] = rotatePoint(size.w / 2, y, size, this.rotationDeg);
+    const s = this.view.scale;
+    this.setView({ scale: s, tx: this.vw / 2 - (r.x + X) * s, ty: FIT_PAD - (r.y + Y) * s }, "jump");
+  }
+
   setLayoutMode(m: LayoutMode): void {
     if (m === this.layoutMode) return;
     this.layoutMode = m;
@@ -361,6 +596,30 @@ export class Viewer {
     this.emitUi();
   }
 
+  get rotation(): Rotation {
+    return this.rotationDeg;
+  }
+
+  /**
+   * Rotate the view (never the file) to 0, 90, 180 or 270 degrees clockwise, keeping the
+   * point at the centre of the viewport where it is. Cached tiles stay valid.
+   */
+  setRotation(deg: number): void {
+    const r = normRotation(deg);
+    if (r === this.rotationDeg) return;
+    const anchor = this.pagePointAt(this.vw / 2, this.vh / 2);
+    this.rotationDeg = r;
+    this.relayout();
+    if (anchor) this.centreOn(anchor.page, anchor.x, anchor.y);
+    else this.gotoPage(this.page);
+    this.setView(this.view, "jump");
+  }
+
+  /** Rotate by a quarter turn: 1 clockwise, -1 anticlockwise. */
+  rotate(dir: 1 | -1): void {
+    this.setRotation(this.rotationDeg + dir * 90);
+  }
+
   get zoom(): number {
     return scaleToZoom(this.view.scale);
   }
@@ -369,9 +628,80 @@ export class Viewer {
     return this.page;
   }
 
+  /** The page point under screen point (sx, sy) in CSS px, or null when not over a page. */
+  pagePointAt(sx: number, sy: number): PagePoint | null {
+    if (!this.doc) return null;
+    const [wx, wy] = screenToWorld(this.view, sx, sy);
+    for (const p of pagesInRect(this.layout, { x: wx, y: wy, w: 1e-9, h: 1e-9 })) {
+      const r = this.layout.rects[p]!;
+      if (wx < r.x || wy < r.y || wx > r.x + r.w || wy > r.y + r.h) continue;
+      const [x, y] = unrotatePoint(wx - r.x, wy - r.y, this.doc.sizes[p], this.rotationDeg);
+      return { page: p, x, y };
+    }
+    return null;
+  }
+
+  /** The viewport in a page's own points (unrotated; may extend past the page). */
+  viewportOnPage(page: number): Rect | null {
+    const r = this.layout.rects[page];
+    if (!this.doc || !r) return null;
+    const vis = visibleWorldRect(this.view, this.vw, this.vh);
+    return unrotateRect({ x: vis.x - r.x, y: vis.y - r.y, w: vis.w, h: vis.h }, this.doc.sizes[page], this.rotationDeg);
+  }
+
+  /** Tell the viewer where the pointer is (CSS px in the viewport), or null when it leaves. */
+  setPointer(sx: number | null, sy?: number): void {
+    this.pointer = sx === null ? null : { x: sx, y: sy ?? 0 };
+    this.emitUi();
+  }
+
+  /** A page's low-resolution preview, if one is cached (mini map). Don't close or keep it. */
+  previewFor(page: number): { bitmap: ImageBitmap; rs: number } | null {
+    const p = this.previews.get(page);
+    return p ? { bitmap: p.bitmap, rs: p.rs } : null;
+  }
+
+  /**
+   * A thumbnail of a page of the attached document, longer side `maxSide` device px, rendered
+   * at low priority (never ahead of visible tiles) and cached. The caller owns the bitmap.
+   */
+  thumbnail(page: number, maxSide: number): Promise<ImageBitmap> {
+    if (!this.doc) return Promise.reject(new Error("no document"));
+    return this.thumbnails.request(this.renderer, this.doc.docId, page, maxSide);
+  }
+
+  private thumbnailFromPreview(docId: number, page: number, maxSide: number): ImageBitmap | null {
+    if (!this.doc || this.doc.docId !== docId || typeof OffscreenCanvas === "undefined") return null;
+    const pv = this.previews.get(page);
+    if (!pv) return null;
+    const size = this.doc.sizes[page];
+    const k = maxSide / Math.max(size.w, size.h);
+    if (k > pv.rs) return null; // the preview is too coarse for this size
+    const w = Math.max(1, Math.ceil(size.w * k));
+    const h = Math.max(1, Math.ceil(size.h * k));
+    const c = new OffscreenCanvas(w, h);
+    const g = c.getContext("2d", { alpha: false })!;
+    g.imageSmoothingQuality = "high";
+    g.fillStyle = "#ffffff";
+    g.fillRect(0, 0, w, h);
+    g.drawImage(pv.bitmap, 0, 0, pv.bitmap.width * (k / pv.rs), pv.bitmap.height * (k / pv.rs));
+    return c.transferToImageBitmap();
+  }
+
   /** Any input in the last settle window, or a zoom animation in flight. */
   get interacting(): boolean {
     return this.anim !== null || performance.now() - this.lastInput < this.opts.settleMs;
+  }
+
+  /** Nothing rendering or queued for the view and no recent input: background work may run. */
+  get idleForBackground(): boolean {
+    return (
+      !this.anim &&
+      !this.settleTimer &&
+      this.active.size === 0 &&
+      this.queue.length === 0 &&
+      performance.now() - this.lastInput > IDLE_AFTER_INPUT_MS
+    );
   }
 
   /**
@@ -421,10 +751,21 @@ export class Viewer {
     this.settleAt = performance.now();
     this.measuring = true;
     this.regionsThisSettle = 0;
+    this.firstBandThisSettle = null;
     this.panPending = false;
     this.plan();
-    if (this.queue.length === 0 && this.active.size === 0) this.finishMeasure();
-    else this.pump();
+    if (this.queue.length === 0 && this.active.size === 0) {
+      this.finishMeasure();
+      this.thumbnails.kick();
+    } else this.pump();
+  }
+
+  /** Tile range of page `p` at render scale `rs` covering the world rect `vis`. */
+  private pageRange(p: number, grid: TileGrid, rs: number, vis: Rect, margin: number): TileIndexRange | null {
+    const r = this.layout.rects[p]!;
+    const size = this.doc!.sizes[p];
+    const l = unrotateRect({ x: vis.x - r.x, y: vis.y - r.y, w: vis.w, h: vis.h }, size, this.rotationDeg);
+    return tileRangeForRect(l.x, l.y, l.x + l.w, l.y + l.h, size.w, size.h, grid, rs, margin);
   }
 
   /** Work out which tiles are missing at the current scale and queue region renders. */
@@ -441,9 +782,9 @@ export class Viewer {
       const rect = this.layout.rects[p]!;
       const size = this.doc.sizes[p];
       const grid = tileGrid(size, rs);
-      const core = visibleTileRange(rect, grid, this.view, this.vw, this.vh, rs, 0);
+      const core = this.pageRange(p, grid, rs, vis, 0);
       if (!core) continue;
-      const ring = visibleTileRange(rect, grid, this.view, this.vw, this.vh, rs, 1)!;
+      const ring = this.pageRange(p, grid, rs, vis, 1)!;
       const missingCore: { i: number; j: number }[] = [];
       const missingRing: { i: number; j: number }[] = [];
       for (let j = ring.j0; j <= ring.j1; j++) {
@@ -455,15 +796,16 @@ export class Viewer {
       }
       // Core tiles first (they gate "sharp"), then a one-tile prefetch ring.
       for (const [prio, missing] of [[0, missingCore], [1, missingRing]] as const) {
+        const set = new Set(missing.map((t) => t.i * 100003 + t.j));
         for (const reg of groupIntoRegions(missing, maxSide)) {
-          const set = new Set(missing.map((t) => t.i * 100003 + t.j));
           const tiles: TileSpec[] = [];
           for (let j = reg.j0; j <= reg.j1; j++)
             for (let i = reg.i0; i <= reg.i1; i++)
               if (set.has(i * 100003 + j)) tiles.push(tileSpec(grid, i, j));
           const req = regionRequest(p, rs, grid, reg, tiles);
-          const sx = (rect.x + (req.x + req.w / 2) / rs) * this.view.scale + this.view.tx;
-          const sy = (rect.y + (req.y + req.h / 2) / rs) * this.view.scale + this.view.ty;
+          const [X, Y] = rotatePoint((req.x + req.w / 2) / rs, (req.y + req.h / 2) / rs, size, this.rotationDeg);
+          const sx = (rect.x + X) * this.view.scale + this.view.tx;
+          const sy = (rect.y + Y) * this.view.scale + this.view.ty;
           jobs.push({ kind: "tiles", page: p, rs, req, prio, dist: Math.hypot(sx - cx, sy - cy) });
         }
       }
@@ -497,14 +839,53 @@ export class Viewer {
     }
   }
 
+  private putTiles(job: Job, items: { index: number; bitmap: ImageBitmap }[]): void {
+    for (const { index, bitmap } of items) {
+      const t = job.req.tiles[index];
+      this.cache.put({
+        key: tileKey(job.page, job.rs, t.i, t.j),
+        page: job.page, rs: job.rs, i: t.i, j: t.j, w: t.w, h: t.h,
+        bitmap, bytes: t.w * t.h * 4,
+      });
+    }
+  }
+
   private start(job: Job): void {
     const gen = this.gen;
+    const docId = this.doc!.docId;
+    const renderer = this.renderer;
     job.ac = new AbortController();
+    const signal = job.ac.signal;
     this.active.add(job);
     const t0 = performance.now();
-    this.renderer
-      .renderRegion(this.doc!.docId, job.req, job.ac.signal)
-      .then((bitmaps) => {
+    const stale = () => gen !== this.gen || signal.aborted;
+
+    let work: Promise<void>;
+    if (job.kind === "tiles" && this.progressive && renderer.renderRegionProgressive) {
+      work = renderer
+        .renderRegionProgressive(docId, job.req, (b) => {
+          if (gen !== this.gen) {
+            b.bitmap?.close();
+            b.tiles.forEach((t) => t.bitmap.close());
+            return;
+          }
+          this.putTiles(job, b.tiles);
+          if (b.bitmap) {
+            this.partials.add({ job, page: job.page, rs: job.rs, x: b.x, y: b.y, w: b.w, h: b.h, bitmap: b.bitmap });
+          }
+          this.noteBand(job);
+          this.requestFrame();
+        }, signal)
+        .then(() => {
+          if (stale()) return;
+          this.lastRenderMs = performance.now() - t0;
+          this.rendersDone++;
+          this.regionsThisSettle++;
+          this.maybeComposePreview(job.page, job.rs);
+          this.requestFrame();
+        });
+    } else {
+      work = renderer.renderRegion(docId, job.req, signal).then((bitmaps) => {
         if (!bitmaps || gen !== this.gen) {
           bitmaps?.forEach((b) => b.close());
           return;
@@ -515,24 +896,23 @@ export class Viewer {
           this.putPreview(job.page, bitmaps[0], job.rs);
         } else {
           this.regionsThisSettle++;
-          job.req.tiles.forEach((t, k) => {
-            const b = bitmaps[k];
-            this.cache.put({
-              key: tileKey(job.page, job.rs, t.i, t.j),
-              page: job.page, rs: job.rs, i: t.i, j: t.j, w: t.w, h: t.h,
-              bitmap: b, bytes: t.w * t.h * 4,
-            });
-          });
+          this.putTiles(job, bitmaps.map((bitmap, index) => ({ index, bitmap })));
+          this.noteBand(job);
           this.maybeComposePreview(job.page, job.rs);
         }
         this.requestFrame();
-      })
+      });
+    }
+    work
       .catch((e) => {
         this.renderErrors++;
         console.error("render failed", e);
       })
       .finally(() => {
         this.active.delete(job);
+        // Its tiles are cached now (or it was abandoned): the band overlay has done its job.
+        this.clearPartials(job);
+        this.requestFrame();
         if (
           this.measuring &&
           !this.queue.some((j) => j.prio === 0) &&
@@ -540,7 +920,17 @@ export class Viewer {
         )
           this.finishMeasure();
         this.pump();
+        if (this.idleForBackground) this.thumbnails.kick();
       });
+  }
+
+  /** A band (or a whole non-progressive region) of visible tiles just landed. */
+  private noteBand(job: Job): void {
+    this.bandsDrawn++;
+    if (job.prio === 0 && this.firstBandThisSettle === null) {
+      this.firstBandThisSettle = performance.now();
+      this.pendingBand = true;
+    }
   }
 
   /**
@@ -563,11 +953,24 @@ export class Viewer {
     this.lastSettleToSharpMs = ms;
     this.settleHistory.push(ms);
     if (this.settleHistory.length > 50) this.settleHistory.shift();
-    const ev: SharpEvent = { settleToSharpMs: ms, complete: p.complete, regions: p.regions };
+    const ev: SharpEvent = {
+      settleToSharpMs: ms,
+      settleToFirstBandMs: this.lastSettleToFirstBandMs !== null && p.regions > 0 ? this.lastSettleToFirstBandMs : null,
+      complete: p.complete,
+      regions: p.regions,
+    };
     this.onSharp?.(ev);
     const w = this.sharpWaiters;
     this.sharpWaiters = [];
     w.forEach((f) => f(ev));
+  }
+
+  private reportFirstBand(): void {
+    const ms = performance.now() - this.settleAt;
+    this.lastSettleToFirstBandMs = ms;
+    const w = this.bandWaiters;
+    this.bandWaiters = [];
+    w.forEach((f) => f(ms));
   }
 
   /** True when every tile covering the viewport exists at the current scale. */
@@ -577,7 +980,7 @@ export class Viewer {
     const vis = visibleWorldRect(this.view, this.vw, this.vh);
     for (const p of pagesInRect(this.layout, vis)) {
       const grid = tileGrid(this.doc.sizes[p], rs);
-      const r = visibleTileRange(this.layout.rects[p]!, grid, this.view, this.vw, this.vh, rs, 0);
+      const r = this.pageRange(p, grid, rs, vis, 0);
       if (!r) continue;
       for (let j = r.j0; j <= r.j1; j++)
         for (let i = r.i0; i <= r.i1; i++) if (!this.cache.peek(p, rs, i, j)) return false;
@@ -588,6 +991,14 @@ export class Viewer {
   /** Resolves at the next "all visible tiles sharp" moment. */
   whenSharp(): Promise<SharpEvent> {
     return new Promise((res) => this.sharpWaiters.push(res));
+  }
+
+  /**
+   * Resolves when the first band of visible content from the next render is on screen (the
+   * frame showing it presented), with the time since that settle in ms.
+   */
+  whenFirstBand(): Promise<number> {
+    return new Promise((res) => this.bandWaiters.push(res));
   }
 
   /** Resolves once settled with nothing rendering or queued (previews included). */
@@ -688,6 +1099,10 @@ export class Viewer {
     const drawMs = performance.now() - d0;
     this.frames.push({ t, drawMs });
     if (this.frames.length > 600) this.frames.splice(0, this.frames.length - 600);
+    if (this.pendingBand) {
+      this.pendingBand = false;
+      requestAnimationFrame(() => this.reportFirstBand());
+    }
     if (this.pendingSharp) {
       const p = this.pendingSharp;
       this.pendingSharp = null;
@@ -716,6 +1131,7 @@ export class Viewer {
     const ctx = this.ctx;
     const dpr = this.dpr;
     const { scale, tx, ty } = this.view;
+    const rot = this.rotationDeg;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = canvasColour();
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -730,14 +1146,30 @@ export class Viewer {
     for (const p of pages) {
       const r = this.layout.rects[p]!;
       const size = this.doc.sizes[p];
-      // Page rect in device pixels; edges snapped to whole pixels.
-      const fx0 = (r.x * scale + tx) * dpr;
-      const fy0 = (r.y * scale + ty) * dpr;
-      const X0 = Math.round(fx0);
-      const Y0 = Math.round(fy0);
-      const X1 = Math.round(((r.x + r.w) * scale + tx) * dpr);
-      const Y1 = Math.round(((r.y + r.h) * scale + ty) * dpr);
+      // Page-point rect -> device-pixel rect on screen, edges rounded. Every tile edge is
+      // computed by the same formula for both neighbours, so tiles share exact edges.
+      const dev = (x0: number, y0: number, x1: number, y1: number): [number, number, number, number] => {
+        const [ax, ay] = rotatePoint(x0, y0, size, rot);
+        const [bx, by] = rotatePoint(x1, y1, size, rot);
+        return [
+          Math.round(((r.x + Math.min(ax, bx)) * scale + tx) * dpr),
+          Math.round(((r.y + Math.min(ay, by)) * scale + ty) * dpr),
+          Math.round(((r.x + Math.max(ax, bx)) * scale + tx) * dpr),
+          Math.round(((r.y + Math.max(ay, by)) * scale + ty) * dpr),
+        ];
+      };
+      const blit = (bmp: ImageBitmap, d: [number, number, number, number]) => {
+        if (rot === 0) {
+          ctx.drawImage(bmp, d[0], d[1], d[2] - d[0], d[3] - d[1]);
+          return;
+        }
+        const t = rotatedDrawTransform(d[0], d[1], d[2], d[3], rot);
+        ctx.setTransform(...t.m);
+        ctx.drawImage(bmp, 0, 0, t.dw, t.dh);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      };
 
+      const [X0, Y0, X1, Y1] = dev(0, 0, size.w, size.h);
       // Soft shadow: two translucent offsets (much cheaper per frame than shadowBlur).
       ctx.fillStyle = "rgba(0,0,0,0.18)";
       ctx.fillRect(X0 - 1, Y0, X1 - X0 + 2, Y1 - Y0 + 3 * dpr);
@@ -752,37 +1184,34 @@ export class Viewer {
       ctx.clip();
 
       const pv = this.previews.get(p);
-      if (pv) {
-        const k = (scale * dpr) / pv.rs;
-        ctx.drawImage(pv.bitmap, fx0, fy0, pv.bitmap.width * k, pv.bitmap.height * k);
-      }
+      if (pv) blit(pv.bitmap, dev(0, 0, pv.bitmap.width / pv.rs, pv.bitmap.height / pv.rs));
 
-      // Fallback layers (other scales) underneath, nearest-to-target last; then target.
+      // Fallback layers (other scales) underneath, nearest-to-target last; then bands still
+      // rendering at the target scale; then the target's tiles.
       const scales = this.cache
         .scalesFor(p)
         .filter((s) => s !== target)
         .sort((a, b) => Math.abs(Math.log(b / target)) - Math.abs(Math.log(a / target)))
         .slice(-2);
-      if (this.cache.scalesFor(p).includes(target)) scales.push(target);
-
-      for (const rs of scales) {
+      const drawTiles = (rs: number) => {
         const grid = tileGrid(size, rs);
-        const range = visibleTileRange(r, grid, this.view, this.vw, this.vh, rs, 0);
-        if (!range) continue;
-        const k = (scale * dpr) / rs;
+        const range = this.pageRange(p, grid, rs, vis, 0);
+        if (!range) return;
         for (let j = range.j0; j <= range.j1; j++) {
-          const y0 = Math.round(fy0 + j * TILE * k);
           for (let i = range.i0; i <= range.i1; i++) {
             const t = this.cache.peek(p, rs, i, j);
             if (!t) continue;
-            const x0 = Math.round(fx0 + i * TILE * k);
-            const x1 = Math.round(fx0 + (i * TILE + t.w) * k);
-            const y1 = Math.round(fy0 + (j * TILE + t.h) * k);
-            ctx.drawImage(t.bitmap, x0, y0, x1 - x0, y1 - y0);
+            blit(t.bitmap, dev((i * TILE) / rs, (j * TILE) / rs, (i * TILE + t.w) / rs, (j * TILE + t.h) / rs));
             if (rs === target) this.cache.touch(t);
           }
         }
+      };
+      for (const rs of scales) drawTiles(rs);
+      for (const b of this.partials) {
+        if (b.page !== p || b.rs !== target) continue;
+        blit(b.bitmap, dev(b.x / b.rs, b.y / b.rs, (b.x + b.w) / b.rs, (b.y + b.h) / b.rs));
       }
+      if (this.cache.scalesFor(p).includes(target)) drawTiles(target);
       ctx.restore();
     }
 
@@ -807,13 +1236,18 @@ export class Viewer {
   uiState(): UiState {
     return {
       fileName: this.fileName,
+      docId: this.doc?.docId ?? null,
+      kind: this.doc?.kind ?? null,
       page: this.page,
       numPages: this.doc?.numPages ?? 0,
       zoom: this.zoom,
+      rotation: this.rotationDeg,
       layoutMode: this.layoutMode,
       navMode: this.navMode,
       loading: this.loading,
       error: this.error,
+      cursor: this.pointer ? this.pagePointAt(this.pointer.x, this.pointer.y) : null,
+      pageViewport: this.viewportOnPage(this.page),
     };
   }
 
@@ -827,6 +1261,7 @@ export class Viewer {
       fps: this.fps(now),
       drawMsP95: draws.length ? draws[Math.floor(draws.length * 0.95)] : 0,
       lastSettleToSharpMs: this.lastSettleToSharpMs,
+      lastSettleToFirstBandMs: this.lastSettleToFirstBandMs,
       tiles: this.cache.size,
       cacheMB: this.cache.bytes / 1048576,
       cacheLimitMB: this.cache.maxBytes / 1048576,
@@ -838,6 +1273,8 @@ export class Viewer {
       lastRenderMs: this.lastRenderMs,
       rendersDone: this.rendersDone,
       renderErrors: this.renderErrors,
+      bandsDrawn: this.bandsDrawn,
+      thumbnailsQueued: this.thumbnails.pending,
       zoom: this.zoom,
       rs: scaleKey(this.view.scale * this.dpr),
       dpr: this.dpr,
@@ -876,4 +1313,12 @@ function canvasColour(): string {
   return cachedCanvasColour;
 }
 
-export type { Rect };
+/**
+ * Forget the cached canvas colour so the next frame reads `--canvas` again (call after a
+ * theme change, then viewer.requestFrame()).
+ */
+export function refreshCanvasColour(): void {
+  cachedCanvasColour = "";
+}
+
+export type { Rect, Rotation };
