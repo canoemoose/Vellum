@@ -20,7 +20,6 @@ fn bench_flags() {
     assert!(a.bench);
     assert_eq!(a.file.as_deref(), Some("f.pdf"));
     assert_eq!(a.bench_out.as_deref(), Some("o.json"));
-    assert_eq!(a.renderer.as_deref(), Some("pdfium"));
     assert_eq!(a.dpr, Some(2.0));
     assert_eq!(a.pdfium_threads, Some(4));
 }
@@ -28,5 +27,12 @@ fn bench_flags() {
 #[test]
 fn unknown_flags_are_ignored() {
     let a = p(&["v", "--something", "x.pdf"]);
+    assert_eq!(a.file.as_deref(), Some("x.pdf"));
+}
+
+#[test]
+fn legacy_renderer_flag_consumes_its_value() {
+    // --renderer was removed with pdf.js; its value must not be taken as the file.
+    let a = p(&["v", "--renderer", "pdfium", "x.pdf"]);
     assert_eq!(a.file.as_deref(), Some("x.pdf"));
 }

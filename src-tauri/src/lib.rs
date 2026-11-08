@@ -1,9 +1,14 @@
+pub mod docs;
+pub mod imagedoc;
 mod memory;
-mod pdfium;
+pub mod pdfium;
+pub mod scale;
 
+use docs::{DocInfo, Docs};
 use memory::{MemState, MemStats};
 use pdfium::{PdfiumState, RegionArgs};
 use serde::Serialize;
+use std::sync::Arc;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -17,7 +22,6 @@ pub struct LaunchArgs {
     pub file: Option<String>,
     pub bench: bool,
     pub bench_out: Option<String>,
-    pub renderer: Option<String>,
     pub debug: bool,
     /// Pretend the display has this device pixel ratio (benchmarking HiDPI cost on a
     /// 100% display). The canvas is rendered at this density and scaled by CSS.
@@ -36,7 +40,11 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
         match a.as_str() {
             "--bench" => out.bench = true,
             "--bench-out" => out.bench_out = it.next(),
-            "--renderer" => out.renderer = it.next(),
+            // Removed with pdf.js in v0.1 (PDFium is the only renderer). Still consumed with
+            // its value so an old command line doesn't open "pdfium" as a file.
+            "--renderer" => {
+                it.next();
+            }
             "--debug" => out.debug = true,
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
             "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
@@ -139,37 +147,134 @@ fn reset_memory_peak(state: tauri::State<MemState>) {
     state.reset_peak();
 }
 
-/// Open a document in the PDFium backend. Async + spawn_blocking: the PDFium thread
-/// may take a while and sync commands would block the window's event loop.
+// ------------------------------------------------------------------------------------------
+// Document commands. All take a document id from doc_open; PDFs and images use the same
+// commands with the same shapes (docs.rs dispatches on kind). Async + spawn_blocking: the
+// PDFium pool or an image resample may take a while, and a sync command would block the
+// window's event loop.
+
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
+}
+
+/// Open a PDF or image. Errors are UI-ready ("Password required", "Wrong password",
+/// "Not a PDF or supported image", "pdfium.dll not found: ...").
 #[tauri::command]
-async fn pdfium_open(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, PdfiumState>,
+async fn doc_open(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
     path: String,
-) -> Result<pdfium::DocInfo, String> {
-    let st = state.inner().clone();
-    let res_dir = app.path().resource_dir().ok();
-    tauri::async_runtime::spawn_blocking(move || st.open(res_dir, path))
-        .await
-        .map_err(|e| e.to_string())?
+    password: Option<String>,
+) -> Result<DocInfo, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || docs.open(&pdf, std::path::Path::new(&path), password.as_deref())).await
+}
+
+/// Close a document and free everything it holds.
+#[tauri::command]
+async fn doc_close(pdf: tauri::State<'_, PdfiumState>, docs: tauri::State<'_, Arc<Docs>>, doc_id: u64) -> Result<(), String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || {
+        docs.close(&pdf, doc_id);
+        Ok(())
+    })
+    .await
 }
 
 /// Render a region; returns raw RGBA bytes (w*h*4), or an empty body if cancelled.
 #[tauri::command]
-async fn pdfium_render(
-    state: tauri::State<'_, PdfiumState>,
-    args: RegionArgs,
+async fn doc_render(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    region: RegionArgs,
 ) -> Result<tauri::ipc::Response, String> {
-    let st = state.inner().clone();
-    let bytes = tauri::async_runtime::spawn_blocking(move || st.render(args))
-        .await
-        .map_err(|e| e.to_string())??;
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    let bytes = blocking(move || docs.render(&pdf, doc_id, region)).await?;
     Ok(tauri::ipc::Response::new(bytes.unwrap_or_default()))
 }
 
+/// Render a region band by band. Each band goes to `on_band` as soon as it is drawn, as raw
+/// bytes: the band's RGBA pixels (tightly packed) followed by a 16-byte trailer of four
+/// little-endian u32s: x, y (the band's offset within the region), w, h. Returns the number
+/// of bands sent (wait for that many messages: they can arrive after the command resolves),
+/// or null if the request was cancelled before it started.
 #[tauri::command]
-fn pdfium_cancel(state: tauri::State<PdfiumState>, id: u64) {
-    state.cancel(id);
+async fn doc_render_stream(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    region: RegionArgs,
+    on_band: tauri::ipc::Channel,
+) -> Result<Option<usize>, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || {
+        docs.render_stream(&pdf, doc_id, region, |part, mut buf| {
+            for v in [part.rx as u32, part.ry as u32, part.w as u32, part.h as u32] {
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            on_band.send(tauri::ipc::InvokeResponseBody::Raw(buf)).is_ok()
+        })
+    })
+    .await
+}
+
+/// Skip a doc_render / doc_render_stream request that hasn't started (by its region id).
+#[tauri::command]
+fn doc_cancel(pdf: tauri::State<PdfiumState>, id: u64) {
+    pdf.cancel(id);
+}
+
+/// A page scaled so its longer side is `max_side` px: RGBA bytes followed by an 8-byte
+/// trailer of two little-endian u32s, w and h.
+#[tauri::command]
+async fn doc_thumbnail(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    page: usize,
+    max_side: u32,
+) -> Result<tauri::ipc::Response, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    let (w, h, mut buf) = blocking(move || docs.thumbnail(&pdf, doc_id, page, max_side)).await?;
+    buf.extend_from_slice(&w.to_le_bytes());
+    buf.extend_from_slice(&h.to_le_bytes());
+    Ok(tauri::ipc::Response::new(buf))
+}
+
+/// The page's text (empty for images).
+#[tauri::command]
+async fn doc_page_text(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    page: usize,
+) -> Result<String, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || docs.page_text(&pdf, doc_id, page)).await
+}
+
+/// Bookmarks as a tree (empty for images and PDFs without them).
+#[tauri::command]
+async fn doc_outline(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+) -> Result<Vec<pdfium::OutlineNode>, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || docs.outline(&pdf, doc_id)).await
+}
+
+/// Drawing-scale notes on a page ("1:100"), best first; bbox in page points, y down.
+#[tauri::command]
+async fn doc_find_scale(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    page: usize,
+) -> Result<Vec<scale::ScaleCandidate>, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || docs.find_scale(&pdf, doc_id, page)).await
 }
 
 /// How many times the PDFium memory guard has trimmed page caches (benchmark reporting).
@@ -198,8 +303,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Launch(args))
         .manage(mem)
-        .manage(pdfium_state)
+        .manage(pdfium_state.clone())
+        .manage(Arc::new(Docs::default()))
         .setup(move |app| {
+            pdfium_state.set_resource_dir(app.path().resource_dir().ok());
             if bench {
                 // Fixed, on-top window so benchmark runs are comparable and
                 // never throttled by being occluded.
@@ -220,9 +327,15 @@ pub fn run() {
             memory_stats,
             reset_memory_peak,
             exit_app,
-            pdfium_open,
-            pdfium_render,
-            pdfium_cancel,
+            doc_open,
+            doc_close,
+            doc_render,
+            doc_render_stream,
+            doc_cancel,
+            doc_thumbnail,
+            doc_page_text,
+            doc_outline,
+            doc_find_scale,
             pdfium_trims,
         ])
         .run(tauri::generate_context!())

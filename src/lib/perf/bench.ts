@@ -101,7 +101,7 @@ async function pan(v: Viewer, refreshHz: number): Promise<PanResult> {
 export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number): Promise<void> {
   const out: Record<string, unknown> = {
     file: args.file,
-    renderer: v.renderer.name + (args.renderer === "pdfjs-cpu" ? "-cpu" : ""),
+    renderer: v.renderer.name,
     processStartEpochMs: args.processStartEpochMs,
     shownEpochMs,
     dpr: v.dpr,
@@ -125,6 +125,17 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     out.firstPageMs = fs ? performance.now() - t0 : null;
     out.numPages = v.doc?.numPages;
     out.pageSize = v.doc?.sizes[0];
+    out.docKind = v.doc?.kind;
+    out.docMeta = v.doc?.meta;
+    // Smoke-check the text commands (cheap, after first paint so they don't skew it).
+    if (v.doc && v.renderer.findScale) {
+      const id = v.doc.docId;
+      const t1 = performance.now();
+      out.scale = (await v.renderer.findScale(id, 0)).slice(0, 3);
+      out.findScaleMs = performance.now() - t1;
+      out.textChars = (await v.renderer.pageText?.(id, 0))?.length ?? null;
+      out.outlineTopLevel = (await v.renderer.outline?.(id))?.length ?? null;
+    }
     await v.whenIdle(TIMEOUT);
     sampleHeap();
     out.memAfterOpenMb = (await memoryStats()).current.privateWsMb;

@@ -1,24 +1,23 @@
+import { ImageRenderer, isImagePath } from "./imageRenderer";
+import { PdfiumRenderer } from "./pdfiumRenderer";
 import type { Renderer } from "./types";
 
+// Renderers hold no per-document state (documents live in the backend under their id), so
+// one instance of each serves every document and tab.
+let pdfium: PdfiumRenderer | null = null;
+let image: ImageRenderer | null = null;
+
 /**
- * Renderer by name: "pdfium" (default; Rust backend, see RESULTS.md for why), "pdfjs"
- * (GPU canvases) or "pdfjs-cpu" (pdf.js's own default of CPU-backed canvases). Loaded
- * lazily so the unused one costs nothing at startup. If pdfium.dll is missing, App falls
- * back to pdf.js when the first file is opened.
+ * The renderer for a file, chosen by extension. The backend decides the real kind (it sniffs
+ * files with unknown extensions), and both renderers drive the same commands, so a wrong
+ * guess here only changes the renderer's name.
  */
-export async function createRenderer(name: string | null | undefined): Promise<Renderer> {
-  switch (name) {
-    case "pdfjs": {
-      const { PdfjsRenderer } = await import("./pdfjsRenderer");
-      return new PdfjsRenderer(true);
-    }
-    case "pdfjs-cpu": {
-      const { PdfjsRenderer } = await import("./pdfjsRenderer");
-      return new PdfjsRenderer(false);
-    }
-    default: {
-      const { PdfiumRenderer } = await import("./pdfiumRenderer");
-      return new PdfiumRenderer();
-    }
-  }
+export function rendererFor(path: string): Renderer {
+  if (isImagePath(path)) return (image ??= new ImageRenderer());
+  return (pdfium ??= new PdfiumRenderer());
+}
+
+/** The PDF renderer (for callers that only deal in PDFs). */
+export function pdfRenderer(): PdfiumRenderer {
+  return (pdfium ??= new PdfiumRenderer());
 }

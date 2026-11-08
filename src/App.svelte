@@ -6,7 +6,6 @@
   import DebugOverlay from "./lib/components/DebugOverlay.svelte";
   import { Viewer, type UiState, type NavMode } from "./lib/engine/viewer";
   import { attachInput } from "./lib/engine/input";
-  import { createRenderer } from "./lib/render/createRenderer";
   import { loadSettings, saveSettings } from "./lib/settings";
   import { appendPerfLog, jsHeapMb, launchArgs, memoryStats, pickPdf } from "./lib/platform";
   import { runBench } from "./lib/perf/bench";
@@ -36,21 +35,9 @@
       await viewer.open(path);
       getCurrentWindow().setTitle(`${viewer.fileName} - Vellum`).catch(() => {});
     } catch (e) {
-      // No pdfium.dll (not fetched, or not bundled): fall back to pdf.js rather than fail.
-      if (viewer.renderer.name === "pdfium" && /pdfium\.dll not found|could not load|LoadLibrary/i.test(String(e))) {
-        console.warn("PDFium unavailable, falling back to pdf.js:", String(e));
-        await viewer.setRenderer(await createRenderer("pdfjs"));
-        return;
-      }
+      // The viewer keeps the message (shown below); e.g. a missing pdfium.dll says how to fetch it.
       console.error("open failed", e);
     }
-  }
-
-  /** Ctrl+Shift+R: switch renderer on the open document, for side-by-side comparison. */
-  async function toggleRenderer() {
-    if (!viewer) return;
-    const next = viewer.renderer.name === "pdfium" ? "pdfjs" : "pdfium";
-    await viewer.setRenderer(await createRenderer(next));
   }
 
   async function openDialog() {
@@ -77,8 +64,7 @@
 
     (async () => {
       const args = await launchArgs();
-      const renderer = await createRenderer(args.renderer);
-      const v = new Viewer(canvas, renderer);
+      const v = new Viewer(canvas);
       v.navMode = settings.navMode;
       v.layoutMode = settings.layoutMode;
       v.onUi = (s) => (ui = s);
@@ -96,7 +82,6 @@
       detachInput = attachInput(host, v, {
         open: openDialog,
         toggleDebug: () => (debug = !debug),
-        toggleRenderer,
       });
 
       // Log every settle-to-sharp event while the debug overlay is up.

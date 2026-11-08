@@ -11,15 +11,13 @@
     "test": "vitest run",
     "tauri": "tauri",
     "gen:synthetic": "node tools/gen-synthetic.mjs",
-    "bench": "node tools/bench.mjs",
-    "postinstall": "node tools/copy-pdfjs-assets.mjs"
+    "bench": "node tools/bench.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@tauri-apps/api": "^2.12.4",
-    "@tauri-apps/plugin-dialog": "^2.8.4",
-    "pdfjs-dist": "^6.5.438"
+    "@tauri-apps/plugin-dialog": "^2.8.4"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

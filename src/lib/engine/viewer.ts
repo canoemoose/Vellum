@@ -35,6 +35,7 @@ import {
   visibleTileRange,
 } from "../render/tiles";
 import type { DocInfo, RegionRequest, Renderer } from "../render/types";
+import { rendererFor } from "../render/createRenderer";
 
 export type NavMode = "cad" | "document";
 
@@ -152,11 +153,15 @@ export class Viewer {
   onSharp: ((e: SharpEvent) => void) | null = null;
   private uiPending = false;
 
+  /** The renderer of the open document (chosen per file by rendererFor). */
+  renderer: Renderer;
+
   constructor(
     private canvas: HTMLCanvasElement,
-    public renderer: Renderer,
     opts: Partial<ViewerOptions> = {},
+    renderer?: Renderer,
   ) {
+    this.renderer = renderer ?? rendererFor(".pdf");
     this.opts = { ...DEFAULTS, ...opts };
     this.cache = new TileCache(this.opts.cacheBytes);
     this.ctx = canvas.getContext("2d", { alpha: false })!;
@@ -164,15 +169,21 @@ export class Viewer {
 
   // ---------------------------------------------------------------- document
 
-  async open(path: string): Promise<void> {
+  /**
+   * Open a file, closing the current document. Rejects with the backend's UI-ready message
+   * ("Password required", "Wrong password", ...); `renderer` defaults to rendererFor(path).
+   */
+  async open(path: string, password?: string, renderer: Renderer = rendererFor(path)): Promise<void> {
     this.resetRendering();
+    this.closeDoc();
+    this.renderer = renderer;
     this.loading = true;
     this.error = null;
     this.fileName = path.split(/[\\/]/).pop() ?? path;
     this.currentPath = path;
     this.emitUi();
     try {
-      this.doc = await this.renderer.open(path);
+      this.doc = await renderer.open(path, password);
     } catch (e) {
       this.doc = null;
       this.error = String((e as Error)?.message ?? e);
@@ -192,16 +203,29 @@ export class Viewer {
   private settleNow(): void {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
-    this.lastInput = 0;
-    this.lastScaleInput = 0; // the fit on open was a "jump"; don't let it block the first render
+    this.lastInput = -Infinity;
+    this.lastScaleInput = -Infinity; // the fit on open was a "jump"; don't let it block the first render
     this.onSettle();
   }
 
-  async setRenderer(r: Renderer): Promise<void> {
-    const path = this.currentPath;
-    await this.renderer.close();
-    this.renderer = r;
-    if (path) await this.open(path);
+  /** Close the open document (if any) and free it in the backend. */
+  close(): void {
+    this.resetRendering();
+    this.closeDoc();
+    this.currentPath = "";
+    this.fileName = "";
+    this.error = null;
+    this.layout = computeLayout([], this.layoutMode);
+    this.requestFrame();
+    this.emitUi();
+  }
+
+  private closeDoc(): void {
+    if (this.doc) {
+      const id = this.doc.docId;
+      this.renderer.close(id).catch((e) => console.error("close failed", e));
+    }
+    this.doc = null;
   }
 
   currentPath = "";
@@ -479,7 +503,7 @@ export class Viewer {
     this.active.add(job);
     const t0 = performance.now();
     this.renderer
-      .renderRegion(job.req, job.ac.signal)
+      .renderRegion(this.doc!.docId, job.req, job.ac.signal)
       .then((bitmaps) => {
         if (!bitmaps || gen !== this.gen) {
           bitmaps?.forEach((b) => b.close());

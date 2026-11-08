@@ -2,7 +2,7 @@
 // Benchmark harness: launches the release build in --bench mode N times per file,
 // measures cold start from outside the process, and aggregates medians.
 //
-//   node tools/bench.mjs [--runs 3] [--renderer pdfjs|pdfjs-cpu|pdfium] [--exe path]
+//   node tools/bench.mjs [--runs 3] [--renderer pdfium] [--pdfium-threads N] [--dpr N] [--exe path]
 //                        [--only substring] [files...]
 //
 // Default files: everything in test-files/ and bench-output/synthetic/.
@@ -24,8 +24,16 @@ const opt = (name, def) => {
   return v;
 };
 const runs = Number(opt("runs", "3"));
-const renderer = opt("renderer", "pdfjs");
-const exe = resolve(opt("exe", join(root, "src-tauri", "target", "release", "vellum.exe")));
+const renderer = opt("renderer", "pdfium");
+// PDFium is the only renderer since v0.1 (pdf.js was removed). The flag stays so existing
+// command lines and the summary file names (summary-pdfium-*.json) keep working.
+if (renderer !== "pdfium") {
+  console.error(`Unknown renderer "${renderer}": PDFium is the only renderer since v0.1 (pdf.js was removed). Use --renderer pdfium or leave it out.`);
+  process.exit(2);
+}
+// Honours CARGO_TARGET_DIR (a shared target directory across worktrees).
+const targetDir = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : join(root, "src-tauri", "target");
+const exe = resolve(opt("exe", join(targetDir, "release", "vellum.exe")));
 const only = opt("only", null);
 const dpr = opt("dpr", null);
 const threads = opt("pdfium-threads", null);
@@ -59,7 +67,7 @@ const median = (a) => {
 function runOnce(file, outJson) {
   return new Promise((res) => {
     const t0 = Date.now();
-    const args = [file, "--bench", "--bench-out", outJson, "--renderer", renderer];
+    const args = [file, "--bench", "--bench-out", outJson];
     if (dpr) args.push("--dpr", dpr);
     if (threads) args.push("--pdfium-threads", threads);
     const p = spawn(exe, args, {

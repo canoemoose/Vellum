@@ -9,7 +9,7 @@
 //   wheel scrolls, shift+wheel scrolls sideways, ctrl+wheel / pinch zooms.
 // Keyboard (both): + / - zoom, Ctrl+0 fit page, Ctrl+1 actual size,
 //   PgUp/PgDn previous/next page, Home/End first/last page,
-//   F12 debug overlay, Ctrl+Shift+R switch renderer (pdf.js / PDFium).
+//   F12 debug overlay.
 
 import type { Viewer } from "./viewer";
 import {
@@ -22,7 +22,6 @@ import {
 export interface InputCallbacks {
   open(): void;
   toggleDebug(): void;
-  toggleRenderer(): void;
 }
 
 const DOUBLE_CLICK_MS = 350;
@@ -128,8 +127,6 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
       }
     } else if (e.key === "F12" || (ctrl && e.shiftKey && e.key.toLowerCase() === "d")) {
       cb.toggleDebug();
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "r") {
-      cb.toggleRenderer();
     } else if (ctrl && e.key.toLowerCase() === "o") {
       cb.open();
     } else if (ctrl && e.key === "0") {
