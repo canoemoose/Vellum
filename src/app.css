@@ -1,23 +1,58 @@
-/* Theme tokens. Dark is the only theme this phase; a light theme is a second block
-   under [data-theme="light"] with the same names, nothing else changes. */
+/* Theme tokens, from the mockups' <style> blocks (docs/mockups/project/Main.dc.html).
+   The shell sets data-theme on <html> ("dark" or "light"; "System" resolves to one of them)
+   and the accent variables inline (shell/theme.ts accentVars). Nothing else hard-codes a
+   colour; pages always render on white. */
 :root,
 :root[data-theme="dark"] {
   --chrome: #141517; /* title and status bars */
-  --app: #1b1c1f; /* panels */
-  --ctl: #232428; /* control groups */
+  --app: #1b1c1f; /* menu bar, toolbar, panels */
+  --ctl: #232428; /* control groups, menus */
   --bd: #2a2c31;
+  --bd-ctl: #2f3136;
   --bd-strong: #34363c;
+  --bd-input: #3a3d44;
   --tx: #e6e7ea;
   --tx2: #c9cbd1;
   --tx3: #9a9da5;
+  --tx-pop: #d4d6db;
   --canvas: #2b2d31; /* area behind pages */
-  --accent: #e5484d;
-  --accent-bd: color-mix(in srgb, var(--accent), #000 25%);
+  --tab-on: #2a2c31;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --map: #e9e9e6;
+  --hover: rgba(255, 255, 255, 0.06);
+  --danger: #e5484d;
+  color-scheme: dark;
+}
 
+:root[data-theme="light"] {
+  --chrome: #ebebe8;
+  --app: #f6f6f4;
+  --ctl: #ffffff;
+  --bd: #dcdcd7;
+  --bd-ctl: #d6d6d0;
+  --bd-strong: #cfcfc8;
+  --bd-input: #c4c4bd;
+  --tx: #1d1e21;
+  --tx2: #3d3f45;
+  --tx3: #5f6269;
+  --tx-pop: #2e3035;
+  --canvas: #d9d9d4;
+  --tab-on: #e3e3de;
+  --shadow: rgba(0, 0, 0, 0.18);
+  --map: #ffffff;
+  --hover: rgba(0, 0, 0, 0.05);
+  --danger: #c9353a;
+  color-scheme: light;
+}
+
+:root {
+  --accent: #e5484d;
+  --accent-soft: #e5484d2e;
+  --accent-bd: #ac3639;
+  /* Windows' own close-button hover red, the same in both themes. */
+  --close-hover: #c42b1c;
   --font-ui: "Inter", system-ui, "Segoe UI", sans-serif;
   --font-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
-  --bar-h: 40px;
-  color-scheme: dark;
 }
 
 * {
@@ -30,7 +65,7 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--chrome);
+  background: var(--app);
   color: var(--tx);
   font-family: var(--font-ui);
   font-size: 13px;
@@ -38,12 +73,100 @@ body,
   user-select: none;
 }
 
-button {
+button,
+input,
+select {
   font: inherit;
   color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .num {
   font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
+}
+
+/* Shared control styles (mockup sizes). */
+.btn {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--bd-strong);
+  background: var(--ctl);
+  color: var(--tx);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--tab-on);
+}
+/* Filled accent buttons keep a visible, darker border (house rule: never transparent). */
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent-bd);
+  color: #ffffff;
+  font-weight: 600;
+  padding: 0 18px;
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--tx2);
+}
+.btn.ghost:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.field {
+  height: 32px;
+  padding: 0 8px;
+  background: var(--ctl);
+  border: 1px solid var(--bd-input);
+  border-radius: 6px;
+  color: var(--tx);
+  user-select: text;
+}
+select.field {
+  padding-right: 4px;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--tx2);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--tx);
+}
+
+.selectable {
+  user-select: text;
 }
