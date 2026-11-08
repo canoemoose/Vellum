@@ -68,7 +68,26 @@ export function visibleTileRange(
   const ly0 = (0 - view.ty) / view.scale - page.y;
   const lx1 = (vw - view.tx) / view.scale - page.x;
   const ly1 = (vh - view.ty) / view.scale - page.y;
-  if (lx1 <= 0 || ly1 <= 0 || lx0 >= page.w || ly0 >= page.h) return null;
+  return tileRangeForRect(lx0, ly0, lx1, ly1, page.w, page.h, grid, rs, margin);
+}
+
+/**
+ * Tile index range covering the page-local rect (lx0, ly0)-(lx1, ly1) in points (unrotated
+ * page coordinates), grown by `margin` tiles on each side. Null when the rect misses the
+ * page (pw x ph points).
+ */
+export function tileRangeForRect(
+  lx0: number,
+  ly0: number,
+  lx1: number,
+  ly1: number,
+  pw: number,
+  ph: number,
+  grid: TileGrid,
+  rs: number,
+  margin = 0,
+): TileIndexRange | null {
+  if (lx1 <= 0 || ly1 <= 0 || lx0 >= pw || ly0 >= ph) return null;
   const i0 = Math.max(0, Math.floor((lx0 * rs) / TILE) - margin);
   const j0 = Math.max(0, Math.floor((ly0 * rs) / TILE) - margin);
   const i1 = Math.min(grid.cols - 1, Math.floor((lx1 * rs - 1e-6) / TILE) + margin);

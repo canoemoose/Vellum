@@ -33,6 +33,19 @@ export const WHEEL_NOTCH_FACTOR = 1.12;
 /** Chromium reports 100 px of deltaY per notch for a standard wheel (deltaMode 0). */
 export const PIXELS_PER_NOTCH = 100;
 
+/** Zoom presets for the toolbar dropdown and preset stepping (1 = 100%). */
+export const ZOOM_PRESETS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 4, 8, 16, 32, 64];
+
+/**
+ * The next preset above (dir 1) or below (dir -1) `zoom`, ignoring presets within 1% of
+ * it; null past the ends.
+ */
+export function nextZoomPreset(zoom: number, dir: 1 | -1, presets: number[] = ZOOM_PRESETS): number | null {
+  if (dir > 0) return presets.find((p) => p > zoom * 1.01) ?? null;
+  for (let i = presets.length - 1; i >= 0; i--) if (presets[i] < zoom / 1.01) return presets[i];
+  return null;
+}
+
 export function zoomToScale(zoom: number): number {
   return zoom * PT_TO_CSS;
 }
