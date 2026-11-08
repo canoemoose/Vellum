@@ -639,6 +639,11 @@
 
       const unDrop = await getCurrentWebview().onDragDropEvent((ev) => {
         const p = ev.payload;
+        // The print dialog's manual layout takes Explorer drops itself; don't also open them as tabs.
+        if (printOpen) {
+          dropping = false;
+          return;
+        }
         if (p.type === "enter" || p.type === "over") dropping = true;
         else if (p.type === "leave") dropping = false;
         else if (p.type === "drop") {
