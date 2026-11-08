@@ -2,6 +2,7 @@ pub mod docs;
 pub mod imagedoc;
 mod memory;
 pub mod pdfium;
+pub mod previewcache;
 pub mod scale;
 
 use docs::{DocInfo, Docs};
@@ -277,6 +278,44 @@ async fn doc_find_scale(
     blocking(move || docs.find_scale(&pdf, doc_id, page)).await
 }
 
+/// The page preview stored on disk for this document's file (WebP bytes), or an empty body.
+#[tauri::command]
+async fn doc_cached_preview(docs: tauri::State<'_, Arc<Docs>>, doc_id: u64, page: usize) -> Result<tauri::ipc::Response, String> {
+    let key = docs.cache_key(doc_id);
+    let bytes = blocking(move || {
+        Ok(key.and_then(|k| previewcache::get(&previewcache::cache_dir(), &k, page)).unwrap_or_default())
+    })
+    .await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Store a page preview on disk for this document's file. Raw body (WebP bytes) with
+/// `doc-id` and `page` headers. Written on a background thread; failures are only logged.
+#[tauri::command]
+fn doc_store_preview(docs: tauri::State<'_, Arc<Docs>>, request: tauri::ipc::Request) -> Result<(), String> {
+    let header = |name: &str| -> Result<u64, String> {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok())
+            .ok_or_else(|| format!("missing {name} header"))
+    };
+    let doc_id = header("doc-id")?;
+    let page = header("page")? as usize;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw body".into());
+    };
+    let Some(key) = docs.cache_key(doc_id) else { return Ok(()) };
+    let bytes = bytes.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = previewcache::put(&previewcache::cache_dir(), &key, page, &bytes, previewcache::MAX_BYTES) {
+            eprintln!("[preview-cache] could not store page {}: {e}", page + 1);
+        }
+    });
+    Ok(())
+}
+
 /// How many times the PDFium memory guard has trimmed page caches (benchmark reporting).
 #[tauri::command]
 fn pdfium_trims(state: tauri::State<PdfiumState>) -> usize {
@@ -336,6 +375,8 @@ pub fn run() {
             doc_page_text,
             doc_outline,
             doc_find_scale,
+            doc_cached_preview,
+            doc_store_preview,
             pdfium_trims,
         ])
         .run(tauri::generate_context!())

@@ -113,5 +113,12 @@ export interface Renderer {
   outline?(docId: number): Promise<OutlineNode[]>;
   /** Drawing-scale notes on a page, best first (empty if none). */
   findScale?(docId: number, page: number): Promise<ScaleCandidate[]>;
+  /**
+   * The page preview stored on disk for this document's file by an earlier session (the
+   * persistent preview cache), or null.
+   */
+  cachedPreview?(docId: number, page: number): Promise<ImageBitmap | null>;
+  /** Store a page preview on disk for next time (best effort). */
+  storePreview?(docId: number, page: number, bitmap: ImageBitmap): Promise<void>;
   close(docId: number): Promise<void>;
 }

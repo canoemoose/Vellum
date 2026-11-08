@@ -114,6 +114,8 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
   const sampleHeap = () => (heapPeak = Math.max(heapPeak, jsHeapMb() ?? 0));
   try {
     if (!args.file) throw new Error("--bench needs a file");
+    // Every run renders from cold, as in RESULTS.md: no previews from earlier runs.
+    v.diskPreviews = false;
     out.refreshHz = await measureRefresh();
     await resetMemoryPeak();
 

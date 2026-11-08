@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Viewer } from "./viewer";
 import { scaleKey } from "../render/tiles";
-import { BandRenderer, StubRenderer, doc, flush, installFakes, openViewer, stubCanvas, until } from "./testkit";
+import { BandRenderer, StubBitmap, StubRenderer, doc, flush, installFakes, openViewer, stubCanvas, until } from "./testkit";
 
 beforeEach(installFakes);
 afterEach(() => {
@@ -259,5 +259,63 @@ describe("Viewer detach and attach (tabs)", () => {
   it("detach with nothing attached returns null", async () => {
     const v = new Viewer(stubCanvas(), {}, new StubRenderer(doc([{ w: 1, h: 1 }])));
     expect(v.detach()).toBeNull();
+  });
+});
+
+describe("Viewer persistent previews", () => {
+  class DiskRenderer extends StubRenderer {
+    disk = new Map<number, StubBitmap>();
+    stored: number[] = [];
+    async cachedPreview(_docId: number, page: number): Promise<ImageBitmap | null> {
+      return (this.disk.get(page) as unknown as ImageBitmap) ?? null;
+    }
+    async storePreview(_docId: number, page: number): Promise<void> {
+      this.stored.push(page);
+    }
+  }
+
+  it("shows a stored preview at once on open, and doesn't store it again", async () => {
+    const r = new DiskRenderer(doc([{ w: 1190, h: 842 }]));
+    r.disk.set(0, new StubBitmap(2048, 1449));
+    const v = new Viewer(stubCanvas(), {}, r);
+    v.resize(800, 600, 1);
+    await v.open("C:/x/a.pdf", undefined, r);
+    await flush();
+    const pv = v.previewFor(0)!;
+    expect(pv).not.toBeNull();
+    expect(pv.rs).toBeCloseTo(2048 / 1190, 9);
+    // Nothing was rendered yet (renders are held), but the page already has content.
+    expect(r.calls.every((c) => !c.done)).toBe(true);
+    r.auto = true;
+    r.resolveAll();
+    await until(() => v.queueLength === 0 && !v.rendering);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(r.stored).toEqual([]);
+  });
+
+  it("stores a freshly made preview once the viewer is idle", async () => {
+    const r = new DiskRenderer(doc([{ w: 1190, h: 842 }]));
+    r.auto = true;
+    const v = new Viewer(stubCanvas(), {}, r);
+    v.resize(800, 600, 1);
+    await v.open("C:/x/a.pdf", undefined, r);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    expect(v.previewFor(0)).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(r.stored).toEqual([0]);
+  });
+
+  it("does nothing when diskPreviews is off", async () => {
+    const r = new DiskRenderer(doc([{ w: 1190, h: 842 }]));
+    r.disk.set(0, new StubBitmap(10, 10));
+    r.auto = true;
+    const v = new Viewer(stubCanvas(), {}, r);
+    v.diskPreviews = false;
+    v.resize(800, 600, 1);
+    await v.open("C:/x/a.pdf", undefined, r);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(v.previewFor(0)!.bitmap.width).not.toBe(10);
+    expect(r.stored).toEqual([]);
   });
 });

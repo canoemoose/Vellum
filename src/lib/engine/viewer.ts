@@ -245,6 +245,13 @@ export class Viewer {
   renderer: Renderer;
   /** Use progressive (band by band) renders when the renderer supports them. */
   progressive = true;
+  /**
+   * Use the persistent preview cache: show a page's stored preview at once on open, and
+   * store new previews for next time. Off in the benchmark, so runs stay cold.
+   */
+  diskPreviews = true;
+  /** Pages of the attached document whose preview is on disk or being stored this session. */
+  private storedPreviews = new Set<number>();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -304,6 +311,55 @@ export class Viewer {
     this.emitUi();
     // Nothing to wait for on open: render straight away rather than after the settle delay.
     this.settleNow();
+    this.loadDiskPreviews();
+  }
+
+  /**
+   * Show stored previews (from an earlier session) for the visible pages that have none yet.
+   * They arrive in a few ms, long before a heavy page's first band.
+   */
+  private loadDiskPreviews(): void {
+    const doc = this.doc;
+    const r = this.renderer;
+    if (!doc || !this.diskPreviews || !r.cachedPreview) return;
+    const gen = this.gen;
+    const vis = visibleWorldRect(this.view, this.vw, this.vh);
+    for (const p of pagesInRect(this.layout, vis)) {
+      if (this.previews.has(p)) continue;
+      r.cachedPreview(doc.docId, p)
+        .then((bmp) => {
+          if (!bmp) return;
+          if (gen !== this.gen || this.previews.has(p)) {
+            bmp.close();
+            return;
+          }
+          // Already on disk: don't store it again this session.
+          this.storedPreviews.add(p);
+          this.putPreview(p, bmp, bmp.width / doc.sizes[p].w);
+          this.requestFrame();
+        })
+        .catch(() => {});
+    }
+  }
+
+  /** Store a freshly made preview on disk once, when the viewer is idle. */
+  private storePreviewLater(page: number): void {
+    const doc = this.doc;
+    const r = this.renderer;
+    if (!doc || !this.diskPreviews || !r.storePreview || this.storedPreviews.has(page)) return;
+    this.storedPreviews.add(page);
+    const gen = this.gen;
+    const attempt = () => {
+      if (gen !== this.gen) return;
+      if (!this.idleForBackground) {
+        setTimeout(attempt, 250);
+        return;
+      }
+      const pv = this.previews.get(page);
+      if (!pv) return;
+      r.storePreview!(doc.docId, page, pv.bitmap).catch((e) => console.warn("preview cache store failed", String(e)));
+    };
+    setTimeout(attempt, 250);
   }
 
   private settleNow(): void {
@@ -405,6 +461,7 @@ export class Viewer {
     this.requestFrame();
     this.emitUi();
     this.settleNow();
+    this.loadDiskPreviews();
   }
 
   /** Free a detached document in the backend (closing a background tab). */
@@ -425,6 +482,7 @@ export class Viewer {
     for (const p of this.previews.values()) p.bitmap.close();
     this.previews.clear();
     this.previewBytes = 0;
+    this.storedPreviews.clear();
     this.measuring = false;
     this.pendingSharp = null;
   }
@@ -894,6 +952,7 @@ export class Viewer {
         this.rendersDone++;
         if (job.kind === "preview") {
           this.putPreview(job.page, bitmaps[0], job.rs);
+          this.storePreviewLater(job.page);
         } else {
           this.regionsThisSettle++;
           this.putTiles(job, bitmaps.map((bitmap, index) => ({ index, bitmap })));
@@ -1061,6 +1120,7 @@ export class Viewer {
         g.drawImage(t.bitmap, i * TILE * k, j * TILE * k, t.w * k, t.h * k);
       }
     this.putPreview(page, c.transferToImageBitmap(), prs);
+    this.storePreviewLater(page);
   }
 
   // ---------------------------------------------------------------- frame loop

@@ -50,10 +50,16 @@ enum Entry {
     Image(Arc<ImageDoc>),
 }
 
+struct Slot {
+    entry: Entry,
+    /// Content key for the persistent preview cache (None for in-memory documents).
+    cache_key: Option<String>,
+}
+
 #[derive(Default)]
 pub struct Docs {
     next: AtomicU64,
-    map: Mutex<HashMap<u64, Entry>>,
+    map: Mutex<HashMap<u64, Slot>>,
 }
 
 /// What a file is, from its first bytes. Pure, for tests.
@@ -102,11 +108,16 @@ impl Docs {
     }
 
     fn entry(&self, doc_id: u64) -> Result<EntryRef, String> {
-        match self.map.lock().unwrap().get(&doc_id) {
+        match self.map.lock().unwrap().get(&doc_id).map(|s| &s.entry) {
             Some(Entry::Pdf) => Ok(EntryRef::Pdf),
             Some(Entry::Image(i)) => Ok(EntryRef::Image(i.clone())),
             None => Err("document not open".into()),
         }
+    }
+
+    /// The document's key in the persistent preview cache, if it has one.
+    pub fn cache_key(&self, doc_id: u64) -> Option<String> {
+        self.map.lock().unwrap().get(&doc_id).and_then(|s| s.cache_key.clone())
     }
 
     /// Open a PDF or image file. Blocking: call from a worker thread.
@@ -115,10 +126,11 @@ impl Docs {
             .map_err(|e| format!("Could not read the file: {e}"))?
             .len();
         let doc_id = self.alloc_id();
+        let cache_key = crate::previewcache::content_key(path);
         match detect_kind(path)? {
             DocKind::Pdf => {
                 let o = pdf.open(doc_id, path, password)?;
-                self.map.lock().unwrap().insert(doc_id, Entry::Pdf);
+                self.map.lock().unwrap().insert(doc_id, Slot { entry: Entry::Pdf, cache_key });
                 Ok(DocInfo {
                     doc_id,
                     kind: DocKind::Pdf,
@@ -138,7 +150,7 @@ impl Docs {
                     meta: DocMeta { file_size, pdf: PdfMeta::default(), note: img.note() },
                     workers: 0,
                 };
-                self.map.lock().unwrap().insert(doc_id, Entry::Image(Arc::new(img)));
+                self.map.lock().unwrap().insert(doc_id, Slot { entry: Entry::Image(Arc::new(img)), cache_key });
                 Ok(info)
             }
         }
@@ -150,7 +162,7 @@ impl Docs {
         let doc_id = self.alloc_id();
         let file_size = bytes.len() as u64;
         let o = pdf.open_memory(doc_id, Arc::new(bytes), None)?;
-        self.map.lock().unwrap().insert(doc_id, Entry::Pdf);
+        self.map.lock().unwrap().insert(doc_id, Slot { entry: Entry::Pdf, cache_key: None });
         Ok(DocInfo {
             doc_id,
             kind: DocKind::Pdf,
@@ -169,7 +181,7 @@ impl Docs {
     }
 
     pub fn close(&self, pdf: &PdfiumState, doc_id: u64) {
-        match self.map.lock().unwrap().remove(&doc_id) {
+        match self.map.lock().unwrap().remove(&doc_id).map(|s| s.entry) {
             Some(Entry::Pdf) => pdf.close(doc_id),
             Some(Entry::Image(_)) | None => {}
         }

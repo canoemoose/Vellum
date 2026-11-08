@@ -161,6 +161,21 @@ export abstract class BackendRenderer implements Renderer {
     return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 0, w * h * 4), w, h));
   }
 
+  async cachedPreview(docId: number, page: number): Promise<ImageBitmap | null> {
+    const buf = await invoke<ArrayBuffer>("doc_cached_preview", { docId, page });
+    if (buf.byteLength === 0) return null;
+    return createImageBitmap(new Blob([buf], { type: "image/webp" }));
+  }
+
+  async storePreview(docId: number, page: number, bitmap: ImageBitmap): Promise<void> {
+    if (typeof OffscreenCanvas === "undefined") return;
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height);
+    c.getContext("2d", { alpha: false })!.drawImage(bitmap, 0, 0);
+    const blob = await c.convertToBlob({ type: "image/webp", quality: 0.85 });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    await invoke("doc_store_preview", bytes, { headers: { "doc-id": String(docId), page: String(page) } });
+  }
+
   pageText(docId: number, page: number): Promise<string> {
     return invoke<string>("doc_page_text", { docId, page });
   }
