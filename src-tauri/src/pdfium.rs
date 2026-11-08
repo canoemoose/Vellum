@@ -924,6 +924,7 @@ fn open_doc(
     password: Option<&str>,
     want_info: bool,
 ) -> Result<(Doc, Option<PdfOpened>), String> {
+    let lod_path = match &src { DocSource::Path(p) => Some(p.clone()), DocSource::Memory(_) => None }; // WP-LOD
     let (handle, bytes) = match src {
         DocSource::Path(p) => (unsafe { b.FPDF_LoadDocument(&p.to_string_lossy(), password) }, None),
         DocSource::Memory(m) => (unsafe { b.FPDF_LoadMemDocument64(&m, password) }, Some(m)),
@@ -939,6 +940,7 @@ fn open_doc(
             c => format!("PDFium could not open the file (error {c})"),
         });
     }
+    crate::pdfium_lod::on_open(handle, lod_path); // WP-LOD
     let mut d = Doc { handle, pages: HashMap::new(), order: Vec::new(), _bytes: bytes };
     if !want_info {
         return Ok((d, None));
@@ -1044,6 +1046,7 @@ fn bands_for_page(b: &dyn PdfiumLibraryBindings, d: &mut Doc, page: usize, max: 
 }
 
 fn close_doc(b: &dyn PdfiumLibraryBindings, d: Doc) {
+    crate::pdfium_lod::on_close(b, d.handle); // WP-LOD
     unsafe {
         for (_, p) in d.pages {
             b.FPDF_ClosePage(p);
@@ -1056,6 +1059,7 @@ fn close_doc(b: &dyn PdfiumLibraryBindings, d: Doc) {
 /// Render the strip's device-pixel rect of the page at `rs` device px per point.
 fn render_strip(b: &dyn PdfiumLibraryBindings, d: &mut Doc, s: &Strip) -> Result<(), String> {
     let page = get_page(b, d, s.page)?;
+    let page = crate::pdfium_lod::page_for_render(b, d.handle, s.page, s.rs, page); // WP-LOD
     let (pw, ph) = unsafe { (b.FPDF_GetPageWidthF(page), b.FPDF_GetPageHeightF(page)) };
     let bmp = unsafe { b.FPDFBitmap_CreateEx(s.w, s.h, FPDF_BITMAP_BGRA, s.ptr as *mut _, s.stride) };
     if bmp.is_null() {
