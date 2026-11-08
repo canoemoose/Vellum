@@ -396,6 +396,16 @@ fn one() -> u32 {
     1
 }
 
+/// Testing aid: with VELLUM_PRINT_TO_FILE=<folder>, every job goes to a new file there
+/// (vellum-print-<ms since epoch>.pdf) instead of the driver asking or the printer printing.
+/// Only drivers that write files honour it (Microsoft Print to PDF does); others print as usual.
+fn test_output_file() -> Option<String> {
+    let dir = std::path::PathBuf::from(std::env::var_os("VELLUM_PRINT_TO_FILE")?);
+    let _ = std::fs::create_dir_all(&dir);
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    Some(dir.join(format!("vellum-print-{ms}.pdf")).to_string_lossy().into_owned())
+}
+
 static CANCEL: AtomicBool = AtomicBool::new(false);
 
 /// Ask the job being sent to stop after the current band.
@@ -484,7 +494,8 @@ pub fn send(pdf: &PdfiumState, bytes: Arc<Vec<u8>>, sheets: &[(f64, f64)], o: &S
     }
     let dc = Dc(dc);
     let title = wide(if o.title.is_empty() { "Vellum" } else { &o.title });
-    let out = o.output_file.as_deref().map(wide);
+    let out_path = o.output_file.clone().or_else(test_output_file);
+    let out = out_path.as_deref().map(wide);
     let di = DOCINFOW {
         cbSize: std::mem::size_of::<DOCINFOW>() as i32,
         lpszDocName: PCWSTR(title.as_ptr()),
@@ -493,7 +504,14 @@ pub fn send(pdf: &PdfiumState, bytes: Arc<Vec<u8>>, sheets: &[(f64, f64)], o: &S
         fwType: 0,
     };
     if unsafe { StartDocW(dc.0, &di) } <= 0 {
-        return Err(format!("{} refused the print job", o.printer));
+        // A driver that asks where to save (Microsoft Print to PDF) fails StartDoc with
+        // ERROR_CANCELLED when that box is cancelled.
+        const ERROR_CANCELLED: u32 = 1223;
+        let err = std::io::Error::last_os_error().raw_os_error().unwrap_or(0) as u32;
+        return Err(if err == ERROR_CANCELLED { "Printing cancelled".into() } else { format!("{} refused the print job", o.printer) });
+    }
+    if let Some(p) = &out_path {
+        eprintln!("[print] writing to {p}");
     }
     let r = (|| -> Result<(), String> {
         let mut current = (first_paper, first_land);
