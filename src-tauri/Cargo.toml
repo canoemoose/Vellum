@@ -37,6 +37,23 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
 ] }
 
+# WP-Print: printer enumeration, capabilities and GDI output (StartDoc / StretchDIBits), and
+# pdfium-render's win32 bindings for FPDF_RenderPage (the Vector print path).
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Graphics_Printing",
+  "Win32_Storage_Xps",
+]
+
+[target.'cfg(windows)'.dependencies.pdfium-render]
+version = "0.9"
+default-features = false
+features = ["pdfium_latest", "pdfium_use_win32"]
+# End WP-Print
+
 [profile.release]
 codegen-units = 1
 lto = true
