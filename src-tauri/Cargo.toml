@@ -26,6 +26,8 @@ pdfium-render = { version = "0.9", default-features = false, features = ["pdfium
 # WP-Images: decode image documents, then crop and resample regions in Rust.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "tiff", "bmp", "gif"] }
 fast_image_resize = "5"
+# WP-LOD: scaled-IDCT JPEG decode (1/8) for image level of detail.
+jpeg-decoder = { version = "0.3", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
@@ -41,3 +43,6 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg"] }

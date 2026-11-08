@@ -3,6 +3,7 @@ pub mod imagedoc;
 mod memory;
 pub mod pdfium;
 pub mod previewcache;
+pub mod pdfium_lod; // WP-LOD
 pub mod scale;
 
 use docs::{DocInfo, Docs};
