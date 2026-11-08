@@ -5,6 +5,7 @@ pub mod pdfium;
 pub mod previewcache;
 pub mod pdfium_lod; // WP-LOD
 pub mod scale;
+pub mod shell; // WP-Shell
 
 use docs::{DocInfo, Docs};
 use memory::{MemState, MemStats};
@@ -342,7 +343,10 @@ pub fn run() {
     memory::start_sampler(mem.0.clone(), Duration::from_millis(200));
     let pdfium_state = PdfiumState::new(pdfium_threads, mem.0.clone());
 
-    tauri::Builder::default()
+    // WP-Shell: single instance (must be the first plugin) and shell state.
+    let builder = shell::register(tauri::Builder::default(), bench);
+    // WP-Shell end
+    builder
         .plugin(tauri_plugin_dialog::init())
         .manage(Launch(args))
         .manage(mem)
@@ -382,6 +386,10 @@ pub fn run() {
             doc_cached_preview,
             doc_store_preview,
             pdfium_trims,
+            // WP-Shell
+            shell::shell_take_pending,
+            shell::reveal_in_explorer,
+            // WP-Shell end
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
