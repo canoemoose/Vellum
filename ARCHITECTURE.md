@@ -183,7 +183,7 @@ answer text, outline and scale queries with empty results.
 | `doc_thumbnail(docId, page, maxSide)` | RGBA plus an 8-byte trailer: `w`, `h` as little-endian u32 |
 | `doc_page_text(docId, page)` | the page's text (`FPDFText_GetText`) |
 | `doc_outline(docId)` | `OutlineNode[]`: `{ title, page \| null, y \| null, children }`, y in points from the page top |
-| `doc_find_scale(docId, page)` | `[{ ratio, text, bbox: [x0, y0, x1, y1] }]` best first; bbox in page points, y down |
+| `doc_find_scale(docId, page)` | `[{ ratio, text, bbox: [x0, y0, x1, y1], statedRatio, sheet }]` best first; bbox in page points, y down. "1:200 @A3" on an A1 page gives ratio 100, statedRatio 200, sheet "A3" |
 | `doc_close(docId)` | frees the document on every worker |
 
 `region` is `{ id, page, rs, x, y, w, h }`: a device-pixel rect of the page bitmap at `rs`
@@ -333,6 +333,69 @@ JPEGs are swapped for 1/8 decodes, below a per-page scale threshold. It's off un
 `VELLUM_IMAGE_LOD=1` because it measured slower and used twice the memory on the aerial
 drawing (see `docs/v0.1-handoff/lod.md`).
 
+## Shell (v0.1)
+
+`src/App.svelte` wires the shell; components live in `src/lib/components/` and everything
+that can be pure is in `src/lib/shell/` with Vitest tests (tab list, menu keyboard
+navigation, paper names and coordinate text, scale choice and parsing, window placement,
+formatting, shortcuts, theme maths, export size limits).
+
+- **One viewer, many tabs.** The canvas and `Viewer` are shared. Switching tabs calls
+  `viewer.detach()` (the document stays open in the backend with up to 32 MB of previews) and
+  `viewer.attach()` for the target, so a tab comes back instantly with its view, page and
+  rotation. A tab whose open was interrupted by a switch goes back to "pending" and reopens
+  when it is next shown. Opens are queued (`openPaths`), so drops and forwarded launches wait
+  their turn.
+- **Window.** No native decorations; the title bar is HTML with `data-tauri-drag-region` on
+  empty space only, window buttons call the Tauri window API. Size, position and maximised
+  state are stored in the settings and restored before the window is shown, fitted to a
+  monitor's work area (`shell/windowPlacement.ts`). Snap layouts on hovering maximise are
+  not available on a custom title bar.
+- **Single instance** (`src-tauri/src/shell.rs`): `tauri-plugin-single-instance` forwards a
+  second launch's file to the running window (`vellum://open-files` event); files that
+  arrive before the front end listens are queued and collected with `shell_take_pending`.
+  `--bench`, `--new-instance` and `VELLUM_MULTI_INSTANCE` bypass it.
+- **Themes.** Two token sets on `:root[data-theme]` in `src/app.css`; the accent is set as
+  `--accent`, `--accent-soft` and `--accent-bd` on the root. Components use tokens only.
+- **Drawing scale.** On open, `findScale(docId, 0)`; the best candidate is adopted only from
+  a title-block position (`shell/scale.ts`). Hand-set scales are remembered per file. The
+  tab's scale feeds the status bar and `PrintContext`.
+- **Settings** are one validated object in localStorage (`vellum.settings.v1`); print
+  presets are WP-Print's own keys.
+- **Installer.** NSIS, per user. `src-tauri/windows/installer-hooks.nsh` registers Vellum
+  under "Open with" (`OpenWithProgids` + `Applications\vellum.exe`) for PDFs and the image
+  types without becoming the default.
+
+## Printing (`src-tauri/src/print/`, `src/lib/print/`)
+
+The dialog and the manual layout are thin over a pure model (`src/lib/print/model/`) that
+turns settings or hand placement into a **job**: sheets (size in points) of placed items
+(document id, page, crop in displayed page points, position, scale, quarter-turn rotation),
+stroked lines, text and an optional clip. Rust composes the job into a PDF and prints that.
+
+- **Compose** (`compose.rs`, on one PDFium worker via `run_on_worker`): a new document, one
+  page per sheet. Each placed page is a form XObject (`FPDF_NewXObjectFromPage`), cached per
+  (page, crop) for the job, so a page tiled across many sheets is stored once, and placed
+  with `FPDF_NewFormObjectFromXObject` and a matrix (`job::item_matrix`). A crop is the
+  source page's crop box at the moment the XObject is made (that bounds a page XObject).
+  Sources are reopened privately by path, so crops and annotation flattening never touch the
+  viewer's documents. Images go through a scratch page. Tiles are clipped with
+  `FPDFPage_TransFormWithClip` before the cut marks and stamp are added. The result is kept
+  by job id (`print_compose`) for Save as PDF (`print_save_pdf`) or printing.
+- **Print** (`gdi.rs`): `CreateDC` with the printer's DEVMODE (copies, collate, duplex,
+  colour, paper and orientation per sheet via `ResetDC`), `StartDoc`, then per sheet either
+  bands of 512 rows rendered at 300/600 dpi (`raster.rs`: the composed PDF open privately on
+  one worker, each band one `run_on_worker_index` call so viewer renders interleave) and sent
+  with `StretchDIBits`, or Vector: `FPDF_RenderPage` to the printer DC. Sheet coordinates are
+  paper coordinates; the DC's origin is offset by `PHYSICALOFFSET`.
+- **Front end**: `PrintDialog.svelte` (props `{ open, context, onClose }`, the shell's
+  `PrintContext` in `src/lib/print/context.ts`), `ManualLayout.svelte`; `painter.ts` draws
+  sheets from the job through the shared renderer (an item is a region render of its page).
+  Settings and presets in localStorage under `vellum.print.*`.
+- **Tests**: the model in Vitest; geometry, composition (rendered and measured) and a real
+  Microsoft Print to PDF round trip in `cargo test` (`print_*`), the latter also from
+  `npm test`.
+
 ## Navigation (`input.ts`)
 
 Wheel events are classified as notched mouse wheel or touchpad. Per event: deltaMode 1/2,
@@ -370,3 +433,6 @@ pans with pointer capture; its mousedown is cancelled to stop Windows autoscroll
 | `image` (Rust, jpeg/png/webp/tiff/bmp/gif only) | Decodes image documents, including EXIF orientation, 16-bit and CMYK JPEG. MIT/Apache. |
 | `fast_image_resize` (Rust) | SIMD crop-and-resample of image regions, the job PDFium does for PDFs. MIT/Apache. |
 | `jpeg-decoder` (Rust, no default features) | Scaled-IDCT 1/8 JPEG decode for the image LOD prototype. Pure Rust, builds on the GNU toolchain without NASM or CMake. MIT/Apache. |
+| `tauri-plugin-single-instance` (Rust) | A second launch (Explorer "Open with") hands its file to the running window instead of opening another. The official Tauri plugin; MIT/Apache. |
+| `windows` 0.62 (Rust; `Win32_Foundation`, `Win32_Graphics_Gdi`, `Win32_Graphics_Printing`, `Win32_Storage_Xps`) | Printer enumeration, capabilities, DEVMODE and the driver dialog, and GDI output (`StartDoc`, `StretchDIBits`). Same version `pdfium-render` uses for its HDC type. MIT/Apache. |
+| `pdfium-render` feature `pdfium_use_win32` (Windows only) | Exposes `FPDF_RenderPage` with a GDI `HDC`, the Vector print path. No new crate. |
