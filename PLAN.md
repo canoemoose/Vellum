@@ -1,3 +1,7 @@
+> **Historical.** This was the phase 0 plan. The live scope is
+> [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-brief.md) and
+> [docs/v0.1-report.md](docs/v0.1-report.md).
+
 # Vellum Phase 0: build plan
 
 Source of truth for the rendering/navigation spike. Brief: [docs/vellum-scope-spike.md](docs/vellum-scope-spike.md).

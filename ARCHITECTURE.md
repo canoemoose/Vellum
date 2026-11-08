@@ -305,6 +305,29 @@ touching the backend; otherwise `doc_thumbnail` renders it through the pool. A t
 render already inside PDFium can't be interrupted, so a heavy page (about 1 s on the aerial
 drawing) can still delay a zoom that starts while it runs.
 
+## Images (`imagedoc.rs`)
+
+Image files open as one-page documents through the same `doc_*` commands as PDFs;
+`docs.rs` routes them to `imagedoc.rs` by extension (or content sniffing for unknown
+extensions). `ImageDoc::open` decodes once on Tauri's blocking pool with the `image` crate,
+applies the EXIF orientation, flattens alpha onto white and keeps two levels in memory: full
+size and a quarter-size copy (each side divided by four). The page size is the pixel size at
+the file's embedded DPI (EXIF/JFIF, PNG pHYs, TIFF resolution tags, BMP header, WebP EXIF),
+96 DPI if none, so actual size and 100% printing are right. A region render picks the smaller
+level when it still has a source pixel per device pixel, maps the device-pixel region to a
+fractional source rectangle (`imagedoc::geom::map_region`, which clips the parts off the page
+and the half-pixel past the page's exact extent) and resamples just that with
+`fast_image_resize` (bilinear convolution). Streaming sends an image region as one band.
+Images over 120 megapixels are kept at half resolution, page size unchanged, and
+`DocMeta.note` says so for the tab.
+
+## Image level of detail (experimental, off: `pdfium_lod.rs`)
+
+`pdfium_lod.rs` can render image-heavy pages from a second handle on the file whose large
+JPEGs are swapped for 1/8 decodes, below a per-page scale threshold. It's off unless
+`VELLUM_IMAGE_LOD=1` because it measured slower and used twice the memory on the aerial
+drawing (see `docs/v0.1-handoff/lod.md`).
+
 ## Navigation (`input.ts`)
 
 Wheel events are classified as notched mouse wheel or touchpad. Per event: deltaMode 1/2,
@@ -339,3 +362,6 @@ pans with pointer capture; its mousedown is cancelled to stop Windows autoscroll
 | `vitest` (dev) | Unit tests; shares Vite's config, nothing else to set up. |
 | `windows-sys` (Rust) | Process-tree memory sampling (Toolhelp + psapi). |
 | `pdfium-render` (Rust) | Loads `pdfium.dll` and exposes its C API. Only the raw bindings are used. |
+| `image` (Rust, jpeg/png/webp/tiff/bmp/gif only) | Decodes image documents, including EXIF orientation, 16-bit and CMYK JPEG. MIT/Apache. |
+| `fast_image_resize` (Rust) | SIMD crop-and-resample of image regions, the job PDFium does for PDFs. MIT/Apache. |
+| `jpeg-decoder` (Rust, no default features) | Scaled-IDCT 1/8 JPEG decode for the image LOD prototype. Pure Rust, builds on the GNU toolchain without NASM or CMake. MIT/Apache. |

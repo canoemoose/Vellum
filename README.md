@@ -1,9 +1,10 @@
-# Vellum (phase 0 spike)
+# Vellum
 
-A fast PDF viewer for CAD drawings (stage plans, rigging plots, venue drawings). This
-repository is the **phase 0 rendering spike**: the thinnest viewer that opens a PDF and
-navigates it, built to measure whether pdf.js is good enough or rendering must move to
-PDFium. The answer is in [RESULTS.md](RESULTS.md); how it works is in
+A fast PDF and image viewer for CAD drawings (stage plans, rigging plots, venue drawings).
+Phase 0 was a rendering spike that settled on PDFium (see [RESULTS.md](RESULTS.md)); v0.1,
+the first real app, is in progress (brief in
+[docs/vellum-v0.1-brief.md](docs/vellum-v0.1-brief.md), status in
+[docs/v0.1-report.md](docs/v0.1-report.md)). How it works is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## What you need installed (once)
@@ -28,14 +29,14 @@ Open a terminal (PowerShell or Windows Terminal) in this folder and run:
 npm install
 ```
 
-The PDFium library (the default renderer, see RESULTS.md) is downloaded automatically the first
+The PDFium library (the only renderer, see RESULTS.md) is downloaded automatically the first
 time you run or build. To fetch it by hand:
 
 ```bash
 node tools/fetch-pdfium.mjs
 ```
 
-If it's missing, Vellum falls back to pdf.js.
+If it's missing, Vellum says so and shows this command.
 
 ## Run it
 
@@ -64,8 +65,8 @@ npm run tauri build -- --no-bundle
 ```
 
 The release program takes a file path, so Windows "Open with…" works:
-`vellum.exe "C:\path\to\drawing.pdf"`. Add `--renderer pdfjs` to use pdf.js instead of PDFium (the default),
-and `--debug` to start with the performance overlay showing.
+`vellum.exe "C:\path\to\drawing.pdf"`. Images (JPEG, PNG, WebP, TIFF, BMP,
+GIF) open the same way. Add `--debug` to start with the performance overlay showing.
 
 ## Using it
 
@@ -85,7 +86,6 @@ the window, or from the command line.
 | Previous / next page | Page Up / Page Down | Same |
 | First / last page | Home / End | Same |
 | Performance overlay | F12 (or Ctrl+Shift+D) | Same |
-| Switch renderer (PDFium / pdf.js) | Ctrl+Shift+R | Same |
 
 The CAD/Document switch and Continuous/Single page switch are in the top bar and are
 remembered between launches.
@@ -101,8 +101,7 @@ writes median results:
 ```bash
 npm run gen:synthetic
 npm run tauri build -- --no-bundle
-npm run bench -- --runs 3 --renderer pdfjs
-npm run bench -- --runs 3 --renderer pdfium
+npm run bench -- --runs 3 --pdfium-threads 8
 ```
 
 Put your own PDFs in `test-files\` (ignored by git) and they're included automatically.

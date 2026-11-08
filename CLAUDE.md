@@ -12,7 +12,10 @@ v0.1, the first real app: brief in [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-
 - `npm run tauri dev`: run in development.
 - `npm run tauri build -- --no-bundle`: release exe only (what the benchmarks use).
 - `npm run gen:synthetic`: write the synthetic stress PDFs to `bench-output/synthetic/`.
-- `npm run bench -- --runs 3 --renderer pdfjs|pdfium [--dpr 2] [--only name]`.
+- `npm run bench -- --runs 3 [--pdfium-threads 8] [--dpr 2] [--only name] [--exe path] [files...]`
+  (PDFium is the only renderer; `--renderer pdfium` is accepted). Honours `CARGO_TARGET_DIR`.
+- `VELLUM_PDFIUM_TIMING=1` logs per-strip render times; `VELLUM_IMAGE_LOD=1` turns on the
+  experimental image level of detail (off: it measured slower, see docs/v0.1-handoff/lod.md).
 - `node tools/fetch-pdfium.mjs`: download `pdfium.dll` into `src-tauri/pdfium/`.
 
 ## Conventions
@@ -27,6 +30,10 @@ v0.1, the first real app: brief in [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-
 ## Toolchain notes
 
 - This repo builds with the standard MSVC Rust toolchain (Tauri's documented prerequisite).
+  The machine v0.1 was built on has the GNU toolchain plus a portable MinGW instead: every
+  cargo or tauri command there needs `source ~/.vellum-toolchain/env.sh` first.
+- A release exe copied elsewhere needs `pdfium.dll` and (GNU target) `WebView2Loader.dll`
+  beside it.
 - The spike was developed on a machine without MSVC Build Tools, using the GNU toolchain plus a
   portable WinLibs MinGW on PATH. That's why `crate-type` is `["rlib"]` only (the MinGW linker
   can't produce the mobile `cdylib`). Harmless on MSVC.
