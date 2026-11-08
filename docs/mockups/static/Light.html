@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PDF viewer main window, light</title>
+
+</head>
+<body>
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#3b6fd9}a:hover{color:#2a54aa}
+button{font:inherit;color:inherit;cursor:pointer}
+.t-dark{--chrome:#141517;--app:#1b1c1f;--ctl:#232428;--bd:#2a2c31;--bd-ctl:#2f3136;--bd-strong:#34363c;--bd-input:#3a3d44;--tx:#e6e7ea;--tx2:#c9cbd1;--tx3:#9a9da5;--tx-pop:#d4d6db;--canvas:#2b2d31;--tab-on:#2a2c31;--shadow:rgba(0,0,0,0.45);--map:#e9e9e6}
+.t-light{--chrome:#ebebe8;--app:#f6f6f4;--ctl:#ffffff;--bd:#dcdcd7;--bd-ctl:#d6d6d0;--bd-strong:#cfcfc8;--bd-input:#c4c4bd;--tx:#1d1e21;--tx2:#3d3f45;--tx3:#5f6269;--tx-pop:#2e3035;--canvas:#d9d9d4;--tab-on:#e3e3de;--shadow:rgba(0,0,0,0.18);--map:#ffffff}
+@media (max-width: 760px){.sidebar{display:none !important}.hint{display:none !important}}
+</style>
+
+<div class="t-light" style="width: 100%; height: 900px; display: flex; flex-direction: column; background: var(--app); color: var(--tx); font-family: Inter, system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<!-- Title bar with document tabs -->
+<div style="height: 40px; display: flex; align-items: stretch; background: var(--chrome); border-bottom: 1px solid var(--bd); flex-shrink: 0">
+<div style="display: flex; align-items: center; gap: 8px; padding: 0 14px 0 16px">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5" fill="none" stroke="#e5484d" stroke-width="1.5"></rect><path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="#e5484d" stroke-width="1.5" stroke-linecap="round"></path></svg>
+<span style="font-weight: 600; letter-spacing: 0.01em">Vellum</span>
+</div>
+<div style="display: flex; align-items: flex-end; gap: 2px; flex: 1 1 auto; min-width: 0; overflow: hidden">
+<div style="height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px; background: var(--app); border: 1px solid var(--bd); border-bottom: none; border-radius: 6px 6px 0 0; white-space: nowrap">
+<span>Hall 3 — Stage Plan Rev C.pdf</span>
+<button aria-label="Close tab" style="width: 20px; height: 20px; border: none; background: transparent; color: var(--tx3); border-radius: 4px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+</div>
+<div style="height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px; color: var(--tx3); white-space: nowrap">
+<span>Rigging Plot v4.pdf</span>
+<button aria-label="Close tab" style="width: 20px; height: 20px; border: none; background: transparent; color: var(--tx3); border-radius: 4px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+</div>
+<div style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; color: var(--tx3); white-space: nowrap">
+<svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="2.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"></rect><path d="M2 10l3-3 2.5 2.5L9 8l3 3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+<span>Truss detail (site photo).jpg</span>
+<button aria-label="Close tab" style="width: 20px; height: 20px; border: none; background: transparent; color: var(--tx3); border-radius: 4px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+</div>
+<button aria-label="Open file" style="width: 28px; height: 28px; margin-bottom: 2px; border: none; background: transparent; color: var(--tx3); border-radius: 4px; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+</div>
+<div style="display: flex; align-items: stretch">
+<button aria-label="Minimise" style="width: 46px; border: none; background: transparent; color: var(--tx3); display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"></path></svg></button>
+<button aria-label="Maximise" style="width: 46px; border: none; background: transparent; color: var(--tx3); display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"></rect></svg></button>
+<button aria-label="Close window" style="width: 46px; border: none; background: transparent; color: var(--tx3); display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"></path></svg></button>
+</div>
+</div>
+
+<!-- Menu bar -->
+<nav aria-label="Application menu" style="height: 32px; display: flex; align-items: center; gap: 2px; padding: 0 8px; background: var(--app); border-bottom: 1px solid var(--bd); flex-shrink: 0">
+<button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: var(--tx2); border-radius: 5px">File</button>
+<button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: var(--tx2); border-radius: 5px">Edit</button>
+<button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: var(--tx2); border-radius: 5px">View</button>
+<button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: var(--tx2); border-radius: 5px">Document</button>
+<button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: var(--tx2); border-radius: 5px">Markup</button>
+<button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: var(--tx2); border-radius: 5px">Tools</button>
+<button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: var(--tx2); border-radius: 5px">Help</button>
+</nav>
+
+<!-- Toolbar -->
+<div style="min-height: 48px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 12px; background: var(--app); border-bottom: 1px solid var(--bd); flex-shrink: 0">
+<button aria-label="Toggle sidebar" style="width: 34px; height: 34px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="3" width="14" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"></rect><path d="M7 3v12" stroke="currentColor" stroke-width="1.4"></path></svg></button>
+
+<div style="display: flex; align-items: center; gap: 2px; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px">
+<button aria-label="Previous page" style="width: 30px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M8.5 3L4.5 7l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+<label for="pagebox-l" style="position: absolute; left: -9999px">Page</label>
+<input id="pagebox-l" value="3" style="width: 30px; height: 24px; border: 1px solid var(--bd-input); background: var(--app); color: var(--tx); border-radius: 4px; text-align: center; font: inherit">
+<span style="color: var(--tx3); padding: 0 6px 0 4px">of 12</span>
+<button aria-label="Next page" style="width: 30px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5.5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 2px; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px">
+<button aria-label="Zoom out" style="width: 30px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+<button style="height: 30px; padding: 0 8px; border: none; background: transparent; color: var(--tx); border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px">212%</button>
+<button aria-label="Zoom in" style="width: 30px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7h8M7 3v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+<span style="width: 1px; height: 18px; background: var(--bd-strong); margin: 0 2px"></span>
+<button style="height: 30px; padding: 0 9px; border: none; background: transparent; color: var(--tx2); border-radius: 6px">Fit page</button>
+<button style="height: 30px; padding: 0 9px; border: none; background: transparent; color: var(--tx2); border-radius: 6px">Fit width</button>
+</div>
+
+<div style="flex: 1 1 0; min-width: 0"></div>
+
+<!-- Tools -->
+<div style="display: flex; align-items: center; gap: 2px; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px">
+<button aria-label="Select" style="width: 34px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5l9 5-4 1-1.5 4.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path></svg></button>
+<button aria-label="Highlight" style="width: 34px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5l4 4-6 6H3.5v-4z M2.5 14.5h11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"></path></svg></button>
+<button aria-label="Text" style="width: 34px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h10M8 3.5v9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+<button aria-label="Pen" style="width: 34px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12c2-3 3.5-6 5.5-6s1 5 3 5 2-3 2.5-5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+<button aria-label="Shape" style="width: 34px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"></rect></svg></button>
+<button aria-label="Measure" style="width: 34px; height: 30px; border: none; background: #e5484d2e; color: #e5484d; border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11l9-9 3 3-9 9z M5 8l1.5 1.5M7 6l1 1M9 4l1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"></path></svg></button>
+<button aria-label="Comment" style="width: 34px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path></svg></button>
+<button aria-label="Sign" style="width: 34px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11.5c1.5-2 2.5-5 4-5s-1 5 1 5 2-2.5 3-2.5 0.5 2.5 2 2.5M2 14h12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+</div>
+
+<div style="flex: 1 1 0; min-width: 0"></div>
+
+<button aria-label="Search" style="width: 34px; height: 34px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="17" height="17" viewBox="0 0 17 17" aria-hidden="true"><circle cx="7.5" cy="7.5" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+<button style="height: 32px; padding: 0 12px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px">Save</button>
+</div>
+
+<!-- Body -->
+<div style="flex: 1 1 auto; min-height: 0; display: flex">
+
+<!-- Sidebar -->
+<div class="sidebar" style="width: 196px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--app); border-right: 1px solid var(--bd)">
+<div style="display: flex; gap: 2px; padding: 8px 8px 6px">
+<button style="flex: 1 1 0; height: 28px; border: none; background: var(--tab-on); color: var(--tx); border-radius: 6px; font-size: 12px">Pages</button>
+<button style="flex: 1 1 0; height: 28px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; font-size: 12px">Outline</button>
+<button style="flex: 1 1 0; height: 28px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; font-size: 12px">Markups</button>
+</div>
+<div style="flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 10px 0">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<div style="width: 132px; height: 93px; background: #fbfbf9; border-radius: 2px; border: 1px solid var(--bd-input)"></div>
+<span style="color: var(--tx3); font-size: 12px">1</span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<div style="width: 132px; height: 93px; background: #fbfbf9; border-radius: 2px; border: 1px solid var(--bd-input)"></div>
+<span style="color: var(--tx3); font-size: 12px">2</span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<div style="width: 132px; height: 93px; background: #fbfbf9; border-radius: 2px; outline: 2px solid #e5484d; outline-offset: 3px; display: flex; align-items: center; justify-content: center">
+<div style="width: 70px; height: 22px; border: 1px solid #555; margin-top: -20px"></div>
+</div>
+<span style="color: var(--tx); font-size: 12px; font-weight: 600">3</span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<div style="width: 132px; height: 93px; background: #fbfbf9; border-radius: 2px; border: 1px solid var(--bd-input)"></div>
+<span style="color: var(--tx3); font-size: 12px">4</span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<div style="width: 132px; height: 93px; background: #fbfbf9; border-radius: 2px; border: 1px solid var(--bd-input)"></div>
+<span style="color: var(--tx3); font-size: 12px">5</span>
+</div>
+</div>
+</div>
+
+<!-- Canvas -->
+<div style="flex: 1 1 auto; min-width: 0; position: relative; background: var(--canvas); overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 28px">
+<div style="width: 100%; max-width: 1020px; aspect-ratio: 1.414 / 1; background: #fbfbf9; box-shadow: 0 10px 40px var(--shadow); border-radius: 1px">
+<svg viewBox="0 0 1000 707" width="100%" height="100%" role="img" aria-label="Example stage plan drawing with a measurement and a markup">
+<rect x="20" y="20" width="960" height="667" fill="none" stroke="#222" stroke-width="1.5"></rect>
+<g stroke="#e3e3df" stroke-width="1">
+<path d="M80 20v667M180 20v667M280 20v667M380 20v667M480 20v667M580 20v667M680 20v667M780 20v667"></path>
+<path d="M20 120h760M20 220h760M20 320h760M20 420h760M20 520h760"></path>
+</g>
+<rect x="70" y="70" width="640" height="500" fill="none" stroke="#222" stroke-width="3"></rect>
+<rect x="210" y="90" width="360" height="110" fill="#ececea" stroke="#222" stroke-width="2"></rect>
+<text x="390" y="150" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" fill="#333">STAGE 12.0 × 4.8 m</text>
+<rect x="100" y="110" width="80" height="8" fill="#222"></rect>
+<rect x="600" y="110" width="80" height="8" fill="#222"></rect>
+<text x="140" y="135" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#444">LED L</text>
+<text x="640" y="135" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#444">LED R</text>
+<g fill="none" stroke="#777" stroke-width="1">
+<rect x="160" y="270" width="200" height="22"></rect><rect x="420" y="270" width="200" height="22"></rect>
+<rect x="160" y="304" width="200" height="22"></rect><rect x="420" y="304" width="200" height="22"></rect>
+<rect x="160" y="338" width="200" height="22"></rect><rect x="420" y="338" width="200" height="22"></rect>
+<rect x="160" y="372" width="200" height="22"></rect><rect x="420" y="372" width="200" height="22"></rect>
+<rect x="160" y="406" width="200" height="22"></rect><rect x="420" y="406" width="200" height="22"></rect>
+</g>
+<rect x="340" y="480" width="100" height="50" fill="none" stroke="#222" stroke-width="1.5"></rect>
+<text x="390" y="510" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#333">FOH</text>
+<g stroke="#444" stroke-width="1">
+<path d="M70 600v-20M710 600v-20M70 592h640"></path>
+</g>
+<text x="390" y="610" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#444">21 300</text>
+<rect x="780" y="527" width="200" height="160" fill="none" stroke="#222" stroke-width="1.5"></rect>
+<path d="M780 567h200M780 607h200M780 647h200" stroke="#222"></path>
+<text x="792" y="552" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#222">HALL 3 — STAGE PLAN</text>
+<text x="792" y="592" font-family="Inter, sans-serif" font-size="10" fill="#444">SCALE 1:100 @ A1</text>
+<text x="792" y="632" font-family="Inter, sans-serif" font-size="10" fill="#444">DRAWING 003</text>
+<text x="792" y="672" font-family="Inter, sans-serif" font-size="10" fill="#444">REV C</text>
+<rect x="590" y="96" width="100" height="40" rx="10" fill="none" stroke="#d94a2b" stroke-width="2" stroke-dasharray="6 4"></rect>
+<circle cx="700" cy="90" r="11" fill="#d94a2b"></circle>
+<text x="700" y="94" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#fff">1</text>
+<g stroke="#e5484d" stroke-width="2">
+<path d="M390 200V480"></path>
+<path d="M382 200h16M382 480h16"></path>
+</g>
+<rect x="400" y="322" width="74" height="24" rx="4" fill="#e5484d"></rect>
+<text x="437" y="338" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#fff">9.34 m</text>
+</svg>
+</div>
+
+<!-- Markup popover -->
+<div style="position: absolute; top: 72px; right: 40px; width: 240px; padding: 12px 14px; background: var(--ctl); border: 1px solid var(--bd-strong); border-radius: 8px; box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="width: 18px; height: 18px; border-radius: 9px; background: #d94a2b; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center">1</span>
+<span style="font-weight: 600">Matt</span>
+<span style="color: var(--tx3); font-size: 12px">just now</span>
+</div>
+<p style="margin: 0; line-height: 1.45; color: var(--tx-pop)">LED R needs to move 600 off the wall. Clashes with fire exit signage.</p>
+</div>
+
+<!-- Mini map -->
+<div style="position: absolute; right: 16px; bottom: 16px; width: 150px; height: 106px; background: var(--app); border: 1px solid var(--bd-strong); border-radius: 6px; padding: 6px; box-sizing: border-box">
+<div style="width: 100%; height: 100%; background: var(--map); border-radius: 2px; position: relative">
+<div style="position: absolute; left: 30%; top: 18%; width: 42%; height: 46%; border: 2px solid #e5484d; box-sizing: border-box"></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Status bar -->
+<div style="min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; padding: 0 14px; background: var(--chrome); border-top: 1px solid var(--bd); color: var(--tx3); font-size: 12px; flex-shrink: 0">
+<span style="color: #e5484d">Measure</span>
+<span>Scale 1:100 (from title block)</span>
+<span class="hint" style="flex: 1 1 auto; text-align: center">Middle-drag pan · Scroll zoom at cursor · Space-drag pan · Double-middle-click fit</span>
+<span style="font-family: 'JetBrains Mono', monospace">X 14.62  Y 8.03 m</span>
+<span>A1 · 841 × 594 mm</span>
+</div>
+</div>
+
+</body>
+</html>

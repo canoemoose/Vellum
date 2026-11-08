@@ -1,8 +1,9 @@
 # Vellum
 
-Fast PDF/image viewer for CAD drawings. Tauri 2 + Svelte 5 + TypeScript. Currently the phase 0
-rendering spike: see [PLAN.md](PLAN.md), [ARCHITECTURE.md](ARCHITECTURE.md), [RESULTS.md](RESULTS.md),
-and the brief in [docs/vellum-scope-spike.md](docs/vellum-scope-spike.md).
+Fast PDF/image viewer for CAD drawings. Tauri 2 + Svelte 5 + TypeScript. Phase 0 (the rendering
+spike) is done: see [RESULTS.md](RESULTS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [PLAN.md](PLAN.md)
+and its brief in [docs/vellum-scope-spike.md](docs/vellum-scope-spike.md). The current work is
+v0.1, the first real app: brief in [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-brief.md).
 
 ## Commands
 

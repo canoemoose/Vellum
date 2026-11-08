@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Print, manual layout</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#3b6fd9}a:hover{color:#2a54aa}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+.t-dark{--chrome:#141517;--app:#1b1c1f;--ctl:#232428;--bd:#2a2c31;--bd-ctl:#2f3136;--bd-strong:#34363c;--bd-input:#3a3d44;--tx:#e6e7ea;--tx2:#c9cbd1;--tx3:#9a9da5;--canvas:#2b2d31;--tab-on:#2a2c31;--shadow:rgba(0,0,0,0.45)}
+.t-light{--chrome:#ebebe8;--app:#f6f6f4;--ctl:#ffffff;--bd:#dcdcd7;--bd-ctl:#d6d6d0;--bd-strong:#cfcfc8;--bd-input:#c4c4bd;--tx:#1d1e21;--tx2:#3d3f45;--tx3:#5f6269;--canvas:#d9d9d4;--tab-on:#e3e3de;--shadow:rgba(0,0,0,0.18)}
+</style>
+</helmet>
+<div class="t-{{theme}}" style="width: 1240px; height: 800px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--app); color: var(--tx); font-family: Inter, system-ui, sans-serif; font-size: 13px; border: 1px solid var(--bd-strong); border-radius: 10px; overflow: hidden">
+
+<!-- Header -->
+<div style="height: 48px; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--bd); background: var(--chrome); flex-shrink: 0">
+<a href="Print.dc.html" aria-label="Back to print settings" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--tx2); border-radius: 6px"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M8.5 3L4.5 7l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a>
+<span style="font-size: 15px; font-weight: 600">Print — manual layout</span>
+<span style="color: var(--tx3)">Arrange pages, crops and scales freely on each sheet</span>
+<div style="flex: 1 1 auto"></div>
+<button aria-label="Close" style="width: 32px; height: 32px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+</div>
+
+<div style="flex: 1 1 auto; min-height: 0; display: flex">
+
+<!-- Left: sheet + arrange -->
+<div style="width: 250px; flex-shrink: 0; box-sizing: border-box; padding: 16px 18px; display: flex; flex-direction: column; gap: 16px; border-right: 1px solid var(--bd)">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-weight: 600">Sheet</span>
+<label for="ml-paper" style="position: absolute; left: -9999px">Sheet size</label>
+<select id="ml-paper" style="height: 30px; padding: 0 8px; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px"><option>A3 landscape</option></select>
+<label for="ml-margin" style="color: var(--tx2)">Margins</label>
+<select id="ml-margin" style="height: 30px; padding: 0 8px; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px"><option>Printer minimum (4.2 mm)</option></select>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-weight: 600">Snap</span>
+<label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" checked style="width: 15px; height: 15px; accent-color: {{accent}}; margin: 0"><span>To margins</span></label>
+<label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" checked style="width: 15px; height: 15px; accent-color: {{accent}}; margin: 0"><span>To other pages</span></label>
+<label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" style="width: 15px; height: 15px; accent-color: {{accent}}; margin: 0"><span>To 5 mm grid</span></label>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-weight: 600">Align and distribute</span>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px">
+<button aria-label="Align left" style="height: 32px; border: 1px solid var(--bd-ctl); background: var(--ctl); color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2v12" stroke="currentColor" stroke-width="1.4"></path><rect x="4.5" y="4" width="8" height="3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><rect x="4.5" y="9" width="5" height="3" fill="none" stroke="currentColor" stroke-width="1.3"></rect></svg></button>
+<button aria-label="Align centres" style="height: 32px; border: 1px solid var(--bd-ctl); background: var(--ctl); color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12" stroke="currentColor" stroke-width="1.4"></path><rect x="3.5" y="4" width="9" height="3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><rect x="5" y="9" width="6" height="3" fill="none" stroke="currentColor" stroke-width="1.3"></rect></svg></button>
+<button aria-label="Align tops" style="height: 32px; border: 1px solid var(--bd-ctl); background: var(--ctl); color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2.5h12" stroke="currentColor" stroke-width="1.4"></path><rect x="4" y="4.5" width="3" height="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect><rect x="9" y="4.5" width="3" height="5" fill="none" stroke="currentColor" stroke-width="1.3"></rect></svg></button>
+<button aria-label="Distribute horizontally" style="height: 32px; border: 1px solid var(--bd-ctl); background: var(--ctl); color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M14 2v12" stroke="currentColor" stroke-width="1.4"></path><rect x="6.5" y="5" width="3" height="6" fill="none" stroke="currentColor" stroke-width="1.3"></rect></svg></button>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<button style="height: 32px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px">Auto-arrange this sheet</button>
+<button style="height: 32px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px">Duplicate sheet</button>
+<button style="height: 32px; border: none; background: transparent; color: var(--tx2); border-radius: 6px">Clear sheet</button>
+</div>
+
+<div style="flex: 1 1 auto"></div>
+<p style="margin: 0; color: var(--tx3); line-height: 1.45; font-size: 12px">Middle-drag pans and scroll zooms here too. Drag a page edge to crop; drag a corner to scale.</p>
+</div>
+
+<!-- Centre: sheet editor -->
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; background: var(--canvas)">
+
+<!-- Sheet tabs -->
+<div style="height: 40px; display: flex; align-items: center; gap: 4px; padding: 0 14px; border-bottom: 1px solid var(--bd); background: var(--app)">
+<button style="height: 28px; padding: 0 12px; border: none; background: var(--tab-on); color: var(--tx); border-radius: 6px; font-weight: 600">Sheet 1</button>
+<button style="height: 28px; padding: 0 12px; border: none; background: transparent; color: var(--tx3); border-radius: 6px">Sheet 2</button>
+<button aria-label="Add sheet" style="width: 28px; height: 28px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+<div style="flex: 1 1 auto"></div>
+<span style="color: var(--tx3); font-family: 'JetBrains Mono', monospace; font-size: 12px">420 × 297 mm · 3 items</span>
+</div>
+
+<!-- Sheet -->
+<div style="flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 20px">
+<div style="width: 640px; height: 453px; background: #ffffff; box-shadow: 0 6px 24px var(--shadow); position: relative">
+<svg viewBox="0 0 420 297" width="100%" height="100%" role="img" aria-label="A3 sheet with a cropped stage plan at 1:200, a cable schedule and a rigging detail placed by hand">
+<rect x="4.2" y="4.2" width="411.6" height="288.6" fill="none" stroke="#e05555" stroke-width="0.4" stroke-dasharray="2 2"></rect>
+<!-- Item 1: cropped stage plan -->
+<g>
+<rect x="12" y="12" width="240" height="190" fill="#fff" stroke="#bbb" stroke-width="0.3"></rect>
+<g fill="none" stroke="#000">
+<rect x="22" y="22" width="220" height="170" stroke-width="1.2"></rect>
+<rect x="62" y="30" width="140" height="44" stroke-width="0.9"></rect>
+<rect x="30" y="38" width="26" height="3" fill="#000"></rect>
+<rect x="208" y="38" width="26" height="3" fill="#000"></rect>
+<g stroke-width="0.4">
+<rect x="52" y="96" width="70" height="8"></rect><rect x="142" y="96" width="70" height="8"></rect>
+<rect x="52" y="108" width="70" height="8"></rect><rect x="142" y="108" width="70" height="8"></rect>
+<rect x="52" y="120" width="70" height="8"></rect><rect x="142" y="120" width="70" height="8"></rect>
+<rect x="52" y="132" width="70" height="8"></rect><rect x="142" y="132" width="70" height="8"></rect>
+</g>
+<rect x="114" y="162" width="36" height="18" stroke-width="0.7"></rect>
+</g>
+<rect x="11" y="11" width="242" height="192" fill="none" stroke="{{accent}}" stroke-width="0.8"></rect>
+<rect x="9" y="9" width="4" height="4" fill="#fff" stroke="{{accent}}" stroke-width="0.6"></rect>
+<rect x="251" y="9" width="4" height="4" fill="#fff" stroke="{{accent}}" stroke-width="0.6"></rect>
+<rect x="9" y="201" width="4" height="4" fill="#fff" stroke="{{accent}}" stroke-width="0.6"></rect>
+<rect x="251" y="201" width="4" height="4" fill="#fff" stroke="{{accent}}" stroke-width="0.6"></rect>
+<rect x="128" y="9.5" width="8" height="3" rx="1" fill="#fff" stroke="{{accent}}" stroke-width="0.6"></rect>
+<rect x="251.5" y="103" width="3" height="8" rx="1" fill="#fff" stroke="{{accent}}" stroke-width="0.6"></rect>
+<rect x="196" y="190" width="44" height="9" rx="1.5" fill="{{accent}}"></rect>
+<text x="218" y="196.4" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="5" fill="#fff">p3 · 1:200</text>
+</g>
+<!-- Item 2: cable schedule -->
+<g>
+<rect x="264" y="12" width="144" height="190" fill="#fff" stroke="#bbb" stroke-width="0.3"></rect>
+<text x="272" y="24" font-family="Inter, sans-serif" font-size="6" font-weight="600" fill="#000">CABLE SCHEDULE — STAGE</text>
+<g stroke="#000" stroke-width="0.3">
+<path d="M272 30h128M272 38h128M272 46h128M272 54h128M272 62h128M272 70h128M272 78h128M272 86h128M272 94h128M272 102h128M272 110h128M272 118h128M272 126h128"></path>
+<path d="M296 30v96M346 30v96M376 30v96"></path>
+</g>
+<text x="336" y="196" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="5" fill="#777">p7 · 48%</text>
+</g>
+<!-- Item 3: rigging detail -->
+<g>
+<rect x="264" y="212" width="144" height="74" fill="#fff" stroke="#bbb" stroke-width="0.3"></rect>
+<g fill="none" stroke="#000" stroke-width="0.6">
+<path d="M276 226h120"></path>
+<path d="M300 226v40M336 226v40M372 226v40"></path>
+<rect x="290" y="266" width="92" height="10"></rect>
+<circle cx="300" cy="226" r="2.5"></circle><circle cx="336" cy="226" r="2.5"></circle><circle cx="372" cy="226" r="2.5"></circle>
+</g>
+<text x="336" y="284" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="5" fill="#777">p9 crop · 1:20</text>
+</g>
+<!-- Snap guide -->
+<path d="M264 6V292" stroke="#e05555" stroke-width="0.4" stroke-dasharray="1.5 1.5" opacity="0"></path>
+<path d="M8 202H412" stroke="{{accent}}" stroke-width="0.4" stroke-dasharray="1.5 1.5"></path>
+<!-- Stamp -->
+<text x="12" y="290" font-family="Inter, sans-serif" font-size="4.5" fill="#000">Hall 3 — Stage Plan Rev C.pdf · sheet 1 · 07/11/2026</text>
+</svg>
+</div>
+</div>
+
+<!-- Page strip -->
+<div style="height: 108px; display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 10px; border-top: 1px solid var(--bd); background: var(--app); box-sizing: border-box">
+<span style="color: var(--tx3); font-size: 12px">Drag pages or images onto the sheet · placed items are marked · drop files from Explorer to add them</span>
+<div style="display: flex; gap: 10px; overflow: hidden">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><button style="width: 76px; height: 54px; border: 1px dashed var(--bd-input); background: transparent; color: var(--tx2); border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>PDF or image</button><span style="font-size: 11px; color: var(--tx3)">Add</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 72px; height: 54px; border-radius: 2px; background: linear-gradient(160deg, #8a96a3 0%, #5c6670 55%, #3e454c 100%); display: flex; align-items: center; justify-content: center"><svg width="44" height="30" viewBox="0 0 44 30" aria-hidden="true"><path d="M2 6h40M6 6v20M22 6v20M38 6v20" stroke="#e6e6e6" stroke-width="1.5" fill="none"></path><path d="M6 6l16 20M22 6l16 20" stroke="#e6e6e6" stroke-width="0.8" fill="none"></path></svg></div><span style="font-size: 11px; color: var(--tx3)">Truss.jpg</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 1px solid var(--bd-input); border-radius: 2px"></div><span style="font-size: 11px; color: var(--tx3)">1</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 1px solid var(--bd-input); border-radius: 2px"></div><span style="font-size: 11px; color: var(--tx3)">2</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 2px solid {{accent}}; border-radius: 2px; box-sizing: border-box"></div><span style="font-size: 11px; color: var(--tx); font-weight: 600">3 ●</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 1px solid var(--bd-input); border-radius: 2px"></div><span style="font-size: 11px; color: var(--tx3)">4</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 1px solid var(--bd-input); border-radius: 2px"></div><span style="font-size: 11px; color: var(--tx3)">5</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 1px solid var(--bd-input); border-radius: 2px"></div><span style="font-size: 11px; color: var(--tx3)">6</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 38px; height: 54px; background: #fbfbf9; border: 2px solid var(--tx3); border-radius: 2px; box-sizing: border-box"></div><span style="font-size: 11px; color: var(--tx2)">7 ●</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 1px solid var(--bd-input); border-radius: 2px"></div><span style="font-size: 11px; color: var(--tx3)">8</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 3px"><div style="width: 76px; height: 54px; background: #fbfbf9; border: 2px solid var(--tx3); border-radius: 2px; box-sizing: border-box"></div><span style="font-size: 11px; color: var(--tx2)">9 ●</span></div>
+</div>
+</div>
+</div>
+
+<!-- Right: selected item inspector -->
+<div style="width: 250px; flex-shrink: 0; box-sizing: border-box; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; border-left: 1px solid var(--bd)">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-weight: 600">Selected: page 3</span>
+<span style="color: var(--tx3); font-size: 12px">Stage plan · source A1, 1:100</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: center; gap: 8px">
+<label for="ml-scale" style="color: var(--tx2)">Scale</label>
+<select id="ml-scale" style="height: 30px; padding: 0 8px; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px"><option>1:200 (50%)</option></select>
+<label for="ml-x" style="color: var(--tx2)">X / Y</label>
+<div style="display: flex; gap: 6px">
+<input id="ml-x" value="12 mm" style="width: 0; flex: 1 1 0; height: 30px; padding: 0 8px; box-sizing: border-box; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px">
+<input aria-label="Y position" value="12 mm" style="width: 0; flex: 1 1 0; height: 30px; padding: 0 8px; box-sizing: border-box; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px">
+</div>
+<span style="color: var(--tx2)">Size</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--tx2)">240 × 190 mm</span>
+<label for="ml-rot" style="color: var(--tx2)">Rotate</label>
+<select id="ml-rot" style="height: 30px; padding: 0 8px; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px"><option>0°</option><option>90°</option><option>180°</option><option>270°</option></select>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600">Crop</span>
+<button style="height: 30px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px">Crop to a region of the page…</button>
+<button style="height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px">Reset crop</button>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600">This item</span>
+<label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" checked style="width: 15px; height: 15px; accent-color: {{accent}}; margin: 0"><span>Include markups</span></label>
+<label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" style="width: 15px; height: 15px; accent-color: {{accent}}; margin: 0"><span>Border</span></label>
+<label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" checked style="width: 15px; height: 15px; accent-color: {{accent}}; margin: 0"><span>Scale label</span></label>
+</div>
+
+<div style="flex: 1 1 auto"></div>
+<button style="height: 30px; border: none; background: transparent; color: #e5484d; border-radius: 6px">Remove from sheet</button>
+</div>
+</div>
+
+<!-- Footer -->
+<div style="height: 60px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-top: 1px solid var(--bd); background: var(--chrome); flex-shrink: 0">
+<button style="height: 34px; padding: 0 14px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px">Save layout with PDF</button>
+<button style="height: 34px; padding: 0 14px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px">Save as PDF…</button>
+<div style="flex: 1 1 auto"></div>
+<span style="color: var(--tx3)">2 sheets · Office laser (A3) · black lines</span>
+<button style="height: 34px; padding: 0 16px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px">Cancel</button>
+<button style="height: 34px; padding: 0 20px; border: none; background: {{accent}}; color: #ffffff; border-radius: 6px; font-weight: 600">Print 2 sheets</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"accent":{"editor":"color","default":"#e5484d","options":["#3b82f6","#e5484d","#14b8a6","#f59e0b"]},"$preview":{"width":1240,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+const accent = this.props.accent ?? '#e5484d';
+return { theme: this.props.theme ?? 'dark', accent: accent, accentSoft: accent + '2e' };
+}
+}
+</script>
+</body>
+</html>
