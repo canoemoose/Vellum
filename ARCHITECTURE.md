@@ -97,6 +97,16 @@ the same requests; for it, region area matters more than call count.
 - When the zoom changes, tiles from the two nearest **other scales** are drawn (scaled)
   under the current scale's tiles, which is what makes the instant stage look right.
 
+- **On disk** (v0.1): previews are also stored as WebP in
+  `%LOCALAPPDATA%\Vellum\preview-cache` (`previewcache.rs`), keyed by the file's content key
+  (size, modification time and an FNV-1a hash of its first and last MiB, so an edited file
+  never shows a stale preview), capped at 256 MB with the least recently used deleted first.
+  On open (and on attaching a tab) the viewer asks for the visible pages' stored previews
+  (`doc_cached_preview`) and shows them before the first band; a newly made preview is
+  encoded (`OffscreenCanvas.convertToBlob`) and stored (`doc_store_preview`) once per page
+  per session, when the viewer is idle. `Viewer.diskPreviews = false` turns it off (the
+  benchmark does, so every run is cold).
+
 ## Cache
 
 `TileCache` is a `Map` used as an LRU (re-insert on access), with a per-page, per-scale
