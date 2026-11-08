@@ -4,6 +4,9 @@ mod memory;
 pub mod pdfium;
 pub mod previewcache;
 pub mod pdfium_lod; // WP-LOD
+// WP-Print
+pub mod print;
+// End WP-Print
 pub mod scale;
 pub mod shell; // WP-Shell
 
@@ -390,6 +393,18 @@ pub fn run() {
             shell::shell_take_pending,
             shell::reveal_in_explorer,
             // WP-Shell end
+            // WP-Print
+            print::print_features,
+            print::print_compose,
+            print::print_save_pdf,
+            print::print_release,
+            print::print_printers,
+            print::print_capabilities,
+            print::print_margins,
+            print::print_properties,
+            print::print_send,
+            print::print_cancel,
+            // End WP-Print
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
