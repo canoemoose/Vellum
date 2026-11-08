@@ -27,7 +27,7 @@ need beyond that.
 - `PdfiumState::run_on_worker` / `run_on_worker_index` for WP-Print, and
   `Docs::open_pdf_bytes` to make a composed PDF an ordinary document.
 - Page-load seam for WP-LOD: `pdfium.rs::load_page` is the only place pages are parsed.
-- Per-process PDFium DLL copies (`%TEMP%\vellum-pdfium\p<pid>\`), stale folders cleaned on start.
+- PDFium DLL copies shared and reused across launches (`%TEMP%\vellum-pdfium\<size>-<mtime>\`), written atomically and never overwritten; other folders cleaned on start. An interim per-process scheme cost about 300 ms per open in Defender scans (found by the integrator's bench).
 - pdf.js removed: renderer, `pdfjs-dist`, asset copy script, postinstall hook, `--renderer`
   flag (still consumed so old command lines don't break), Ctrl+Shift+R. A missing
   `pdfium.dll` is now the error "pdfium.dll not found: run `node tools/fetch-pdfium.mjs`".

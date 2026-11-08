@@ -2,7 +2,7 @@
 //!
 //! PDFium is not thread-safe: all of its state is global to the loaded DLL. To render in
 //! parallel anyway we load N *copies* of pdfium.dll under different file names
-//! (pdfium.dll, then %TEMP%\vellum-pdfium\p<pid>\pdfium-1.dll, ...). Windows maps each as a
+//! (pdfium.dll, then %TEMP%\vellum-pdfium\<size>-<mtime>\pdfium-1.dll, ...). Windows maps each as a
 //! separate module with its own globals, so each copy is an independent PDFium instance. One
 //! worker thread owns each instance, every open document and their parsed pages. **Every
 //! PDFium call happens on the thread that owns the instance**; other modules get there with
@@ -784,23 +784,65 @@ fn copies_root() -> PathBuf {
     std::env::temp_dir().join("vellum-pdfium")
 }
 
-/// This process's copies: %TEMP%\vellum-pdfium\p<pid>. Per process because several Vellum
-/// processes (benchmarks, parallel builds under test) would otherwise overwrite DLLs another
-/// one has loaded.
-pub fn process_copies_dir() -> PathBuf {
-    copies_root().join(format!("p{}", std::process::id()))
+/// Folder name for copies of one particular pdfium.dll: its size and modification time
+/// (seconds since the epoch). A new pdfium.dll gets a new folder; the same one is shared by
+/// every Vellum process.
+pub fn copies_key(size: u64, mtime_secs: u64) -> String {
+    format!("{size}-{mtime_secs}")
 }
 
-/// Delete other processes' copy folders left behind by earlier runs. A folder whose DLLs are
-/// still loaded by a running Vellum can't be deleted on Windows, so failures are skipped, and
-/// folders touched in the last minute are left alone in case their process is still copying.
-/// The pre-v0.1 flat layout (pdfium-N.dll straight in the root) is cleared too.
-pub fn clean_stale_copies() {
-    let own = process_copies_dir();
-    let Ok(rd) = std::fs::read_dir(copies_root()) else { return };
+/// Where the copies of `original` live under `root`.
+pub fn copies_dir_for(root: &Path, original: &Path) -> Result<PathBuf, String> {
+    let m = std::fs::metadata(original).map_err(|e| format!("{}: {e}", original.display()))?;
+    let mtime = m
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    Ok(root.join(copies_key(m.len(), mtime)))
+}
+
+/// Make sure `dest` is a complete copy of `original`, reusing it if it already is.
+///
+/// Copies are shared across processes and reused across launches: writing fresh DLLs on
+/// every start made Windows Defender scan each one before it could load (about 300 ms per
+/// open on the v0.1 benchmark). An existing copy is never overwritten, because another
+/// running Vellum may have it mapped; a new one is written to a temporary name and renamed
+/// into place, so a process starting at the same moment never loads half a file.
+pub fn ensure_copy(original: &Path, dest: &Path) -> Result<(), String> {
+    let want = std::fs::metadata(original).map_err(|e| e.to_string())?.len();
+    if std::fs::metadata(dest).is_ok_and(|m| m.len() == want) {
+        return Ok(());
+    }
+    if let Some(dir) = dest.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = dest.with_extension(format!("tmp{}", std::process::id()));
+    std::fs::copy(original, &tmp).map_err(|e| format!("copy {}: {e}", tmp.display()))?;
+    // Another process may have finished the same copy meanwhile: keep theirs.
+    if std::fs::metadata(dest).is_ok_and(|m| m.len() == want) {
+        let _ = std::fs::remove_file(&tmp);
+        return Ok(());
+    }
+    let r = std::fs::rename(&tmp, dest);
+    let _ = std::fs::remove_file(&tmp);
+    match r {
+        Ok(()) => Ok(()),
+        // Lost a race to a copy that is now in use: fine as long as it's complete.
+        Err(_) if std::fs::metadata(dest).is_ok_and(|m| m.len() == want) => Ok(()),
+        Err(e) => Err(format!("copy {}: {e}", dest.display())),
+    }
+}
+
+/// Delete everything under `root` except `keep`: copies of older pdfium.dll builds, the
+/// per-process folders of an earlier v0.1 build, and the pre-v0.1 flat layout. Best effort:
+/// a DLL still loaded by a running Vellum can't be deleted and is skipped, and anything
+/// touched in the last minute is left alone in case another process is still copying.
+pub fn clean_other_copies(root: &Path, keep: &Path) {
+    let Ok(rd) = std::fs::read_dir(root) else { return };
     for e in rd.flatten() {
         let p = e.path();
-        if p == own {
+        if p == keep {
             continue;
         }
         let recent = e
@@ -809,39 +851,36 @@ pub fn clean_stale_copies() {
             .ok()
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|age| age.as_secs() < 60);
+        if recent {
+            continue;
+        }
         if p.is_dir() {
-            if !recent {
-                let _ = std::fs::remove_dir_all(&p);
-            }
-        } else if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("dll")) {
+            let _ = std::fs::remove_dir_all(&p);
+        } else {
             let _ = std::fs::remove_file(&p);
         }
     }
 }
 
 /// Worker i > 0 loads its own renamed copy so it gets a separate module instance.
-fn library_copy(original: &Path, i: usize) -> Result<PathBuf, String> {
+fn library_copy(original: &Path, dir: &Path, i: usize) -> Result<PathBuf, String> {
     if i == 0 {
         return Ok(original.to_path_buf());
     }
-    let dir = process_copies_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join(format!("pdfium-{i}.dll"));
-    let want = std::fs::metadata(original).map(|m| m.len()).unwrap_or(0);
-    let have = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(u64::MAX);
-    if want != have {
-        std::fs::copy(original, &dest).map_err(|e| format!("copy {}: {e}", dest.display()))?;
-    }
+    ensure_copy(original, &dest)?;
     Ok(dest)
 }
 
 fn start_workers(n: usize, resource_dir: Option<PathBuf>) -> Result<Vec<Sender<WorkerReq>>, String> {
     let original = find_library(resource_dir)?;
-    clean_stale_copies();
+    let root = copies_root();
+    let dir = copies_dir_for(&root, &original)?;
+    clean_other_copies(&root, &dir);
     let mut senders = Vec::with_capacity(n);
     let mut readies = Vec::with_capacity(n);
     for i in 0..n {
-        let lib = library_copy(&original, i)?;
+        let lib = library_copy(&original, &dir, i)?;
         let (tx, rx) = channel::<WorkerReq>();
         let (ready_tx, ready_rx) = channel::<Result<(), String>>();
         std::thread::Builder::new()

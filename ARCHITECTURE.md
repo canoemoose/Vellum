@@ -126,16 +126,21 @@ Previews have their own 96 MB budget.
   fallback renderer.
 - **A pool of PDFium instances.** PDFium keeps all its state in DLL globals and is not
   thread-safe. Loading renamed copies (`pdfium.dll`, then
-  `%TEMP%\vellum-pdfium\p<pid>\pdfium-1.dll`, …) gives each worker thread its own module, so
+  `%TEMP%\vellum-pdfium\<size>-<mtime>\pdfium-1.dll`, …) gives each worker thread its own module, so
   N instances render truly in parallel. Default N = half the logical CPUs, at most 8
   (`--pdfium-threads` overrides). Each worker owns its instance, a map of open documents
   (document id → its own handle) and up to 16 parsed pages per document (least recently
   used evicted).
-- **Per-process DLL copies.** The copies live in a folder named after the process id, so
-  several Vellum processes at once (benchmarks, parallel test builds) never overwrite a DLL
-  another has loaded. Loaded DLLs can't be deleted while their process runs, so each start
-  deletes the other processes' folders that are more than a minute old (a folder still in
-  use fails to delete and is skipped) plus the pre-v0.1 flat-layout copies.
+- **Shared, reused DLL copies.** The copies live in a folder named after the original DLL's
+  size and modification time (`%TEMP%\vellum-pdfium\<size>-<mtime>\`), shared by every
+  Vellum process and reused across launches. Writing fresh copies on every start (a v0.1
+  interim with one folder per process) cost about 300 ms per open, because Windows Defender
+  scans each new DLL before it loads. A missing copy is written under a temporary name and
+  renamed into place, so a process starting at the same moment never loads half a file, and
+  an existing complete copy is never overwritten (another process may have it mapped).
+  Each start deletes, best effort, other folders and files under `vellum-pdfium` that are
+  more than a minute old (older builds' copies, the interim per-process folders, the pre-v0.1
+  flat layout); anything still loaded fails to delete and is skipped.
 - **Spatial affinity.** The page is cut into N fixed bands along its long axis and worker *s*
   owns band *s*. Every region is split at band boundaries (`split_region`, a pure function
   with its own tests in `src-tauri/tests/bands.rs`: an off-by-one there would make two
