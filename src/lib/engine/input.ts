@@ -92,6 +92,11 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   };
 
   const onPointerMove = (e: PointerEvent) => {
+    // Cursor position for the status bar (page coordinates are worked out by the viewer).
+    if (e.pointerType !== "touch") {
+      const [x, y] = local(e);
+      viewer.setPointer(x, y);
+    }
     if (!dragging || e.pointerId !== dragging.id) return;
     const dx = e.clientX - dragging.x;
     const dy = e.clientY - dragging.y;
@@ -105,6 +110,10 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
     dragging = null;
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     setCursor();
+  };
+
+  const onPointerLeave = () => {
+    if (!dragging) viewer.setPointer(null);
   };
 
   // Middle mousedown must be cancelled separately or Chromium starts autoscroll.
@@ -169,6 +178,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   el.addEventListener("pointermove", onPointerMove);
   el.addEventListener("pointerup", onPointerUp);
   el.addEventListener("pointercancel", onPointerUp);
+  el.addEventListener("pointerleave", onPointerLeave);
   el.addEventListener("mousedown", onMouseDown);
   el.addEventListener("auxclick", onAuxClick);
   window.addEventListener("keydown", onKeyDown);
@@ -181,6 +191,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
     el.removeEventListener("pointermove", onPointerMove);
     el.removeEventListener("pointerup", onPointerUp);
     el.removeEventListener("pointercancel", onPointerUp);
+    el.removeEventListener("pointerleave", onPointerLeave);
     el.removeEventListener("mousedown", onMouseDown);
     el.removeEventListener("auxclick", onAuxClick);
     window.removeEventListener("keydown", onKeyDown);

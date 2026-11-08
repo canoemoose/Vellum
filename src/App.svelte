@@ -4,7 +4,7 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import TopBar from "./lib/components/TopBar.svelte";
   import DebugOverlay from "./lib/components/DebugOverlay.svelte";
-  import { Viewer, type UiState, type NavMode } from "./lib/engine/viewer";
+  import { Viewer, initialUiState, type UiState, type NavMode } from "./lib/engine/viewer";
   import { attachInput } from "./lib/engine/input";
   import { loadSettings, saveSettings } from "./lib/settings";
   import { appendPerfLog, jsHeapMb, launchArgs, memoryStats, pickPdf } from "./lib/platform";
@@ -16,16 +16,7 @@
   let viewer = $state<Viewer | null>(null);
   let debug = $state(false);
   let dropping = $state(false);
-  let ui = $state<UiState>({
-    fileName: "",
-    page: 0,
-    numPages: 0,
-    zoom: 1,
-    layoutMode: "continuous",
-    navMode: "cad",
-    loading: false,
-    error: null,
-  });
+  let ui = $state<UiState>(initialUiState());
 
   const settings = loadSettings();
 

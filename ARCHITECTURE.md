@@ -18,7 +18,8 @@ and progressive paint.
    │
    └──► Scheduler (on settle)        src/lib/engine/viewer.ts  onSettle() / plan() / pump()
           150 ms after the last input: work out missing tiles at the exact current scale,
-          group them into regions, render each region once, slice into 512 px tiles
+          group them into regions, render each region band by band (each band drawn as it
+          lands), slice into 512 px tiles
                 │
                 ▼
           Renderer interface          src/lib/render/types.ts   (every call takes a docId)
@@ -95,6 +96,16 @@ the same requests; for it, region area matters more than call count.
   low-priority render after the visible tiles.
 - When the zoom changes, tiles from the two nearest **other scales** are drawn (scaled)
   under the current scale's tiles, which is what makes the instant stage look right.
+
+- **On disk** (v0.1): previews are also stored as WebP in
+  `%LOCALAPPDATA%\Vellum\preview-cache` (`previewcache.rs`), keyed by the file's content key
+  (size, modification time and an FNV-1a hash of its first and last MiB, so an edited file
+  never shows a stale preview), capped at 256 MB with the least recently used deleted first.
+  On open (and on attaching a tab) the viewer asks for the visible pages' stored previews
+  (`doc_cached_preview`) and shows them before the first band; a newly made preview is
+  encoded (`OffscreenCanvas.convertToBlob`) and stored (`doc_store_preview`) once per page
+  per session, when the viewer is idle. `Viewer.diskPreviews = false` turns it off (the
+  benchmark does, so every run is cold).
 
 ## Cache
 
@@ -214,6 +225,85 @@ Every page any worker renders, measures or reads is parsed in one place:
 `pdfium.rs::load_page(bindings, doc, index)`, called only from the per-document page cache.
 Work that must happen once per parsed page (WP-LOD's downsampled image swap) hooks in
 there.
+
+## Streaming (progressive paint, v0.1)
+
+The PDFium pool finishes bands at different times (on the aerial drawing, 0.3 to 1.8 s for
+one fit render), so a region that waited for its slowest band showed nothing until the end.
+Now each band is shown as it lands:
+
+1. `doc_render_stream(docId, region, onBand)` splits the region with `split_region` and
+   gives every band its own buffer (`render_stream` in pdfium.rs). As each worker finishes,
+   its band goes down a Tauri channel as raw bytes: RGBA rows followed by a 16-byte trailer
+   (x, y, w, h within the region, little-endian u32). Buffers are allocated with spare
+   capacity for the trailer, so nothing is copied. The command resolves with the number of
+   bands sent; channel messages can arrive after that, so the front end waits for the count.
+   Images arrive as one band.
+2. `BackendRenderer.renderRegionProgressive` copies each band into a region-sized buffer
+   (`RegionAssembler`, pure and tested: it tracks the area covered inside each requested tile)
+   and hands the viewer a `BandBitmap`: the band as a bitmap to draw now, plus every tile the
+   band completed, sliced from the assembled buffer. A band whose tiles are all complete gets
+   no bitmap of its own (one-band regions would otherwise upload twice).
+3. The viewer puts completed tiles straight into the cache and keeps band bitmaps as
+   "partials" for that job, drawn above the fallback layers and below the target-scale tiles,
+   until the job finishes (or is aborted by a zoom), when they are closed. Previews and the
+   two-stage zoom are unchanged: preview jobs still use the one-shot `doc_render`.
+
+Measurements: "first band" is open (or settle) to the first band of visible content on screen
+(the frame after it presented, like settle-to-sharp); "first page" is still open to every
+visible tile sharp. `Viewer.whenFirstBand()` and `SharpEvent.settleToFirstBandMs` expose
+them; the bench records both. On the aerial drawing at fit, settle to first band was 341 ms
+against 724 ms to sharp. On open, parsing the page dominates the first band (about 0.7 s for
+worker 0 alone): workers 1..N pre-parse page 1 as soon as the document opens so their parse
+overlaps worker 0's (`VELLUM_PDFIUM_PREFETCH=0` turns this off). That makes the page sharp
+sooner but its first band slightly later, because eight parallel parses contend.
+
+`Viewer.progressive = false` falls back to whole-region renders.
+
+## The viewer API (for the shell)
+
+`src/lib/engine/viewer.ts` is Svelte-free; components call it and listen to `onUi`, which
+fires (batched per microtask) with a `UiState` whenever something it reports changes.
+`initialUiState()` gives a component its state before a viewer exists.
+
+| Need | API |
+|---|---|
+| Open / close | `open(path, password?)` (closes the attached document), `close()` |
+| Tabs | `detach(): DocView` keeps the document open in the backend and its page previews (trimmed to 32 MB) in the returned state; `attach(state)` restores view, page and rotation and shows the previews at once; `closeDetached(state)` frees a background tab. One viewer and one canvas serve every tab. |
+| Zoom | `setZoom(z, sx?, sy?)` (1 = 100%), `zoomStep(±1)`, `zoomPreset(±1)` over `ZOOM_PRESETS`, `fit("page" \| "width")`, `actualSize()` |
+| Pages | `gotoPage(i)`, `next/prev/first/lastPage()`, `gotoPagePoint(page, y)` (bookmarks), `centreOn(page, x, y)` (mini map drag) |
+| Rotation | `setRotation(0 \| 90 \| 180 \| 270)`, `rotate(±1)`; view only, keeps the centre point, tiles stay valid |
+| Layout / mode | `setLayoutMode("continuous" \| "single")`, `setNavMode("cad" \| "document")` |
+| Observable state | `UiState`: `fileName, docId, kind, page, numPages, zoom, rotation, layoutMode, navMode, loading, error, cursor, pageViewport` |
+| Cursor | `input.ts` calls `setPointer(x, y)` on pointer moves; `UiState.cursor` is `{ page, x, y }` in page points, or null off the pages. `pagePointAt(sx, sy)` for one-off queries. |
+| Mini map | `previewFor(page)` (the cached preview bitmap and its scale; don't keep it), `viewportOnPage(page)` / `UiState.pageViewport` (viewport in page points, may extend past the page) |
+| Thumbnails | `thumbnail(page, maxSide): Promise<ImageBitmap>` (caller owns the bitmap) |
+| Theme change | `refreshCanvasColour()` then `requestFrame()` |
+
+All page coordinates are **unrotated page points**, y down from the page's top-left, the same
+space as `doc_find_scale` bounding boxes and outline targets. Convert to millimetres with
+`pt * 25.4 / 72`.
+
+### Rotation
+
+`rotation.ts` maps page points to the rotated page (`rotatePoint`, `unrotateRect`, ...) and
+gives the canvas transform that draws an unrotated bitmap into a rotated destination
+(`rotatedDrawTransform`); all pure and tested. The layout stacks rotated page sizes. The
+scheduler converts the visible world rect back to unrotated page coordinates before
+working out tile ranges (`tileRangeForRect`), and the compositor maps each tile's page rect
+to the screen and rounds its edges there, so tiles still share exact edges at 90°, 180° and
+270°. Tiles and previews are cached unrotated, so rotating never re-renders anything.
+
+### Thumbnails
+
+`ThumbnailQueue` (`thumbnails.ts`) runs one thumbnail at a time and only while the viewer is
+idle for background work: nothing queued or rendering, no settle pending and no input for
+300 ms. Newest requests go first (the pages the user just scrolled to), repeats share one
+render, results are cached per document (64 MB, LRU) and dropped when the document closes. A
+page with a cached preview at least as sharp as the thumbnail is downscaled from it without
+touching the backend; otherwise `doc_thumbnail` renders it through the pool. A thumbnail
+render already inside PDFium can't be interrupted, so a heavy page (about 1 s on the aerial
+drawing) can still delay a zoom that starts while it runs.
 
 ## Navigation (`input.ts`)
 
