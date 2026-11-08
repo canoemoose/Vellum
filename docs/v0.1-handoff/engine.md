@@ -126,13 +126,21 @@ to every visible tile sharp.
    (about 3.2 s → 2.5 to 2.8 s in noisy single runs) but the first band slightly later.
    `VELLUM_PDFIUM_PREFETCH=0` restores the old order for comparison. The real fix is WP-LOD's
    or a scaled-decode PDFium build.
-2. A thumbnail render already inside PDFium can't be interrupted; on a heavy page (about 1 s)
+2. **Progressive paint costs about 160 to 190 MB of peak memory** on small drawings (the stage plan
+   1056 against 899 MB with `--no-progressive`, the A3 set 893 against 701 MB; single runs).
+   Pre-parsing is not the cause (the stage plan 1045 against 1040 MB with `VELLUM_PDFIUM_PREFETCH=0`).
+   The likely causes are the extra copies held while a region streams: the JS region buffer
+   in `RegionAssembler`, each band's channel buffer, and each band's overlay bitmap, freed
+   only when the region completes or by GC. Ways to cut it: assemble tile-sized buffers
+   instead of one region buffer, and skip band overlays for regions of a few tiles. First
+   page is the same either way.
+3. A thumbnail render already inside PDFium can't be interrupted; on a heavy page (about 1 s)
    a zoom that starts meanwhile waits for it. Thumbnails only start when the viewer has been
    idle for 300 ms, so this needs bad timing.
-3. Cancelling still only skips requests that haven't started (unchanged from the spike).
-4. Stale per-process DLL folders are only removed on the next start (a running process's DLLs
+4. Cancelling still only skips requests that haven't started (unchanged from the spike).
+5. Old DLL-copy folders are only removed on a later start (a running process's DLLs
    can't be deleted on exit), and only if over a minute old.
-5. `doc_find_scale` on the aerial drawing returns `1:10` / `1:5` from small text, since it has
+6. `doc_find_scale` on the aerial drawing returns `1:10` / `1:5` from small text, since it has
    no title-block scale; the shell should present it as a guess (it is the top candidate, not
    a certainty).
 
