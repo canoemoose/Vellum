@@ -124,6 +124,7 @@ for (const file of files) {
     const zs = ok.map((d) => d.zooms?.find((q) => q.label === label)).filter(Boolean);
     const pans = zs.flatMap((q) => q.pan);
     const settles = zs.flatMap((q) => q.settleToSharpMs);
+    const bands = zs.flatMap((q) => q.settleToFirstBandMs ?? []);
     z[label] = {
       zoomPct: median(zs.map((q) => q.zoomPct)),
       panFps: median(pans.map((p) => p.fps)),
@@ -133,6 +134,7 @@ for (const file of files) {
       dropped: median(pans.map((p) => p.dropped)),
       drawP95Ms: median(pans.map((p) => p.drawP95Ms)),
       settleMs: median(settles),
+      firstBandMs: median(bands),
       settleMaxMs: settles.filter((s) => s !== null).length ? Math.max(...settles.filter((s) => s !== null)) : null,
       timeouts: settles.filter((s) => s === null).length,
       incomplete: zs.flatMap((q) => q.complete).filter((c) => !c).length,
@@ -148,6 +150,7 @@ for (const file of files) {
     coldStartFirstRunMs: ok[0]?.coldStartMs ?? null,
     rustInitMs: median(ok.map((d) => d.rustInitMs)),
     firstPageMs: median(ok.map((d) => d.firstPageMs)),
+    firstBandMs: median(ok.map((d) => d.firstBandMs)),
     openParsedMs: median(ok.map((d) => d.openParsedMs)),
     peakMemMb: median(ok.map((d) => d.memPeak?.privateWsMb)),
     peakMemMaxMb: ok.length ? Math.max(...ok.map((d) => d.memPeak?.privateWsMb ?? 0)) : null,
@@ -167,8 +170,8 @@ for (const file of files) {
 // Markdown tables for RESULTS.md
 const n = (v, d = 0) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 let md = `### ${tag} (median of ${runs} runs)\n\n`;
-md += "| File | Cold start (ms) | First page (ms) | Pan fps fit / 400% / 1600% | Settle→sharp ms fit / 400% / 1600% | Peak memory (MB) | Faults |\n";
-md += "|---|---:|---:|---|---|---:|---|\n";
+md += "| File | Cold start (ms) | First band (ms) | First page (ms) | Pan fps fit / 400% / 1600% | Settle→sharp ms fit / 400% / 1600% | Peak memory (MB) | Faults |\n";
+md += "|---|---:|---:|---:|---|---|---:|---|\n";
 for (const e of summary.files) {
   const zs = ["fit", "400", "1600"].map((l) => e.zooms[l]);
   const faults = [];
@@ -178,15 +181,15 @@ for (const e of summary.files) {
   if (to) faults.push(`${to} settle timeouts`);
   if (e.renderErrors) faults.push(`${e.renderErrors} render errors`);
   if (e.errors.length) faults.push(`${e.errors.length} failed runs`);
-  md += `| ${e.file} | ${n(e.coldStartMs)} | ${n(e.firstPageMs)} | ${zs.map((q) => n(q.panFps)).join(" / ")} | ${zs.map((q) => n(q.settleMs)).join(" / ")} | ${n(e.peakMemMb)} | ${faults.join("; ") || "none detected"} |\n`;
+  md += `| ${e.file} | ${n(e.coldStartMs)} | ${n(e.firstBandMs)} | ${n(e.firstPageMs)} | ${zs.map((q) => n(q.panFps)).join(" / ")} | ${zs.map((q) => n(q.settleMs)).join(" / ")} | ${n(e.peakMemMb)} | ${faults.join("; ") || "none detected"} |\n`;
 }
 md += "\nDetail (pan worst-frame and draw cost, settle worst case):\n\n";
-md += "| File | Zoom | Pan fps (min run) | Frame p95 / max (ms) | Dropped frames / 2 s | Draw p95 (ms) | Settle median / max (ms) | Regions |\n";
-md += "|---|---|---:|---|---:|---:|---|---:|\n";
+md += "| File | Zoom | Pan fps (min run) | Frame p95 / max (ms) | Dropped frames / 2 s | Draw p95 (ms) | Settle to first band (ms) | Settle median / max (ms) | Regions |\n";
+md += "|---|---|---:|---|---:|---:|---:|---|---:|\n";
 for (const e of summary.files) {
   for (const l of ["fit", "400", "1600"]) {
     const q = e.zooms[l];
-    md += `| ${e.file} | ${l === "fit" ? `fit (${n(q.zoomPct, 1)}%)` : l + "%"} | ${n(q.panFpsMin)} | ${n(q.intervalP95Ms, 1)} / ${n(q.maxIntervalMs, 1)} | ${n(q.dropped)} | ${n(q.drawP95Ms, 2)} | ${n(q.settleMs)} / ${n(q.settleMaxMs)} | ${n(q.regions)} |\n`;
+    md += `| ${e.file} | ${l === "fit" ? `fit (${n(q.zoomPct, 1)}%)` : l + "%"} | ${n(q.panFpsMin)} | ${n(q.intervalP95Ms, 1)} / ${n(q.maxIntervalMs, 1)} | ${n(q.dropped)} | ${n(q.drawP95Ms, 2)} | ${n(q.firstBandMs)} | ${n(q.settleMs)} / ${n(q.settleMaxMs)} | ${n(q.regions)} |\n`;
   }
 }
 writeFileSync(join(root, "bench-output", `summary-${tag}.md`), md);

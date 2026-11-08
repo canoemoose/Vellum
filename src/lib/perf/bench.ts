@@ -40,6 +40,7 @@ interface ZoomResult {
   label: string;
   zoomPct: number;
   settleToSharpMs: (number | null)[];
+  settleToFirstBandMs: (number | null)[];
   complete: boolean[];
   regions: number[];
   pan: PanResult[];
@@ -119,10 +120,14 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     // Open to first page sharp.
     const t0 = performance.now();
     const firstSharp = v.whenSharp();
+    let firstBandAt: number | null = null;
+    void v.whenFirstBand().then(() => (firstBandAt = performance.now()));
     await v.open(args.file);
     out.openParsedMs = performance.now() - t0;
     const fs = await timeout(firstSharp, TIMEOUT);
     out.firstPageMs = fs ? performance.now() - t0 : null;
+    // Progressive paint: open to the first band of the page on screen.
+    out.firstBandMs = firstBandAt !== null ? (firstBandAt as number) - t0 : null;
     out.numPages = v.doc?.numPages;
     out.pageSize = v.doc?.sizes[0];
     out.docKind = v.doc?.kind;
@@ -151,6 +156,7 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
         label: z.label,
         zoomPct: (targetScale / (96 / 72)) * 100,
         settleToSharpMs: [],
+        settleToFirstBandMs: [],
         complete: [],
         regions: [],
         pan: [],
@@ -175,6 +181,7 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
         v.zoomAt(ax, ay, 1.25, true);
         const ev = await timeout(sharp, TIMEOUT);
         r.settleToSharpMs.push(ev ? ev.settleToSharpMs : null);
+        r.settleToFirstBandMs.push(ev ? ev.settleToFirstBandMs : null);
         r.complete.push(ev ? ev.complete : false);
         r.regions.push(ev ? ev.regions : 0);
         await v.whenIdle(TIMEOUT);
@@ -203,6 +210,7 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     const st = v.stats();
     out.cache = { tiles: st.tiles, mb: st.cacheMB, evictions: st.evictions, previews: st.previews, previewMb: st.previewMB };
     out.renderErrors = st.renderErrors;
+    out.bandsDrawn = st.bandsDrawn;
     if (v.renderer.name === "pdfium") {
       out.pdfiumWorkers = (v.renderer as unknown as { workers: number }).workers;
       out.pdfiumTrims = await invoke<number>("pdfium_trims");
