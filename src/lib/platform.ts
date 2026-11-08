@@ -11,6 +11,8 @@ export interface LaunchArgs {
   benchOut: string | null;
   debug: boolean;
   dpr: number | null;
+  /** Benchmark this page (zero-based) instead of the first. */
+  benchPage?: number | null;
   processStartEpochMs: number;
 }
 

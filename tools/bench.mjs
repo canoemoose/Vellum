@@ -3,7 +3,10 @@
 // measures cold start from outside the process, and aggregates medians.
 //
 //   node tools/bench.mjs [--runs 3] [--renderer pdfium] [--pdfium-threads N] [--dpr N] [--exe path]
-//                        [--only substring] [files...]
+//                        [--only substring] [--page N] [--size WxH] [files...]
+//
+// --page N zooms on page N (1-based) instead of the first; --size WxH sets the window in
+// logical pixels (default 1600x1000).
 //
 // Default files: everything in test-files/ and bench-output/synthetic/.
 // Results: bench-output/<renderer>/ (per-run JSON + snapshots) and
@@ -37,10 +40,13 @@ const exe = resolve(opt("exe", join(targetDir, "release", "vellum.exe")));
 const only = opt("only", null);
 const dpr = opt("dpr", null);
 const threads = opt("pdfium-threads", null);
+const page = opt("page", null);
+const size = opt("size", null);
 // --no-progressive: whole-region renders instead of streamed bands (for comparison).
 const noProgressive = argv.includes("--no-progressive");
 if (noProgressive) argv.splice(argv.indexOf("--no-progressive"), 1);
-const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "") + (noProgressive ? "-noprog" : "");
+const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "") + (noProgressive ? "-noprog" : "") +
+  (page ? `-p${page}` : "") + (size ? `-${size}` : "");
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
 let files = argv.map((f) => resolve(f));
@@ -74,6 +80,8 @@ function runOnce(file, outJson) {
     if (dpr) args.push("--dpr", dpr);
     if (threads) args.push("--pdfium-threads", threads);
     if (noProgressive) args.push("--no-progressive");
+    if (page) args.push("--bench-page", String(Number(page) - 1));
+    if (size) args.push("--bench-size", size);
     const p = spawn(exe, args, {
       stdio: "ignore",
       windowsHide: false,

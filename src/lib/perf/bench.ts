@@ -150,7 +150,15 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     sampleHeap();
     out.memAfterOpenMb = (await memoryStats()).current.privateWsMb;
 
-    const rect = v.layout.rects[0]!;
+    // --bench-page: zoom on that page (the open above still times the first page).
+    const benchPage = Math.min(args.benchPage ?? 0, (v.doc?.numPages ?? 1) - 1);
+    out.benchPage = benchPage;
+    if (benchPage > 0) {
+      v.gotoPage(benchPage);
+      v.fit("page");
+      await v.whenIdle(TIMEOUT);
+    }
+    const rect = v.layout.rects[benchPage]!;
     const fitScale = fitRect(rect, v.vw, v.vh, 16, "page").scale;
     const results: ZoomResult[] = [];
     const snapDir = args.benchOut ? args.benchOut.replace(/\.json$/i, "") : null;

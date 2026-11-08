@@ -22,6 +22,11 @@ fn bench_flags() {
     assert_eq!(a.bench_out.as_deref(), Some("o.json"));
     assert_eq!(a.dpr, Some(2.0));
     assert_eq!(a.pdfium_threads, Some(4));
+    assert_eq!(a.bench_page, None);
+    let b = p(&["v", "--bench", "f.pdf", "--bench-page", "47", "--bench-size", "2560x1400"]);
+    assert_eq!(b.bench_page, Some(47));
+    assert_eq!(b.bench_size, Some((2560.0, 1400.0)));
+    assert_eq!(p(&["v", "--bench-size", "big"]).bench_size, None);
 }
 
 #[test]

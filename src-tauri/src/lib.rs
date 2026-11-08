@@ -36,6 +36,10 @@ pub struct LaunchArgs {
     pub pdfium_threads: Option<usize>,
     /// Render whole regions instead of streaming bands (benchmark comparison).
     pub no_progressive: bool,
+    /// Benchmark this page (zero-based) instead of the first.
+    pub bench_page: Option<usize>,
+    /// Benchmark window size in logical pixels, "WxH" (default 1600x1000).
+    pub bench_size: Option<(f64, f64)>,
     /// Wall-clock time (ms since epoch) when `run` started; lets the front end
     /// split cold start into process/Rust init and WebView startup.
     pub process_start_epoch_ms: f64,
@@ -57,6 +61,13 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
             "--no-progressive" => out.no_progressive = true,
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
             "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
+            "--bench-page" => out.bench_page = it.next().and_then(|v| v.parse().ok()),
+            "--bench-size" => {
+                out.bench_size = it.next().and_then(|v| {
+                    let (w, h) = v.split_once(['x', 'X'])?;
+                    Some((w.parse().ok()?, h.parse().ok()?))
+                })
+            }
             s if s.starts_with("--") => {} // ignore unknown flags
             _ => {
                 if out.file.is_none() {
@@ -340,6 +351,7 @@ pub fn run() {
     let mut args = parse_args(std::env::args());
     args.process_start_epoch_ms = epoch_ms();
     let bench = args.bench;
+    let bench_size = args.bench_size.unwrap_or((1600.0, 1000.0));
     let pdfium_threads = args.pdfium_threads;
 
     let mem = MemState::default();
@@ -361,7 +373,7 @@ pub fn run() {
                 // Fixed, on-top window so benchmark runs are comparable and
                 // never throttled by being occluded.
                 if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.set_size(tauri::LogicalSize::new(1600.0, 1000.0));
+                    let _ = w.set_size(tauri::LogicalSize::new(bench_size.0, bench_size.1));
                     let _ = w.center();
                     let _ = w.set_always_on_top(true);
                 }
