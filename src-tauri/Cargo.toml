@@ -28,6 +28,8 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 fast_image_resize = "5"
 # WP-LOD: scaled-IDCT JPEG decode (1/8) for image level of detail.
 jpeg-decoder = { version = "0.3", default-features = false }
+# WP-Shell: a second launch hands its file to the running window (Explorer "Open with").
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

@@ -16,12 +16,13 @@
         "title": "Vellum",
         "width": 1400,
         "height": 900,
-        "minWidth": 640,
-        "minHeight": 400,
+        "minWidth": 720,
+        "minHeight": 480,
         "visible": false,
         "backgroundColor": "#141517",
         "dragDropEnabled": true,
-        "zoomHotkeysEnabled": true
+        "zoomHotkeysEnabled": true,
+        "decorations": false
       }
     ],
     "security": {
@@ -43,6 +44,13 @@
     "resources": {
       "pdfium/bin/pdfium.dll": "pdfium.dll",
       "pdfium/LICENSE": "licenses/PDFIUM-LICENSE.txt"
-    }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    },
+    "shortDescription": "Fast PDF and image viewer for CAD drawings"
   }
 }
