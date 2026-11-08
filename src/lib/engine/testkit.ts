@@ -68,6 +68,8 @@ export interface Call {
 export class StubRenderer implements Renderer {
   readonly name = "pdfium" as const;
   concurrency = 2;
+  /** Backend workers (0: small regions get no extra concurrency). */
+  workers = 0;
   calls: Call[] = [];
   closed: number[] = [];
   /** Resolve renders at once (true) or hold them until resolveAll() (false). */

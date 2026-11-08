@@ -2,7 +2,6 @@
 // timers standing in for setTimeout, requestAnimationFrame and performance.now.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { scaleKey } from "../render/tiles";
 import { StubRenderer, doc, flush, installFakes, openViewer, until } from "./testkit";
 
 beforeEach(installFakes);
@@ -18,7 +17,7 @@ describe("Viewer scheduler", () => {
     // Concurrency 2: only two requests in flight.
     expect(r.calls.length).toBe(2);
     expect(r.calls.every((c) => c.docId === 7)).toBe(true);
-    const rs = scaleKey(v.view.scale * v.dpr);
+    const rs = v.renderScale;
     expect(r.calls[0].req.rs).toBe(rs);
     // Keep resolving until the queue drains; the preview (a different rs) comes last.
     for (let k = 0; k < 20 && (r.pending().length || v.queueLength); k++) {
@@ -51,7 +50,7 @@ describe("Viewer scheduler", () => {
     await until(() => v.queueLength === 0 && !v.rendering);
     const before = r.calls.length;
     v.setZoom(4);
-    const rs = scaleKey(v.view.scale * v.dpr);
+    const rs = v.renderScale;
     await vi.advanceTimersByTimeAsync(100);
     expect(r.calls.length).toBe(before); // still inside the settle window
     await vi.advanceTimersByTimeAsync(100);
@@ -59,6 +58,53 @@ describe("Viewer scheduler", () => {
     const after = r.calls.slice(before);
     expect(after.length).toBeGreaterThan(0);
     expect(after[0].req.rs).toBe(rs);
+  });
+
+  it("settles a wheel zoom 60 ms after its ease lands, not the full settle delay", async () => {
+    const { v, r } = await openViewer([{ w: 1190, h: 842 }], true);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    const before = r.calls.length;
+    const target = v.view.scale * 1.25;
+    v.zoomAt(400, 300, 1.25, true);
+    // Step in single frames so "landed" is accurate to one frame.
+    for (let k = 0; k < 200 && v.view.scale !== target; k++) await vi.advanceTimersByTimeAsync(4);
+    expect(v.view.scale).toBe(target);
+    const landed = performance.now();
+    const rs = v.renderScale;
+    for (let k = 0; k < 100 && r.calls.length === before; k++) await vi.advanceTimersByTimeAsync(4);
+    expect(performance.now() - landed).toBeLessThan(100);
+    expect(r.calls[before].req.rs).toBe(rs);
+  });
+
+  it("renders ahead on a wheel zoom in, so the next notch in needs no render", async () => {
+    const { v, r } = await openViewer([{ w: 1190, h: 842 }], true);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    v.zoomAt(400, 300, 1.25, true);
+    await vi.advanceTimersByTimeAsync(600);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    const rs = v.renderScale;
+    expect(rs).toBeGreaterThan(v.view.scale * v.dpr * 1.2);
+    const before = r.calls.length;
+    v.zoomAt(400, 300, 1.25, true);
+    await vi.advanceTimersByTimeAsync(600);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    expect(v.renderScale).toBe(rs);
+    expect(r.calls.slice(before).filter((c) => c.req.rs === rs).length).toBe(0);
+    expect(v.visibleComplete()).toBe(true);
+  });
+
+  it("keeps up to one small region per backend worker in flight, but only two large ones", async () => {
+    const pages = Array.from({ length: 20 }, () => ({ w: 1190, h: 842 }));
+    const { v, r } = await openViewer(pages, false);
+    r.workers = 8;
+    await flush();
+    expect(r.pending().length).toBe(2); // at fit, one page fills the view: large regions
+    v.setZoom(0.05); // far out: every page on screen, each a small region
+    await vi.advanceTimersByTimeAsync(200);
+    await flush();
+    const inflight = r.pending();
+    expect(inflight.length).toBe(8);
+    expect(inflight.every((c) => c.req.w * c.req.h <= 512 * 1024)).toBe(true);
   });
 
   it("aborts in-flight renders at the old scale when the zoom changes", async () => {

@@ -44,6 +44,8 @@ import {
   type TileGrid,
   type TileIndexRange,
   type TileSpec,
+  chooseRenderScale,
+  fallbackScales,
   groupIntoRegions,
   scaleKey,
   tileGrid,
@@ -115,6 +117,15 @@ const PREVIEW_MAX_SIDE = 2048;
 const FIT_PAD = 16;
 /** Background work (thumbnails) waits this long after the last input. */
 const IDLE_AFTER_INPUT_MS = 300;
+/**
+ * Settle delay after a mouse-wheel (animated) zoom lands. The ease itself already spans the
+ * gaps between notches, so the full settle delay (there for trackpad pinch, which streams
+ * events with no ease) only added latency. Short is safe now that a cancelled render stops
+ * in the backend instead of running to completion.
+ */
+const WHEEL_SETTLE_MS = 60;
+/** Regions up to this many pixels render on one backend worker (SMALL_REGION_PX in pdfium.rs). */
+const SMALL_REGION_PX = 512 * 1024;
 
 interface Job {
   kind: "tiles" | "preview";
@@ -768,7 +779,23 @@ export class Viewer {
    * carries on throughout a drag and the newly uncovered strip fills in as you go.
    */
   private get renderBlocked(): boolean {
-    return this.anim !== null || performance.now() - this.lastScaleInput < this.opts.settleMs;
+    return this.anim !== null || performance.now() - this.lastScaleInput < this.scaleSettleMs;
+  }
+
+  /** Settle delay for the latest scale change: short after a wheel ease, else opts.settleMs. */
+  private scaleSettleMs = 150;
+
+  /** The scale tiles are rendered at (see chooseRenderScale); 0 before the first zoom. */
+  private renderRs = 0;
+
+  private updateRenderRs(): void {
+    const display = scaleKey(this.view.scale * this.dpr);
+    this.renderRs = chooseRenderScale(this.renderRs || null, display);
+  }
+
+  /** The render scale for the current view, for planning and drawing. */
+  get renderScale(): number {
+    return this.renderRs || scaleKey(this.view.scale * this.dpr);
   }
 
   // ---------------------------------------------------------------- settle / schedule
@@ -787,9 +814,12 @@ export class Viewer {
       this.panPending = true;
     } else {
       this.lastScaleInput = this.lastInput;
+      this.scaleSettleMs = this.opts.settleMs;
       this.queue = [];
+      // Mid-ease the display scale is in passing: choose when the animation lands.
+      if (!this.anim) this.updateRenderRs();
       if (scaleChanged) {
-        const rs = scaleKey(this.view.scale * this.dpr);
+        const rs = this.renderScale;
         for (const j of this.active) if (j.rs !== rs) j.ac?.abort();
       }
     }
@@ -800,7 +830,8 @@ export class Viewer {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     if (this.anim) return; // restarted when the animation lands
-    this.settleTimer = setTimeout(() => this.onSettle(), this.opts.settleMs);
+    const ms = performance.now() - this.lastScaleInput < this.scaleSettleMs ? this.scaleSettleMs : this.opts.settleMs;
+    this.settleTimer = setTimeout(() => this.onSettle(), ms);
   }
 
   private onSettle(): void {
@@ -829,7 +860,7 @@ export class Viewer {
   /** Work out which tiles are missing at the current scale and queue region renders. */
   private plan(): void {
     if (!this.doc) return;
-    const rs = scaleKey(this.view.scale * this.dpr);
+    const rs = this.renderScale;
     const vis = visibleWorldRect(this.view, this.vw, this.vh);
     const cx = this.vw / 2;
     const cy = this.vh / 2;
@@ -887,9 +918,23 @@ export class Viewer {
     return (this.renderer as { concurrency?: number }).concurrency ?? 1;
   }
 
+  /**
+   * Small regions (zoomed out, usually one per page) render whole on their page's own
+   * backend worker, so more of them can be in flight at once: up to one per worker.
+   * Large regions are banded across every worker and stay at `concurrency`.
+   */
+  private canStart(job: Job): boolean {
+    if (this.active.size < this.concurrency) return true;
+    const workers = (this.renderer as { workers?: number }).workers ?? 0;
+    const small = (j: Job) => j.req.w * j.req.h <= SMALL_REGION_PX;
+    if (!small(job) || this.active.size >= workers) return false;
+    for (const a of this.active) if (!small(a)) return false;
+    return true;
+  }
+
   private pump(): void {
     if (this.renderBlocked) return;
-    while (this.active.size < this.concurrency && this.queue.length) {
+    while (this.queue.length && this.canStart(this.queue[0])) {
       const job = this.queue.shift()!;
       // A preview may have been composed from tiles since this job was planned.
       if (job.kind === "preview" && this.previews.has(job.page)) continue;
@@ -1035,7 +1080,7 @@ export class Viewer {
   /** True when every tile covering the viewport exists at the current scale. */
   visibleComplete(): boolean {
     if (!this.doc) return true;
-    const rs = scaleKey(this.view.scale * this.dpr);
+    const rs = this.renderScale;
     const vis = visibleWorldRect(this.view, this.vw, this.vh);
     for (const p of pagesInRect(this.layout, vis)) {
       const grid = tileGrid(this.doc.sizes[p], rs);
@@ -1148,6 +1193,9 @@ export class Viewer {
       if (s === this.anim.target) {
         this.anim = null;
         this.inputActivity(true);
+        // The ease covered the wait for more notches: settle soon.
+        this.scaleSettleMs = Math.min(WHEEL_SETTLE_MS, this.opts.settleMs);
+        this.scheduleSettle();
       } else {
         this.lastInput = performance.now();
         this.requestFrame();
@@ -1175,7 +1223,7 @@ export class Viewer {
       this.plan();
     }
     // Kick the queue if a render was waiting for a zoom to end.
-    if (this.active.size < this.concurrency && this.queue.length && !this.renderBlocked) this.pump();
+    if (this.queue.length && !this.renderBlocked && this.canStart(this.queue[0])) this.pump();
   }
 
   /** Frames per second over the last second of frames (0 when idle). */
@@ -1199,7 +1247,7 @@ export class Viewer {
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "low";
-    const target = scaleKey(scale * dpr);
+    const target = this.renderScale;
     const vis = visibleWorldRect(this.view, this.vw, this.vh);
     const pages = pagesInRect(this.layout, vis);
 
@@ -1246,13 +1294,9 @@ export class Viewer {
       const pv = this.previews.get(p);
       if (pv) blit(pv.bitmap, dev(0, 0, pv.bitmap.width / pv.rs, pv.bitmap.height / pv.rs));
 
-      // Fallback layers (other scales) underneath, nearest-to-target last; then bands still
-      // rendering at the target scale; then the target's tiles.
-      const scales = this.cache
-        .scalesFor(p)
-        .filter((s) => s !== target)
-        .sort((a, b) => Math.abs(Math.log(b / target)) - Math.abs(Math.log(a / target)))
-        .slice(-2);
+      // Fallback layers (other scales) underneath, then bands still rendering at the target
+      // scale, then the target's tiles. See fallbackScales: sharper copies go on top.
+      const scales = fallbackScales(this.cache.scalesFor(p), target);
       const drawTiles = (rs: number) => {
         const grid = tileGrid(size, rs);
         const range = this.pageRange(p, grid, rs, vis, 0);
@@ -1336,7 +1380,7 @@ export class Viewer {
       bandsDrawn: this.bandsDrawn,
       thumbnailsQueued: this.thumbnails.pending,
       zoom: this.zoom,
-      rs: scaleKey(this.view.scale * this.dpr),
+      rs: this.renderScale,
       dpr: this.dpr,
       renderer: this.renderer.name,
       lastWheel: this.lastWheel,

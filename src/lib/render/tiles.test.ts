@@ -107,3 +107,58 @@ describe("LRU tile cache", () => {
     expect(c.size).toBe(1);
   });
 });
+
+describe("fallback scales under a rendering target", () => {
+  it("puts the nearest sharper copy on top of the softer ones", async () => {
+    const { fallbackScales } = await import("./tiles");
+    // Zoomed out from 4 to 3 with 2.5 and 1 also cached: 4 goes last (on top).
+    expect(fallbackScales([1, 2.5, 4], 3)).toEqual([1, 2.5, 4]);
+    // Only the two nearest below, farther first.
+    expect(fallbackScales([0.5, 1, 2], 3)).toEqual([1, 2]);
+    // Only the nearest above; the target itself is never a fallback.
+    expect(fallbackScales([3, 6, 8], 3)).toEqual([6]);
+  });
+
+  it("skips copies far sharper than the target", async () => {
+    const { fallbackScales, MAX_FALLBACK_UP } = await import("./tiles");
+    expect(fallbackScales([0.5, 16], 1)).toEqual([0.5]);
+    expect(fallbackScales([0.5, MAX_FALLBACK_UP], 1)).toEqual([0.5, MAX_FALLBACK_UP]);
+  });
+});
+
+describe("chooseRenderScale", async () => {
+  const { chooseRenderScale, RS_STEP, RS_AHEAD, RS_MAX_DOWN } = await import("./tiles");
+  const onStep = (rs: number) => Math.abs(Math.log(rs) / Math.log(RS_STEP) - Math.round(Math.log(rs) / Math.log(RS_STEP))) < 1e-4;
+
+  it("starts at the first step at or above the display scale", () => {
+    const rs = chooseRenderScale(null, 1.3);
+    expect(rs).toBeGreaterThanOrEqual(1.3);
+    expect(rs).toBeLessThan(1.3 * RS_STEP);
+    expect(onStep(rs)).toBe(true);
+    expect(chooseRenderScale(null, 2)).toBe(2); // exactly on a step
+  });
+
+  it("zooming in renders a notch ahead, on a step", () => {
+    const rs = chooseRenderScale(1, 1.25);
+    expect(rs).toBeGreaterThanOrEqual(1.25 * RS_AHEAD);
+    expect(rs).toBeLessThan(1.25 * RS_AHEAD * RS_STEP);
+    expect(onStep(rs)).toBe(true);
+    // The next notch in is still covered.
+    expect(chooseRenderScale(rs, 1.25 * 1.25)).toBe(rs);
+  });
+
+  it("zooming out keeps the sharper tiles until they're too fine, then steps down", () => {
+    const rs = chooseRenderScale(null, 2);
+    expect(chooseRenderScale(rs, 2 / 1.25)).toBe(rs);
+    const far = chooseRenderScale(rs, 2 / (RS_MAX_DOWN * 1.1));
+    expect(far).toBeLessThan(rs);
+    expect(far).toBeGreaterThanOrEqual(2 / (RS_MAX_DOWN * 1.1));
+  });
+
+  it("zooming back lands on the same steps", () => {
+    const a = chooseRenderScale(null, 1.1);
+    const up = chooseRenderScale(a, 3);
+    const down = chooseRenderScale(up, 1.1);
+    expect(down).toBe(a);
+  });
+});

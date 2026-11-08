@@ -3,7 +3,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Viewer } from "./viewer";
-import { scaleKey } from "../render/tiles";
 import { BandRenderer, StubBitmap, StubRenderer, doc, flush, installFakes, openViewer, stubCanvas, until } from "./testkit";
 
 beforeEach(installFakes);
@@ -136,7 +135,7 @@ describe("Viewer rotation and page coordinates", () => {
     v.setZoom(6);
     await vi.advanceTimersByTimeAsync(200);
     await until(() => v.queueLength === 0 && !v.rendering);
-    const rs = scaleKey(v.view.scale * v.dpr);
+    const rs = v.renderScale;
     const reqs = r.calls.map((c) => c.req).filter((q) => q.rs === rs);
     expect(reqs.length).toBeGreaterThan(0);
     const devW = Math.ceil(1190 * rs);

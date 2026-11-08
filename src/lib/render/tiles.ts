@@ -38,6 +38,39 @@ export function scaleKey(rs: number): number {
   return Number(rs.toPrecision(6));
 }
 
+/**
+ * Which other cached scales to draw under the target scale's tiles while it renders, in
+ * draw order (later on top). Up to two scales below the target, the farther first, then
+ * the nearest scale above it (within MAX_FALLBACK_UP) last, because a downscaled sharper
+ * copy looks right and an upscaled blurrier one doesn't: after zooming out, the earlier
+ * zoomed-in tiles cover what they can and the soft ones fill the gaps underneath. Scales
+ * far above the target are skipped: they cover little of the view and walking their tile
+ * ranges every frame isn't free.
+ */
+export const MAX_FALLBACK_UP = 4;
+export function fallbackScales(cached: number[], target: number): number[] {
+  const below = cached.filter((s) => s < target).sort((a, b) => a - b).slice(-2);
+  const above = cached.filter((s) => s > target && s <= target * MAX_FALLBACK_UP).sort((a, b) => a - b);
+  return above.length ? [...below, above[0]] : below;
+}
+
+/**
+ * Render scales are quantised to steps of RS_STEP, so zooming back and forth lands on scales
+ * already in the cache, and they run ahead of the display: zooming in renders RS_AHEAD past
+ * the new zoom, so the next wheel notch in is still sharp without a render. A render scale
+ * is kept while the display scale stays within [rs / RS_MAX_DOWN, rs]: zooming out reuses
+ * the sharper tiles, downscaled, until they'd be too fine to draw well.
+ */
+export const RS_STEP = 2 ** 0.25;
+export const RS_AHEAD = 1.25;
+export const RS_MAX_DOWN = 1.6;
+export function chooseRenderScale(current: number | null, display: number): number {
+  if (current !== null && current >= display && current <= display * RS_MAX_DOWN) return current;
+  const want = current !== null && display > current ? display * RS_AHEAD : display;
+  const k = Math.ceil(Math.log(want) / Math.log(RS_STEP) - 1e-9);
+  return scaleKey(RS_STEP ** k);
+}
+
 export function tileGrid(size: PageSize, rs: number): TileGrid {
   const devW = Math.max(1, Math.ceil(size.w * rs));
   const devH = Math.max(1, Math.ceil(size.h * rs));
