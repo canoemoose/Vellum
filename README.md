@@ -66,12 +66,18 @@ npm run tauri build -- --no-bundle
 
 The release program takes a file path, so Windows "Open with…" works:
 `vellum.exe "C:\path\to\drawing.pdf"`. Images (JPEG, PNG, WebP, TIFF, BMP,
-GIF) open the same way. Add `--debug` to start with the performance overlay showing.
+GIF) open the same way. Only one Vellum runs at a time: launching it again (or double-clicking
+another file) opens that file as a new tab in the running window. Add `--new-instance` to start
+a separate copy, or `--debug` to start with the performance overlay showing.
+
+The installer registers Vellum under "Open with" for PDFs and those image types, without making
+it the default app for any of them.
 
 ## Using it
 
-Open a file with **Ctrl+O**, by clicking the file name in the top bar, by dragging a PDF onto
-the window, or from the command line.
+Open files with **Ctrl+O**, the **+** at the end of the tabs, by dragging them onto the window,
+from Explorer's "Open with", or from the command line. Each file gets its own tab, which keeps its
+own zoom, page and rotation.
 
 | Action | CAD mode (default) | Document mode |
 |---|---|---|
@@ -85,10 +91,22 @@ the window, or from the command line.
 | Zoom in / out | + / - | + / - |
 | Previous / next page | Page Up / Page Down | Same |
 | First / last page | Home / End | Same |
+| Rotate view clockwise / anticlockwise | R / Shift+R | Same |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Same |
+| Close tab | Ctrl+W, or middle-click the tab | Same |
+| Print | Ctrl+P | Same |
+| Document properties | Ctrl+D | Same |
+| Sidebar (pages and bookmarks) | Ctrl+B | Same |
+| Keyboard shortcuts | F1 | Same |
 | Performance overlay | F12 (or Ctrl+Shift+D) | Same |
 
-The CAD/Document switch and Continuous/Single page switch are in the top bar and are
-remembered between launches.
+CAD or Document navigation, Continuous or Single page, the theme (Dark, Light or System), the
+accent colour, units, the sidebar and the mini map are in the **View** menu; all of them, the
+recent files and the window's size and position are remembered between launches.
+
+The status bar shows the drawing scale (found in the title block when there is one; click it to
+set it by hand), the cursor position (real-world metres when the scale is known, otherwise
+millimetres on the paper, measured from the page's bottom-left corner) and the page size.
 
 ## Measuring performance
 
