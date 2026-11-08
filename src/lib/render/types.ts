@@ -75,12 +75,19 @@ export interface OutlineNode {
 
 /** A drawing-scale note found on a page, as returned best first by findScale. */
 export interface ScaleCandidate {
-  /** The N in 1:N. */
+  /**
+   * The N in 1:N on the page itself. A note stated for another sheet size ("1:200 @A3" on an
+   * A1 page) is already corrected (to 1:100); `statedRatio` keeps what was written.
+   */
   ratio: number;
   /** As written on the page, e.g. "1 : 100". */
   text: string;
   /** [x0, y0, x1, y1] in page points, y down from the top of the page. */
   bbox: [number, number, number, number];
+  /** The ratio as written, when `ratio` was corrected for a stated sheet size; else null. */
+  statedRatio?: number | null;
+  /** The sheet size the note states ("A3"), if any. */
+  sheet?: string | null;
 }
 
 export interface Renderer {

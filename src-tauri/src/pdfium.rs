@@ -612,6 +612,7 @@ impl PdfiumState {
                             text: m.text,
                             bbox: [x0, y0, x1, y1],
                             labelled: m.labelled,
+                            sheet: m.sheet,
                         })
                     })
                     .collect();

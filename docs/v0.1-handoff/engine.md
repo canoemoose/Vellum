@@ -89,6 +89,7 @@ to every visible tile sharp.
 - All page-coordinate APIs use unrotated page points, y down from the top-left (same as scale bboxes and outline targets).
 - Rotation is per document view and resets to 0 on open; cached tiles are unrotated, so rotating renders nothing.
 - Scale ranking: position (bottom-right best), +1.5 for "scale" just before, +0.5 for standard ratios, −1.5 for 1:1; ratios outside 1..100000 dropped; slash form only for standard ratios ≥ 10.
+- A ratio stated for a sheet size ("1:200 @A3", "@ A3", "at A3"; A0 to A5) is corrected to the page's own size: N × stated long side / page long side, snapped to the nearest standard ratio within 5%, unchanged if the page is that sheet (within 3%). The stage plan (A1 page) is 1:100. `statedRatio` and `sheet` keep what was written. Found by the integrator.
 - Outline: bookmarks with no destination in this document have `page: null`; the walk is capped at 20 000 nodes and depth 64 (cycle-safe).
 - Text, outline and scale jobs go to PDFium workers round robin (each may parse the page on its own worker).
 - Stream framing: band pixels then a 16-byte trailer (x, y, w, h); the command returns the band count because channel messages can arrive after it resolves.

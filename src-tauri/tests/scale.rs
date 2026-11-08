@@ -1,6 +1,6 @@
 //! Drawing-scale detection: matching scale notes in page text and ranking them.
 
-use vellum_lib::scale::{RawCandidate, find_scale_matches, rank_candidates, score};
+use vellum_lib::scale::{RawCandidate, find_scale_matches, rank_candidates, rescale_for_page, score};
 
 fn chars(s: &str) -> Vec<char> {
     s.chars().collect()
@@ -53,7 +53,7 @@ fn thousands_separator_needs_three_digits() {
 }
 
 fn cand(ratio: f64, x: f64, y: f64, labelled: bool) -> RawCandidate {
-    RawCandidate { ratio, text: format!("1:{ratio}"), bbox: [x, y, x + 20.0, y + 8.0], labelled }
+    RawCandidate { ratio, text: format!("1:{ratio}"), bbox: [x, y, x + 20.0, y + 8.0], labelled, sheet: None }
 }
 
 #[test]
@@ -106,4 +106,94 @@ fn implausible_ratios_dropped() {
 fn empty_and_zero_size_page() {
     assert!(rank_candidates(vec![], 100.0, 100.0).is_empty());
     assert_eq!(rank_candidates(vec![cand(100.0, 5.0, 5.0, false)], 0.0, 0.0).len(), 1);
+}
+
+// ---------------------------------------------------------------- stated sheet sizes
+
+/// A1 and A3 pages in points, landscape.
+const A1: (f64, f64) = (2383.94, 1683.78);
+const A3: (f64, f64) = (1190.55, 841.89);
+
+fn sheets(s: &str) -> Vec<Option<u8>> {
+    find_scale_matches(&chars(s)).into_iter().map(|m| m.sheet).collect()
+}
+
+#[test]
+fn reads_the_stated_sheet_size() {
+    assert_eq!(sheets("Scale 1:200 @A3"), vec![Some(3)]);
+    assert_eq!(sheets("1:200 @ A3"), vec![Some(3)]);
+    assert_eq!(sheets("1:100 at A1"), vec![Some(1)]);
+    assert_eq!(sheets("1:50@a2"), vec![Some(2)]);
+    assert_eq!(sheets("1:200"), vec![None]);
+    assert_eq!(sheets("1:200 A3"), vec![None], "no @ or 'at': not a stated sheet");
+    assert_eq!(sheets("1:200 @A34"), vec![None], "not a sheet name");
+    assert_eq!(sheets("1:200 @A9"), vec![None], "outside A0-A5");
+    assert_eq!(sheets("1:200 attic A3"), vec![None]);
+    // The match text and box stay on the ratio itself.
+    let m = &find_scale_matches(&chars("1:200 @A3"))[0];
+    assert_eq!(m.text, "1:200");
+    assert_eq!(m.end, 5);
+}
+
+#[test]
+fn rescale_maths() {
+    // 1:200 at A3 on an A1 page: 200 * 420 / 841 = 99.9, snapped to 100.
+    assert_eq!(rescale_for_page(200.0, 420.0, 841.0), 100.0);
+    // Page is the stated sheet (within 3%): unchanged.
+    assert_eq!(rescale_for_page(100.0, 841.0, 841.0), 100.0);
+    assert_eq!(rescale_for_page(100.0, 841.0, 830.0), 100.0);
+    // 1:100 at A1 printed on A3: 1:200.
+    assert_eq!(rescale_for_page(100.0, 841.0, 420.0), 200.0);
+    // Far from any standard ratio: rounded to a whole number.
+    // 100 * 841 / 760 = 110.7: 10% from 100, 13% from 125.
+    assert_eq!(rescale_for_page(100.0, 841.0, 760.0), 111.0);
+    // 100 * 841 / 700 = 120.1: within 5% of 125, so snapped.
+    assert_eq!(rescale_for_page(100.0, 841.0, 700.0), 125.0);
+    // Degenerate page sizes leave it alone.
+    assert_eq!(rescale_for_page(200.0, 420.0, 0.0), 200.0);
+}
+
+fn cand_at(text: &str, page: (f64, f64)) -> Vec<vellum_lib::scale::ScaleCandidate> {
+    let raw = find_scale_matches(&chars(text))
+        .into_iter()
+        .map(|m| RawCandidate { ratio: m.ratio, text: m.text, bbox: [page.0 - 300.0, page.1 - 150.0, page.0 - 270.0, page.1 - 140.0], labelled: m.labelled, sheet: m.sheet })
+        .collect();
+    rank_candidates(raw, page.0, page.1)
+}
+
+#[test]
+fn stage_plan_title_block_on_an_a1_page_is_1_to_100() {
+    // The stage plan: title block says "1:200 @A3", the PDF page is A1.
+    let c = cand_at("Scale 1:200 @A3", A1);
+    assert_eq!(c[0].ratio, 100.0);
+    assert_eq!(c[0].stated_ratio, Some(200.0));
+    assert_eq!(c[0].sheet.as_deref(), Some("A3"));
+    assert_eq!(c[0].text, "1:200");
+}
+
+#[test]
+fn stated_sheet_matching_the_page_is_unchanged() {
+    let c = cand_at("Scale 1:100 @A1", A1);
+    assert_eq!(c[0].ratio, 100.0);
+    assert_eq!(c[0].stated_ratio, None);
+    assert_eq!(c[0].sheet.as_deref(), Some("A1"));
+    // Portrait pages use their long side too.
+    let c = cand_at("1:200 @A3", (A3.1, A3.0));
+    assert_eq!(c[0].ratio, 200.0);
+}
+
+#[test]
+fn ratio_without_a_sheet_is_unchanged_on_any_page() {
+    let c = cand_at("Scale 1:200", A1);
+    assert_eq!(c[0].ratio, 200.0);
+    assert_eq!(c[0].stated_ratio, None);
+    assert_eq!(c[0].sheet, None);
+}
+
+#[test]
+fn a_stated_sheet_ranks_above_a_bare_ratio_in_the_same_place() {
+    let (w, h) = A1;
+    let bare = RawCandidate { ratio: 50.0, text: "1:50".into(), bbox: [2000.0, 1500.0, 2030.0, 1510.0], labelled: false, sheet: None };
+    let stated = RawCandidate { sheet: Some(1), ratio: 100.0, text: "1:100".into(), ..bare.clone() };
+    assert!(score(&stated, w, h) > score(&bare, w, h));
 }
