@@ -57,40 +57,52 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
 
 ## Ideas, best first
 
-1. **Break down and cut the front-end cost (about 90 ms per render).** Measure first: time
-   from band arrival to tile in cache, split into IPC receive, `RegionAssembler.addBand`
-   copy, band overlay bitmap, per-tile `createImageBitmap`. Candidates: one
-   `createImageBitmap` per band and draw tiles as sub-rects of it instead of a bitmap per
-   tile; skip the band overlay where the tiles complete in the same band; move assembly to
-   a worker with `OffscreenCanvas`; check whether WebView2 copies the channel body twice.
-   This helps every file, vector and bitmap.
+1. **Cut the IPC cost of getting band pixels to the webview.** *Changed 9 Nov: test C
+   measured it.* At 400% a 5 MB band takes 66 ms median (211 ms p90, bands queue) from
+   `Channel::send` to `onmessage`; everything the front end does after that is about 3 ms.
+   The real fix is the native surface under a transparent WebView2 (speed-ideas 4.1; test F
+   says it's viable). The JS-side candidates (one bitmap per band, skipping the overlay,
+   `OffscreenCanvas` assembly) are dropped: they shave the 3 ms, not the 66.
 2. **Bayou-style heavy images: our own JPEG decode at ¼ and ½, then page affinity for big
    images.** Fully worked out in [v0.1-heavy-pdfs.md](v0.1-heavy-pdfs.md) (ideas 1, 2, 5).
    Page affinity for small regions is now done; one-band large-image pages also go to
    `page % workers`, so a decoded-image cache per worker is already page-stable.
-3. **Pre-parse pages before they're needed.** First visit to a page costs 230 to 550 ms of
+3. **One band for soft-mask and big-image pages.** *New 9 Nov: test D.* On the 50 MB sample,
+   8-band strips cost 76 to 99% of what 2-band strips do, so banding multiplies the work.
+   Extend the large-image one-band rule to these pages (speed-ideas 1.9).
+4. **Pre-parse pages before they're needed.** First visit to a page costs 230 to 550 ms of
    parsing. On idle, send `WorkerReq::Prefetch` for the pages on screen and their
    neighbours (open already does this for page 0). Also measure memory per parsed page on
    Curtis Hall before considering a larger `PAGES_PER_DOC` (16 today).
-4. **Hold the old image until the new one is complete** (Foxit-style). Doesn't make sharp
+5. **Hold the old image until the new one is complete** (Foxit-style). Doesn't make sharp
    arrive sooner, but removes the visible band-by-band jump. Easy to try: don't draw target
    tiles or band overlays for a page until its visible set is complete, unless that takes
    longer than, say, 300 ms. Matt to judge by feel.
-5. **Tune render-ahead.** `RS_AHEAD` (1.25), `RS_STEP` (2^¼) and `RS_MAX_DOWN` (1.6) in
+6. **Tune render-ahead.** `RS_AHEAD` (1.25), `RS_STEP` (2^¼) and `RS_MAX_DOWN` (1.6) in
    `tiles.ts`. If thin lines look faint at downscale, try `imageSmoothingQuality = "high"`
    only for scales drawn smaller than 1:1 before lowering `RS_MAX_DOWN`. Each render now
    costs 20 to 50 ms more; the trade is worth re-checking once idea 1 lands.
-6. **True mid-strip cancel.** A strip already inside PDFium still runs to completion. PDFium's
+7. **True mid-strip cancel.** A strip already inside PDFium still runs to completion. PDFium's
    progressive API (`FPDF_RenderPageBitmap_Start` / `_Continue` with an `IFSDK_PAUSE`)
    would let a cancel stop it. Worth it only if heavy pages still show lag after a fast
    zoom-out.
-7. **Shorter settle for trackpad pinch.** Still 150 ms after the last event. Matt uses a mouse
+8. **Shorter settle for trackpad pinch.** Still 150 ms after the last event. Matt uses a mouse
    90% of the time but doesn't want the trackpad to be bad; try 80 to 100 ms.
-8. **Uneven bands on dense pages.** Splitting by area doesn't help (see above). A split by
+9. **Uneven bands on dense pages.** Splitting by area doesn't help (see above). A split by
    object count (bands sized so each holds a similar number of page objects, from
-   `FPDFPageObj_GetBounds`) might. Research-y; only after 1 and 3.
-9. **The 5 to 25% front-end settle gap** between `f9f0f10` and v0.1 noted in
+   `FPDFPageObj_GetBounds`) might. Research-y; only after 1 and 4. *9 Nov:* one PDFium
+   thread renders all of page 48 at fit in 131 ms, the same as the dense band in an 8-worker
+   render, so check first whether banding at fit helps this page at all.
+10. **The 5 to 25% front-end settle gap** between `f9f0f10` and v0.1 noted in
    v0.1-heavy-pdfs.md is still unconfirmed. Settle it with an alternating 5-run bench.
+
+Dropped by the 9 November tests ([speed-ideas.md](speed-ideas.md), Results):
+
+- **MuPDF engine swap** (speed-ideas 4.3): 75% of PDFium's time at fit, 102% at 4×; misses
+  the "under 70% at both sizes" bar.
+- **Interim pass without anti-aliasing** (speed-ideas 1.5): anti-aliasing is 4.4% of the
+  render.
+- **JS-side front-end work** (old idea 1's candidates): about 3 ms a band of the 66.
 
 ## How to measure
 

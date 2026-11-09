@@ -4,6 +4,127 @@ Companion to [speed-handoff.md](speed-handoff.md) (where things stand, what was 
 [v0.1-heavy-pdfs.md](v0.1-heavy-pdfs.md) (the Bayou image analysis). Nothing here repeats
 those; read them first. The yardstick throughout is Foxit on Curtis Hall page 48.
 
+## Results (9 November 2026)
+
+Section 5's tests A to F, run on main at `3899208` (release exe copied to
+`%TEMP%\vellum-smoke\`), bench lock held for every timing. Medians of at least five runs.
+All probes and config changes were removed afterwards; nothing here is in the code. Test G is
+Matt's and not done yet.
+
+### A. MuPDF against PDFium, one thread, whole page 48
+
+Fit is 1980×1400 (119.73 dpi, MediaBox 1190.52 × 841.92 pt); 4× is 7919×5600 (478.92 dpi).
+PDFium: a throwaway `#[ignore]` test, one instance, `FPDF_RenderPageBitmapWithMatrix` with the
+app's flags into a whole-page bitmap, five processes. MuPDF: prebuilt `mutool` 1.28.5
+(1.28.6's Windows zip isn't published), `draw -st`, five processes, page 48 six times each.
+mutool's per-page time includes loading and interpreting the page every time (it has no
+warm path), so it compares with PDFium's parse plus first render.
+
+| | Fit (ms) | 4× (ms) |
+|---|---:|---:|
+| PDFium parse (FPDF_LoadPage) | 129 | 129 |
+| PDFium first render after parse | 132 | 288 |
+| **PDFium cold (parse + first render)** | **261** | **417** |
+| PDFium warm (page already parsed) | 131 | 287 |
+| **MuPDF, default (display list)** | **196** | **426** |
+| MuPDF, `-D` (no display list) | 192 | 432 |
+| MuPDF at 1 dpi (load + interpret, almost no raster) | 149 | 149 |
+| MuPDF raster only (estimate: default minus 1 dpi) | ~47 | ~277 |
+
+Cold, MuPDF is 75% of PDFium at fit and 102% at 4×. The raster-only estimate is about 36%
+of PDFium at fit and 96% at 4×. The display list is worth nothing in a one-shot mutool run
+(as expected; it pays only when one parse is rendered many times). PDFium open was 12 ms
+(62 ms on the first, cold-disk process).
+
+Side observation, not a test result: one PDFium thread renders the *whole* page at fit in
+131 ms, which is the same as the handoff's dense middle band (130 to 150 ms) in an 8-worker
+render. At fit on this page, banding buys almost nothing; the slowest band costs what the
+page does.
+
+### B. Anti-aliasing share (PDFium, page 48 at fit, warm)
+
+Five processes, seven alternating renders of each flag set per process (median of the
+per-process medians). No run includes the parse.
+
+| Flags | ms |
+|---|---:|
+| App flags (`FPDF_ANNOT \| FPDF_REVERSE_BYTE_ORDER`) | 130.9 |
+| + `NO_SMOOTHPATH \| NO_SMOOTHTEXT \| NO_SMOOTHIMAGE` | 125.1 |
+| + `FPDF_RENDER_LIMITEDIMAGECACHE` (vs app flags re-run: 131.5) | 131.7 |
+
+Anti-aliasing is 4.4% of the render. The limited image cache changes nothing.
+
+### C. Front-end breakdown (Curtis Hall page 48, bench at 2560×1400, 8 threads)
+
+Throwaway probes: Rust logged a wall-clock time just before each band's `Channel::send`; the
+front end logged, per band, receipt in `channel.onmessage`, the `RegionAssembler.addBand`
+copy, the band bitmap, the first and last tile `createImageBitmap`, and the band reaching
+`onBand` (tiles into the cache). The bench (`--bench-page 47`, fit / 400% / 1600%, three
+zooms each) drove the zooms instead of the wheel; five runs, 2100 bands. Page 48's parse
+happens before the timed zooms. The two clocks agree to within about 5 ms (the smallest
+send-to-receive gap was −4.9 ms), so read IPC figures as ±5 ms.
+
+Median per band, ms (p90 in brackets):
+
+| Zoom (rs) | Band MB | Send → receive (IPC) | `addBand` copy | Band bitmap | Last tile bitmap | Receive → tiles in cache |
+|---|---:|---:|---:|---:|---:|---:|
+| 400% (8.0) | 5.0 | **65.9** (211) | 0.5 | 2.2 | 2.6 (10.5) | 2.7 (11.2) |
+| 1600% (32.0) | 15.1 | **101.3** (328) | 0.7 | 7.0 | 5.0 (12.1) | 5.8 (14.0) |
+| fit (3.36) | 1.0 | **26.7** (59) | 0.1 | 0.9 | 1.1 (5.8) | 1.2 (6.4) |
+
+`Channel::send` itself returns in under 0.1 ms. Bands queue: at 400% the first band of a
+region takes 29 ms from send to receive and the later ones 103 ms; effective throughput is
+140 to 200 MB/s. Everything the front end does after receipt is 1 to 6 ms a band.
+
+### D. Soft-mask band scaling (`sample-50-MB-pdf-file.pdf`, one page)
+
+`VELLUM_PDFIUM_TIMING=1`, bench at 2560×1400, five runs at 8 threads and five at 2. Per-strip
+median at the same render scale:
+
+| rs | 8 threads: px / strip, ms | 2 threads: px / strip, ms | 8-band cost ÷ 2-band cost (ideal 0.25) |
+|---|---|---|---:|
+| 1.83 (first render, right after the parse) | 0.52 MP, 163 | 2.10 MP, 164 | 0.99 |
+| 2.38 (fit zoom) | 0.89 MP, 62 | 3.56 MP, 82 | 0.76 |
+| 1.68 (start of the fit zoom) | 0.45 MP, 58 | 1.78 MP, 70 | 0.83 |
+
+Every run's first render follows the page parse (337 to 420 ms per worker with 8 parsing
+at once, about 150 ms with 2). Settle to sharp, 8 against 2 threads: fit 182 / 200, 400%
+261 / 249, 1600% 217 / 218 ms. The page is not caught by the large-image one-band rule (it
+rendered in 8 bands). The test can't say whether the soft mask or the big image's resample
+is the per-band fixed cost; either way the cost follows the page, not the band.
+
+### E. WebGPU in our WebView2
+
+Over the DevTools protocol (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port`;
+release builds have no devtools window) in the release exe: `!!navigator.gpu` is `true`;
+`requestAdapter()` returns a hardware adapter (AMD, `rdna-3`, not fallback,
+`maxTextureDimension2D` 16384, `maxBufferSize` 2 GiB, `shader-f16`, `timestamp-query`);
+`requestDevice()` succeeds. WebView2 runtime is Edge 157. One machine only.
+
+### F. Transparent WebView2
+
+`"transparent": true` in place of `backgroundColor` on the main window, `html, body, #app`
+transparent in `app.css`, `npm run tauri dev`, then `.stage` made transparent and its canvas
+hidden through the DevTools protocol. The window behind Vellum showed through the whole stage;
+the custom title bar, menus, toolbar, sidebar and status bar drew normally. Reverted. Not
+checked: resize, maximise, snap, the drag region, or any performance effect.
+
+### Answers
+
+- **Q1** No, not by the plan's bar: MuPDF is 75% of PDFium at fit and 102% at 4× (cold), so not
+  under 70% at both sizes and within 20% at 4×. No MuPDF spike; the gap is the front end and
+  the parse-per-worker. (Its fit raster alone looks about three times faster; noted, not acted on.)
+- **Q2** 4.4%, under 15%: drop idea 1.5.
+- **Q3** Before the first probe fires: send-to-receive is 66 ms median per 400% band (211 ms
+  p90, as bands queue) against about 3 ms of front-end work, so WebView2's channel delivery is
+  the cost and the native surface (idea 4.1) is the real fix.
+- **Q4** With the page: 8 bands cost 76 to 99% of what 2 bands cost each, not 25%. Render
+  these pages as one band (idea 1.9).
+- **Q5** Yes, both, on this machine: WebGPU gives a hardware adapter (idea 4.2 can run in the
+  webview) and a transparent WebView2 shows what's behind it (idea 4.1 is viable).
+
+Nothing was skipped or left incomplete.
+
 ## 1. Ideas for tricky PDFs
 
 Roughly in order of value. None of these is started.
