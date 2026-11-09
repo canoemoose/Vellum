@@ -1,0 +1,127 @@
+# Speed work: hand-over (8 November 2026)
+
+For a fresh session picking up rendering, pan and zoom speed. Read this first, then
+[v0.1-heavy-pdfs.md](v0.1-heavy-pdfs.md) (the Bayou image analysis) and the "Navigation"
+and "Documents" parts of [ARCHITECTURE.md](../ARCHITECTURE.md).
+
+## Where things stand
+
+Matt's yardstick is Foxit: Vellum already beats most viewers on bitmap PDFs, Foxit still has
+the edge on vector (Curtis Hall). His complaint was a visible wait and jump to sharp after a
+zoom, plus multi-second stalls when zoomed out. Landed on main today:
+
+| Commit | What |
+|---|---|
+| `49fdf92` | Bench options `--page N` and `--size WxH` |
+| `e8c6172` | Cancelled renders skip every strip a worker hasn't started; small regions (≤ 0.5 MP) render whole on the page's own worker (`page % workers`) |
+| `3899208` | Render scales quantised in 2^¼ steps and rendered a notch ahead on zoom-in (kept until 1.6x too fine on zoom-out); wheel zoom settles 60 ms after its ease lands (pinch keeps 150 ms); sharper cached copies drawn on top while tiles render; up to one small region per worker in flight |
+
+Matt confirmed the zoom-out and pan stalls are fixed. He has not yet judged thin-line quality
+with tiles drawn at up to 1.6x downscale (`RS_MAX_DOWN` in `src/lib/render/tiles.ts`).
+
+### Numbers to beat
+
+Curtis Hall page 48, 2560x1400 window, 8 PDFium threads, median of 3, settle→sharp in ms
+(the stat starts *after* the settle delay, so add 60 ms for a wheel zoom):
+
+| Build | Fit | 400% | 1600% |
+|---|---:|---:|---:|
+| Before today | 192 | 179 | 106 |
+| Now (`3899208`) | 243 | 235 | 151 |
+
+"Now" is slower per render because render-ahead draws more pixels; the win is that many
+wheel notches need no render at all, which the bench can't see (it always zooms to a fresh
+scale). Matt saw 250 to 350 ms in the stats box in real use before today.
+
+Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
+
+- PDFium alone for a 2048x1536 region: fit 140 to 200 ms, 400% 25 to 40 ms, 1600% under 10 ms.
+- At fit the 8 page bands are uneven: margin bands 16 to 20 ms, the dense middle 130 to
+  150 ms. A render is as slow as its slowest band.
+- First render of a page: each worker parses it, 230 to 550 ms (all 8 in parallel for a
+  banded render).
+- At 400% PDFium finishes in about 100 ms of a roughly 190 ms settle: **about 90 ms is
+  the front end** (IPC of a ~14 MB region, band assembly, `createImageBitmap` per band and
+  per tile). Not broken down yet.
+
+## Tried and rejected (don't redo without a new angle)
+
+- **Start rendering mid-ease** (50 ms after the last wheel notch, at the landing scale).
+  Notches more than 50 ms apart each started a full render that the next notch abandoned;
+  before `e8c6172` cancelled work still ran to completion, so it piled up into 20 s hangs.
+  With real cancellation it might now be viable, but the 60 ms settle took most of the gain.
+- **More, smaller strips from a shared queue** (4 or 8 strips per worker, pulled by idle
+  workers). Fit got slower (167 → 261 → 400 ms). A strip's cost tracks the objects crossing
+  it, not its width, so thin slices of the dense middle each redo the same long lines and
+  fills.
+
+## Ideas, best first
+
+1. **Break down and cut the front-end cost (about 90 ms per render).** Measure first: time
+   from band arrival to tile in cache, split into IPC receive, `RegionAssembler.addBand`
+   copy, band overlay bitmap, per-tile `createImageBitmap`. Candidates: one
+   `createImageBitmap` per band and draw tiles as sub-rects of it instead of a bitmap per
+   tile; skip the band overlay where the tiles complete in the same band; move assembly to
+   a worker with `OffscreenCanvas`; check whether WebView2 copies the channel body twice.
+   This helps every file, vector and bitmap.
+2. **Bayou-style heavy images: our own JPEG decode at ¼ and ½, then page affinity for big
+   images.** Fully worked out in [v0.1-heavy-pdfs.md](v0.1-heavy-pdfs.md) (ideas 1, 2, 5).
+   Page affinity for small regions is now done; one-band large-image pages also go to
+   `page % workers`, so a decoded-image cache per worker is already page-stable.
+3. **Pre-parse pages before they're needed.** First visit to a page costs 230 to 550 ms of
+   parsing. On idle, send `WorkerReq::Prefetch` for the pages on screen and their
+   neighbours (open already does this for page 0). Also measure memory per parsed page on
+   Curtis Hall before considering a larger `PAGES_PER_DOC` (16 today).
+4. **Hold the old image until the new one is complete** (Foxit-style). Doesn't make sharp
+   arrive sooner, but removes the visible band-by-band jump. Easy to try: don't draw target
+   tiles or band overlays for a page until its visible set is complete, unless that takes
+   longer than, say, 300 ms. Matt to judge by feel.
+5. **Tune render-ahead.** `RS_AHEAD` (1.25), `RS_STEP` (2^¼) and `RS_MAX_DOWN` (1.6) in
+   `tiles.ts`. If thin lines look faint at downscale, try `imageSmoothingQuality = "high"`
+   only for scales drawn smaller than 1:1 before lowering `RS_MAX_DOWN`. Each render now
+   costs 20 to 50 ms more; the trade is worth re-checking once idea 1 lands.
+6. **True mid-strip cancel.** A strip already inside PDFium still runs to completion. PDFium's
+   progressive API (`FPDF_RenderPageBitmap_Start` / `_Continue` with an `IFSDK_PAUSE`)
+   would let a cancel stop it. Worth it only if heavy pages still show lag after a fast
+   zoom-out.
+7. **Shorter settle for trackpad pinch.** Still 150 ms after the last event. Matt uses a mouse
+   90% of the time but doesn't want the trackpad to be bad; try 80 to 100 ms.
+8. **Uneven bands on dense pages.** Splitting by area doesn't help (see above). A split by
+   object count (bands sized so each holds a similar number of page objects, from
+   `FPDFPageObj_GetBounds`) might. Research-y; only after 1 and 3.
+9. **The 5 to 25% front-end settle gap** between `f9f0f10` and v0.1 noted in
+   v0.1-heavy-pdfs.md is still unconfirmed. Settle it with an alternating 5-run bench.
+
+## How to measure
+
+Every cargo or tauri command needs the toolchain first:
+
+```bash
+source ~/.vellum-toolchain/env.sh && export CARGO_TARGET_DIR="C:/Users/matt.james/.vellum-target"
+npm run tauri build -- --no-bundle
+```
+
+- **Copy the exe aside before benchmarking** (with `pdfium.dll` and `WebView2Loader.dll`
+  beside it), e.g. to `%TEMP%\vellum-smoke\<name>\`. If Matt has Vellum open from
+  `.vellum-target\release`, the build fails to link ("Permission denied"); don't kill his
+  instance, ask him to close it.
+- **Bench lock:** `mkdir C:/Users/matt.james/.vellum-bench.lock` before a run, `rmdir` after.
+- **Bench:**
+  `node tools/bench.mjs --runs 3 --pdfium-threads 8 --page 48 --size 2560x1400 --exe <exe> "test-files/3397 Drawings MMA Curtis Hall_Sec 1.pdf"`.
+  Results go to `bench-output/pdfium-t8-p48-2560x1400/`. The bench measures one zoom to a
+  fresh scale per rep, so it can't show render-ahead's benefit.
+- **Per-strip timing:** run the exe directly with `VELLUM_PDFIUM_TIMING=1` and the bench
+  flags (`<file> --bench --bench-out x.json --pdfium-threads 8 --bench-page 47 --bench-size 2560x1400`),
+  stderr to a file. Logs page loads and every strip with its size and time.
+- **PDFium in isolation:** an `#[ignore]` test in `src-tauri/tests/` that opens a file with
+  `Docs::open` and times `PdfiumState::render` calls, run with
+  `cargo test --release --test <name> -- --ignored --nocapture`. Delete it afterwards.
+- Test files: `test-files/` (Curtis Hall is the vector one; pages around 48 are the worst;
+  Bayou Towers is the heavy-image one).
+
+## Working with Matt on this
+
+Interactive: small steps, show each one. He judges visual and feel changes himself and his
+reports are ground truth; tell him exactly what to try (file, page, gesture). Don't commit
+until he asks. Ask before adding instrumentation he could answer by looking. Keep the
+engine free of Svelte; navigation maths in `viewMath.ts` stays pure and tested.
