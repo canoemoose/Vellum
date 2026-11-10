@@ -66,17 +66,39 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
    The real fix is the native surface under a transparent WebView2 (speed-ideas 4.1; test F
    says it's viable). The JS-side candidates (one bitmap per band, skipping the overlay,
    `OffscreenCanvas` assembly) are dropped: they shave the 3 ms, not the 66.
-2. **Bayou-style heavy images: our own JPEG decode at ¼ and ½, then page affinity for big
-   images.** Fully worked out in [v0.1-heavy-pdfs.md](v0.1-heavy-pdfs.md) (ideas 1, 2, 5).
-   Page affinity for small regions is now done; one-band large-image pages also go to
-   `page % workers`, so a decoded-image cache per worker is already page-stable.
+2. **Bayou-style heavy images.** *Built 10 Nov, awaiting Matt's check by eye; see
+   [bayou-image-scope.md](bayou-image-scope.md).* The 4 s per render was PDFium converting
+   the 24 MP scan through its 188 KB scanner ICC profile, every time; the JPEG decode itself
+   is 78 ms. JPEGs of 16 MP or more are now decoded by us at full size, converted to sRGB
+   with `moxcms` (matches PDFium to about a level per channel) and swapped in: fit 4,283 →
+   187 ms, 400% 936 → 90 ms, about 155 MB more memory. No ¼ / ½ levels needed. Colour
+   differs from Acrobat and Foxit (both richer); not the intent, black point or display
+   path, parked.
+2a. **The aerial drawing (`projectlayoutmarch2021.pdf`) is slow because of vectors, not
+   images.** *Probed 10 Nov.* One 746 × 14400 pt page with 327,207 objects (280,109 paths,
+   46,202 text, 896 images). Its 730 JPEG tiles are about 1 MP, DeviceRGB, no profile, and
+   PDFium decodes one in 1.5 ms (ours 2.3 ms), so image work (our decode, the ⅛ LOD copies)
+   can't help it. A whole-page render costs 1.3 to 2.4 s even at 50 × 965 px: the cost is
+   walking the objects. Candidates: renders that touch fewer objects (bands sized by object
+   count, idea 9) or a parse-once display list (the MuPDF idea, speed-ideas 4.3, dropped on
+   Curtis Hall's numbers but this file is the case it was made for).
 3. **One band for soft-mask and big-image pages.** *New 9 Nov: test D.* On the 50 MB sample,
    8-band strips cost 76 to 99% of what 2-band strips do, so banding multiplies the work.
    Extend the large-image one-band rule to these pages (speed-ideas 1.9).
-4. **Pre-parse pages before they're needed.** First visit to a page costs 230 to 550 ms of
-   parsing. On idle, send `WorkerReq::Prefetch` for the pages on screen and their
-   neighbours (open already does this for page 0). Also measure memory per parsed page on
-   Curtis Hall before considering a larger `PAGES_PER_DOC` (16 today).
+4. **Pre-parse the next and previous page before they're needed.** First visit to a page
+   costs 230 to 550 ms of parsing. *Tried 10 Nov for the pages on screen only: no gain, so
+   it was stashed (`git stash list`, "Pre-parse visible pages").* A page on screen has
+   already been parsed by the render that drew it: at fit a banded render parses it on all
+   8 workers. Only a page first rendered small (one worker) and then zoomed into gained.
+   Matt's measurement shows what the neighbour version would save: Curtis Hall at about
+   400%, sidebar jump to a page parsed earlier at fit took 216 ms settle→sharp, to a page
+   never visited 394 ms, so **about 180 ms per page** when stepping to the next one (not
+   for sidebar jumps to a far page). The stash has the backend half ready (`prefetch` in
+   `pdfium.rs`, the `doc_prefetch` command, a Rust test); the viewer would need to ask for
+   the neighbours instead of the visible pages, one at a time and only while still idle,
+   because a parse can't be cancelled and blocks that worker's next render. Measure memory
+   per parsed page on Curtis Hall first (`PAGES_PER_DOC` is 16). Judged not worth it for
+   now: build it only if paging through a document feels slow.
 5. **Hold the old image until the new one is complete** (Foxit-style). Doesn't make sharp
    arrive sooner, but removes the visible band-by-band jump. Easy to try: don't draw target
    tiles or band overlays for a page until its visible set is complete, unless that takes
