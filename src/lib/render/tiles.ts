@@ -40,18 +40,22 @@ export function scaleKey(rs: number): number {
 
 /**
  * Which other cached scales to draw under the target scale's tiles while it renders, in
- * draw order (later on top). Up to two scales below the target, the farther first, then
- * the nearest scale above it (within MAX_FALLBACK_UP) last, because a downscaled sharper
- * copy looks right and an upscaled blurrier one doesn't: after zooming out, the earlier
- * zoomed-in tiles cover what they can and the soft ones fill the gaps underneath. Scales
- * far above the target are skipped: they cover little of the view and walking their tile
- * ranges every frame isn't free.
+ * draw order (later on top). Every scale below the target (down to MAX_FALLBACK_DOWN),
+ * coarsest first, then every scale above it (up to MAX_FALLBACK_UP), sharpest first, so the
+ * nearest sharper copy ends on top: a downscaled sharper copy looks right and an upscaled
+ * blurrier one doesn't.
+ *
+ * All of them, not just the nearest: a render cancelled by the next wheel notch leaves a
+ * scale with only a band or two cached. Picking the nearest scales by number let those
+ * scraps push a complete earlier render out, so the blurry page preview showed through
+ * until the target landed. Coarser scales have fewer visible tiles, so walking them is cheap.
  */
 export const MAX_FALLBACK_UP = 4;
+export const MAX_FALLBACK_DOWN = 16;
 export function fallbackScales(cached: number[], target: number): number[] {
-  const below = cached.filter((s) => s < target).sort((a, b) => a - b).slice(-2);
-  const above = cached.filter((s) => s > target && s <= target * MAX_FALLBACK_UP).sort((a, b) => a - b);
-  return above.length ? [...below, above[0]] : below;
+  const below = cached.filter((s) => s < target && s >= target / MAX_FALLBACK_DOWN).sort((a, b) => a - b);
+  const above = cached.filter((s) => s > target && s <= target * MAX_FALLBACK_UP).sort((a, b) => b - a);
+  return [...below, ...above];
 }
 
 /**

@@ -113,16 +113,27 @@ describe("fallback scales under a rendering target", () => {
     const { fallbackScales } = await import("./tiles");
     // Zoomed out from 4 to 3 with 2.5 and 1 also cached: 4 goes last (on top).
     expect(fallbackScales([1, 2.5, 4], 3)).toEqual([1, 2.5, 4]);
-    // Only the two nearest below, farther first.
-    expect(fallbackScales([0.5, 1, 2], 3)).toEqual([1, 2]);
-    // Only the nearest above; the target itself is never a fallback.
-    expect(fallbackScales([3, 6, 8], 3)).toEqual([6]);
+    // Every scale below, coarsest first, so the nearest is on top of them.
+    expect(fallbackScales([0.5, 1, 2], 3)).toEqual([0.5, 1, 2]);
+    // Every scale above, sharpest first, so the nearest above ends on top; the target
+    // itself is never a fallback.
+    expect(fallbackScales([3, 6, 8], 3)).toEqual([8, 6]);
   });
 
-  it("skips copies far sharper than the target", async () => {
-    const { fallbackScales, MAX_FALLBACK_UP } = await import("./tiles");
+  it("keeps a complete earlier render under scraps from cancelled renders", async () => {
+    const { fallbackScales } = await import("./tiles");
+    // Zoomed in from 1 (complete) through 1.2 and 1.4 (a band each, cancelled) to 2:
+    // 1 must still be drawn, beneath the scraps.
+    expect(fallbackScales([1, 1.2, 1.4], 2)).toEqual([1, 1.2, 1.4]);
+    // Zoomed out from 4 (complete) past 3.4 and 2.8 (scraps) to 2.
+    expect(fallbackScales([2.8, 3.4, 4], 2)).toEqual([4, 3.4, 2.8]);
+  });
+
+  it("skips copies far from the target", async () => {
+    const { fallbackScales, MAX_FALLBACK_UP, MAX_FALLBACK_DOWN } = await import("./tiles");
     expect(fallbackScales([0.5, 16], 1)).toEqual([0.5]);
     expect(fallbackScales([0.5, MAX_FALLBACK_UP], 1)).toEqual([0.5, MAX_FALLBACK_UP]);
+    expect(fallbackScales([1 / (MAX_FALLBACK_DOWN * 2), 1 / MAX_FALLBACK_DOWN], 1)).toEqual([1 / MAX_FALLBACK_DOWN]);
   });
 });
 
