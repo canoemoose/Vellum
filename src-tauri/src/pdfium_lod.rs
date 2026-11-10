@@ -18,6 +18,13 @@
 //!
 //! Hooks in pdfium.rs: `on_open` after a document opens, `on_close` before it closes, and
 //! `page_for_render` in the strip renderer.
+//!
+//! Huge JPEGs (on by default). A single JPEG of HUGE_IMAGE_PIXELS or more is decoded once at
+//! full size by us, converted to sRGB through its ICC profile if it has one, and swapped in
+//! the same way, for renders at every scale. PDFium itself never caches such an image: Bayou
+//! Towers' 24 MP cover scan with a scanner profile costs it about 4.2 s on every render,
+//! against about 140 ms once for our decode and colour conversion (docs/bayou-image-scope.md).
+//! The 1/8 copies for many smaller JPEGs stay behind VELLUM_IMAGE_LOD.
 
 use pdfium_render::prelude::*;
 use std::cell::RefCell;
@@ -34,8 +41,15 @@ pub const MIN_PAGE_PIXELS: u64 = 16_000_000;
 
 const FPDF_PAGEOBJ_IMAGE: i32 = 3;
 
-/// Off unless `VELLUM_IMAGE_LOD=1`: the prototype made the aerial drawing slower, not faster
-/// (numbers in docs/v0.1-handoff/lod.md).
+/// A JPEG at least this many pixels on its own is decoded by us and swapped in at every
+/// scale. The aerial drawing's tiles (about 1 MP each) stay with PDFium.
+pub const HUGE_IMAGE_PIXELS: u64 = 16_000_000;
+
+/// How many huge images have been swapped in, process-wide (for tests and diagnostics).
+pub static HUGE_SWAPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The 1/8 copies for many smaller JPEGs: off unless `VELLUM_IMAGE_LOD=1`. The prototype made
+/// the aerial drawing slower, not faster (numbers in docs/v0.1-handoff/lod.md).
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| std::env::var("VELLUM_IMAGE_LOD").is_ok_and(|v| v.trim() == "1"))
@@ -68,6 +82,16 @@ pub fn eligible(filters: &[String], px_w: u32, px_h: u32, colorspace: i32) -> bo
         && px_w >= MIN_IMAGE_SIDE
         && px_h >= MIN_IMAGE_SIDE
         && matches!(colorspace, 1 | 2 | 4 | 5 | 7)
+}
+
+/// Whether an image is huge enough to decode ourselves at full size: a single DCTDecode
+/// filter, DeviceGray, DeviceRGB or ICCBased (FPDF_COLORSPACE_ 1, 2, 7), and at least
+/// HUGE_IMAGE_PIXELS. Whether an ICC profile can actually be applied is decided later.
+pub fn huge_eligible(filters: &[String], px_w: u32, px_h: u32, colorspace: i32) -> bool {
+    filters.len() == 1
+        && filters[0] == "DCTDecode"
+        && px_w as u64 * px_h as u64 >= HUGE_IMAGE_PIXELS
+        && matches!(colorspace, 1 | 2 | 7)
 }
 
 /// Combine per-image thresholds into the page's: the smallest (the image that goes soft
@@ -125,6 +149,59 @@ pub fn decode_small(jpeg: &[u8], px_w: u32, px_h: u32) -> Option<Small> {
     (samples.len() >= w as usize * h as usize * channels).then_some(Small { w: w as u32, h: h as u32, channels, samples })
 }
 
+/// Decode a JPEG at full size. None if it can't (CMYK, 12-bit, damaged).
+pub fn decode_full(jpeg: &[u8]) -> Option<Small> {
+    let mut d = jpeg_decoder::Decoder::new(jpeg);
+    let samples = d.decode().ok()?;
+    let info = d.info()?;
+    let channels = match info.pixel_format {
+        jpeg_decoder::PixelFormat::L8 => 1,
+        jpeg_decoder::PixelFormat::RGB24 => 3,
+        _ => return None,
+    };
+    let (w, h) = (info.width as u32, info.height as u32);
+    (samples.len() >= w as usize * h as usize * channels).then_some(Small { w, h, channels, samples })
+}
+
+/// Convert RGB samples from the image's ICC profile to sRGB in place. False (samples
+/// untouched) if the profile won't parse, isn't RGB, or the transform can't be built; the
+/// image is then left to PDFium. Matches PDFium's own conversion to about a level per channel
+/// on Bayou's scanner profile.
+pub fn icc_to_srgb(img: &mut Small, icc: &[u8]) -> bool {
+    if img.channels != 3 {
+        return false;
+    }
+    let Ok(src) = moxcms::ColorProfile::new_from_slice(icc) else { return false };
+    if src.color_space != moxcms::DataColorSpace::Rgb {
+        return false;
+    }
+    let dst = moxcms::ColorProfile::new_srgb();
+    let Ok(t) = src.create_transform_8bit(moxcms::Layout::Rgb, &dst, moxcms::Layout::Rgb, Default::default()) else {
+        return false;
+    };
+    // Whole rows per chunk, a chunk per core: the transform is per pixel.
+    let row = img.w as usize * 3;
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1);
+    let chunk = (img.h as usize).div_ceil(threads).max(1) * row;
+    let mut out = vec![0u8; img.samples.len()];
+    let ok = std::thread::scope(|s| {
+        let jobs: Vec<_> = img
+            .samples
+            .chunks(chunk)
+            .zip(out.chunks_mut(chunk))
+            .map(|(a, b)| {
+                let t = &t;
+                s.spawn(move || t.transform(a, b).is_ok())
+            })
+            .collect();
+        jobs.into_iter().all(|j| j.join().unwrap_or(false))
+    });
+    if ok {
+        img.samples = out;
+    }
+    ok
+}
+
 /// The reduced images of one page: object index on the page, and its decode.
 type PageSmalls = Vec<(i32, Option<Arc<Small>>)>;
 
@@ -135,10 +212,17 @@ fn shared() -> &'static Mutex<HashMap<(PathBuf, usize), Arc<OnceLock<PageSmalls>
     S.get_or_init(Default::default)
 }
 
+/// Process-wide: (file, page) -> the page's huge images decoded at full size and in sRGB.
+fn huge_shared() -> &'static Mutex<HashMap<(PathBuf, usize), Arc<OnceLock<PageSmalls>>>> {
+    static S: OnceLock<Mutex<HashMap<(PathBuf, usize), Arc<OnceLock<PageSmalls>>>>> = OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
 /// Forget a file's decodes once no worker has it open (best effort: called on every close;
 /// another worker that still needs a page decodes it again).
 fn forget_shared(path: &Path) {
     shared().lock().unwrap().retain(|(p, _), _| p != path);
+    huge_shared().lock().unwrap().retain(|(p, _), _| p != path);
 }
 
 // ---------- per-worker state ----------
@@ -167,9 +251,6 @@ thread_local! {
 /// A document opened on this worker. Only documents opened from a file take part (composed
 /// print jobs in memory don't need it).
 pub fn on_open(handle: FPDF_DOCUMENT, path: Option<PathBuf>) {
-    if !enabled() {
-        return;
-    }
     if let Some(path) = path {
         DOCS.with(|d| {
             d.borrow_mut().insert(handle as usize, LodDoc { path, handle: std::ptr::null_mut(), tried: false, pages: HashMap::new() })
@@ -196,9 +277,6 @@ pub fn on_close(b: &dyn PdfiumLibraryBindings, handle: FPDF_DOCUMENT) {
 /// The page to render a strip from: the reduced copy when the scale is low enough, else
 /// `original`.
 pub fn page_for_render(b: &dyn PdfiumLibraryBindings, handle: FPDF_DOCUMENT, index: usize, rs: f64, original: FPDF_PAGE) -> FPDF_PAGE {
-    if !enabled() {
-        return original;
-    }
     DOCS.with(|d| {
         let mut docs = d.borrow_mut();
         let Some(ld) = docs.get_mut(&(handle as usize)) else {
@@ -226,8 +304,144 @@ fn image_filters(b: &dyn PdfiumLibraryBindings, o: FPDF_PAGEOBJECT) -> Vec<Strin
         .collect()
 }
 
-/// Look at the original page; if it's image-heavy, build the reduced copy.
+fn image_raw(b: &dyn PdfiumLibraryBindings, o: FPDF_PAGEOBJECT) -> Vec<u8> {
+    let len = unsafe { b.FPDFImageObj_GetImageDataRaw(o, std::ptr::null_mut(), 0) } as usize;
+    let mut buf = vec![0u8; len];
+    if len > 0 {
+        unsafe { b.FPDFImageObj_GetImageDataRaw(o, buf.as_mut_ptr() as *mut _, len as _) };
+    }
+    buf
+}
+
+fn image_icc(b: &dyn PdfiumLibraryBindings, o: FPDF_PAGEOBJECT, page: FPDF_PAGE) -> Option<Vec<u8>> {
+    let mut len = 0usize;
+    unsafe { b.FPDFImageObj_GetIccProfileDataDecoded(o, page, std::ptr::null_mut(), 0, &mut len) };
+    if len == 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; len];
+    let ok = unsafe { b.FPDFImageObj_GetIccProfileDataDecoded(o, page, buf.as_mut_ptr(), len, &mut len) } != 0;
+    (ok && len <= buf.len()).then(|| {
+        buf.truncate(len);
+        buf
+    })
+}
+
+/// Look at the original page: huge JPEGs get a full-size swap; otherwise, with LOD on, an
+/// image-heavy page gets the reduced copy.
 fn prepare_page(b: &dyn PdfiumLibraryBindings, ld: &mut LodDoc, index: usize, original: FPDF_PAGE) -> Option<LodPage> {
+    if let Some(lp) = prepare_huge(b, ld, index, original) {
+        return Some(lp);
+    }
+    if !enabled() {
+        return None;
+    }
+    prepare_reduced(b, ld, index, original)
+}
+
+/// Decode the page's huge JPEGs ourselves, once per file and page, and swap them into this
+/// worker's second copy of the page, used at every scale.
+fn prepare_huge(b: &dyn PdfiumLibraryBindings, ld: &mut LodDoc, index: usize, original: FPDF_PAGE) -> Option<LodPage> {
+    let t0 = std::time::Instant::now();
+    let mut picks: Vec<(i32, u32, u32, i32)> = Vec::new();
+    let n = unsafe { b.FPDFPage_CountObjects(original) };
+    for i in 0..n {
+        let o = unsafe { b.FPDFPage_GetObject(original, i) };
+        if o.is_null() || unsafe { b.FPDFPageObj_GetType(o) } != FPDF_PAGEOBJ_IMAGE {
+            continue;
+        }
+        let mut md: FPDF_IMAGEOBJ_METADATA = unsafe { std::mem::zeroed() };
+        if unsafe { b.FPDFImageObj_GetImageMetadata(o, original, &mut md) } == 0 {
+            continue;
+        }
+        // Cheap size check first: most pages have no huge image and needn't read filters.
+        if (md.width as u64 * md.height as u64) < HUGE_IMAGE_PIXELS {
+            continue;
+        }
+        if huge_eligible(&image_filters(b, o), md.width, md.height, md.colorspace) {
+            picks.push((i, md.width, md.height, md.colorspace));
+        }
+    }
+    if picks.is_empty() {
+        return None;
+    }
+    let cell = huge_shared().lock().unwrap().entry((ld.path.clone(), index)).or_default().clone();
+    let decoded = cell.get_or_init(|| {
+        picks
+            .iter()
+            .map(|&(i, w, h, cs)| {
+                let o = unsafe { b.FPDFPage_GetObject(original, i) };
+                let Some(mut img) = decode_full(&image_raw(b, o)) else {
+                    eprintln!("[lod] page {} image {i}: could not decode the JPEG ourselves, left to PDFium", index + 1);
+                    return (i, None);
+                };
+                if img.w != w || img.h != h {
+                    eprintln!("[lod] page {} image {i}: decoded {}x{}, PDF says {w}x{h}, left to PDFium", index + 1, img.w, img.h);
+                    return (i, None);
+                }
+                if cs == 7 {
+                    let ok = image_icc(b, o, original).is_some_and(|icc| icc_to_srgb(&mut img, &icc));
+                    if !ok {
+                        eprintln!("[lod] page {} image {i}: ICC profile not applied, left to PDFium", index + 1);
+                        return (i, None);
+                    }
+                }
+                (i, Some(Arc::new(img)))
+            })
+            .collect()
+    });
+    let page = swap_page(b, ld, index, decoded)?;
+    HUGE_SWAPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if timing() {
+        eprintln!("[lod] page {}: huge JPEG swapped in, {} ms", index + 1, t0.elapsed().as_millis());
+    }
+    Some(LodPage { page, max_rs: f64::INFINITY })
+}
+
+/// Load the page from this worker's second handle on the file and swap each decoded image
+/// in. None if the second handle can't open or nothing was swapped.
+fn swap_page(b: &dyn PdfiumLibraryBindings, ld: &mut LodDoc, index: usize, images: &PageSmalls) -> Option<FPDF_PAGE> {
+    if !ld.tried {
+        ld.tried = true;
+        ld.handle = unsafe { b.FPDF_LoadDocument(&ld.path.to_string_lossy(), None) };
+    }
+    if ld.handle.is_null() {
+        return None; // e.g. password-protected: no swapped copy
+    }
+    let mut page = unsafe { b.FPDF_LoadPage(ld.handle, index as i32) };
+    if page.is_null() {
+        return None;
+    }
+    let mut swapped = 0;
+    for (i, img) in images {
+        let Some(sm) = img else { continue };
+        let o = unsafe { b.FPDFPage_GetObject(page, *i) };
+        if o.is_null() || unsafe { b.FPDFPageObj_GetType(o) } != FPDF_PAGEOBJ_IMAGE {
+            continue;
+        }
+        let bmp = unsafe { b.FPDFBitmap_Create(sm.w as i32, sm.h as i32, 0) };
+        if bmp.is_null() {
+            continue;
+        }
+        unsafe {
+            let stride = b.FPDFBitmap_GetStride(bmp) as usize;
+            let buf = std::slice::from_raw_parts_mut(b.FPDFBitmap_GetBuffer(bmp) as *mut u8, stride * sm.h as usize);
+            to_bgrx(&sm.samples, sm.channels, sm.w as usize, sm.h as usize, buf, stride);
+            if b.FPDFImageObj_SetBitmap(&mut page, 1, o, bmp) != 0 {
+                swapped += 1;
+            }
+            b.FPDFBitmap_Destroy(bmp);
+        }
+    }
+    if swapped == 0 {
+        unsafe { b.FPDF_ClosePage(page) };
+        return None;
+    }
+    Some(page)
+}
+
+/// With LOD on: if the page is image-heavy, build the 1/8 copy.
+fn prepare_reduced(b: &dyn PdfiumLibraryBindings, ld: &mut LodDoc, index: usize, original: FPDF_PAGE) -> Option<LodPage> {
     let t0 = std::time::Instant::now();
     // Which objects to reduce, and the page's threshold.
     let mut picks: Vec<(i32, u32, u32)> = Vec::new();
@@ -285,48 +499,12 @@ fn prepare_page(b: &dyn PdfiumLibraryBindings, ld: &mut LodDoc, index: usize, or
         out
     });
 
-    // This worker's second handle on the file.
-    if !ld.tried {
-        ld.tried = true;
-        ld.handle = unsafe { b.FPDF_LoadDocument(&ld.path.to_string_lossy(), None) };
-    }
-    if ld.handle.is_null() {
-        return None; // e.g. password-protected: no reduced copy
-    }
-    let mut page = unsafe { b.FPDF_LoadPage(ld.handle, index as i32) };
-    if page.is_null() {
-        return None;
-    }
-    let mut swapped = 0;
-    for (i, small) in smalls {
-        let Some(sm) = small else { continue };
-        let o = unsafe { b.FPDFPage_GetObject(page, *i) };
-        if o.is_null() || unsafe { b.FPDFPageObj_GetType(o) } != FPDF_PAGEOBJ_IMAGE {
-            continue;
-        }
-        let bmp = unsafe { b.FPDFBitmap_Create(sm.w as i32, sm.h as i32, 0) };
-        if bmp.is_null() {
-            continue;
-        }
-        unsafe {
-            let stride = b.FPDFBitmap_GetStride(bmp) as usize;
-            let buf = std::slice::from_raw_parts_mut(b.FPDFBitmap_GetBuffer(bmp) as *mut u8, stride * sm.h as usize);
-            to_bgrx(&sm.samples, sm.channels, sm.w as usize, sm.h as usize, buf, stride);
-            if b.FPDFImageObj_SetBitmap(&mut page, 1, o, bmp) != 0 {
-                swapped += 1;
-            }
-            b.FPDFBitmap_Destroy(bmp);
-        }
-    }
+    let page = swap_page(b, ld, index, smalls)?;
     if timing() {
         eprintln!(
-            "[lod] page {}: {} of {} images reduced 1/{}, use at rs <= {:.4}, {} ms",
-            index + 1, swapped, picks.len(), SCALE, max_rs, t0.elapsed().as_millis()
+            "[lod] page {}: {} images reduced 1/{}, use at rs <= {:.4}, {} ms",
+            index + 1, picks.len(), SCALE, max_rs, t0.elapsed().as_millis()
         );
-    }
-    if swapped == 0 {
-        unsafe { b.FPDF_ClosePage(page) };
-        return None;
     }
     Some(LodPage { page, max_rs })
 }

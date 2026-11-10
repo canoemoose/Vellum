@@ -28,6 +28,9 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 fast_image_resize = "5"
 # WP-LOD: scaled-IDCT JPEG decode (1/8) for image level of detail.
 jpeg-decoder = { version = "0.3", default-features = false }
+# Huge JPEGs with an ICC profile: converted to sRGB once instead of by PDFium on every render.
+# Already in the build through `image`; pure Rust.
+moxcms = "0.8"
 # WP-Shell: a second launch hands its file to the running window (Explorer "Open with").
 tauri-plugin-single-instance = "2"
 

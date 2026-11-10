@@ -4293,6 +4293,7 @@ dependencies = [
  "fast_image_resize",
  "image",
  "jpeg-decoder",
+ "moxcms",
  "pdfium-render",
  "serde",
  "serde_json",
