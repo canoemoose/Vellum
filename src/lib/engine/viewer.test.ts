@@ -2,7 +2,8 @@
 // timers standing in for setTimeout, requestAnimationFrame and performance.now.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StubRenderer, doc, flush, installFakes, openViewer, until } from "./testkit";
+import { StubRenderer, doc, flush, installFakes, openViewer, stubCanvas, until } from "./testkit";
+import { Viewer } from "./viewer";
 
 beforeEach(installFakes);
 afterEach(() => {
@@ -179,5 +180,32 @@ describe("Viewer scheduler", () => {
     expect(v.queueLength).toBe(0);
     expect(v.rendering).toBe(false);
     err.mockRestore();
+  });
+
+  describe("thumbnails beside a long render", () => {
+    // A large region (a 2000 x 1500 window at fit), so the backend decides its band count.
+    async function openLarge(bands: number | null) {
+      const r = new StubRenderer(doc([{ w: 1190, h: 842 }]));
+      (r as StubRenderer & { knownBands: () => Promise<number | null> }).knownBands = async () => bands;
+      const v = new Viewer(stubCanvas(), {}, r);
+      v.resize(2000, 1500, 1);
+      await v.open("C:/x/drawing.pdf", undefined, r);
+      await flush();
+      vi.advanceTimersByTime(400); // past the post-input quiet time
+      await flush();
+      expect(r.pending().some((c) => c.req.w * c.req.h > 512 * 1024)).toBe(true);
+      return { v, r };
+    }
+
+    it("may run while a one-band render is in flight", async () => {
+      const { v } = await openLarge(1);
+      expect(v.idleForBackground).toBe(false);
+      expect(v.idleForThumbnails).toBe(true);
+    });
+
+    it("waits while a banded render is in flight, or its band count isn't known", async () => {
+      expect((await openLarge(8)).v.idleForThumbnails).toBe(false);
+      expect((await openLarge(null)).v.idleForThumbnails).toBe(false);
+    });
   });
 });

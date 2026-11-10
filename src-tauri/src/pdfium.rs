@@ -562,6 +562,12 @@ impl PdfiumState {
         }
     }
 
+    /// A page's band count if it's already known (its first large render has been planned),
+    /// without asking a worker. Lets the front end tell a one-worker render from a banded one.
+    pub fn known_bands(&self, doc_id: u64, page: usize) -> Option<usize> {
+        self.inner.docs.lock().unwrap().get(&doc_id).and_then(|d| d.bands.get(&page).copied())
+    }
+
     /// Band count for a page, asked of the page's own worker once and remembered.
     fn bands(&self, workers: &[Sender<WorkerReq>], doc_id: u64, page: usize) -> Result<usize, String> {
         if let Some(&b) = self.inner.docs.lock().unwrap().get(&doc_id).and_then(|d| d.bands.get(&page)) {

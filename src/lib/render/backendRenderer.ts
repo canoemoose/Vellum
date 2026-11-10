@@ -161,6 +161,10 @@ export abstract class BackendRenderer implements Renderer {
     return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 0, w * h * 4), w, h));
   }
 
+  knownBands(docId: number, page: number): Promise<number | null> {
+    return invoke<number | null>("doc_known_bands", { docId, page });
+  }
+
   async cachedPreview(docId: number, page: number): Promise<ImageBitmap | null> {
     const buf = await invoke<ArrayBuffer>("doc_cached_preview", { docId, page });
     if (buf.byteLength === 0) return null;

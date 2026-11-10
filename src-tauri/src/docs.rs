@@ -224,6 +224,14 @@ impl Docs {
         }
     }
 
+    /// A page's band count if already known (PDFs only; see PdfiumState::known_bands).
+    pub fn known_bands(&self, pdf: &PdfiumState, doc_id: u64, page: usize) -> Result<Option<usize>, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => Ok(pdf.known_bands(doc_id, page)),
+            EntryRef::Image(_) => Ok(None),
+        }
+    }
+
     pub fn page_text(&self, pdf: &PdfiumState, doc_id: u64, page: usize) -> Result<String, String> {
         match self.entry(doc_id)? {
             EntryRef::Pdf => pdf.page_text(doc_id, page),

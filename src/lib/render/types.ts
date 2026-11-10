@@ -116,6 +116,8 @@ export interface Renderer {
   ): Promise<void>;
   /** Whole page scaled so its longer side is maxSide device pixels. */
   thumbnail?(docId: number, page: number, maxSide: number): Promise<ImageBitmap>;
+  /** How many backend workers a page's large renders use, or null if not known yet. */
+  knownBands?(docId: number, page: number): Promise<number | null>;
   pageText?(docId: number, page: number): Promise<string>;
   outline?(docId: number): Promise<OutlineNode[]>;
   /** Drawing-scale notes on a page, best first (empty if none). */

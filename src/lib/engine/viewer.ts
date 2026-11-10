@@ -135,6 +135,8 @@ interface Job {
   prio: number;
   dist: number;
   ac?: AbortController;
+  /** Backend workers this render occupies once known (1 for a small or one-band region). */
+  bands?: number;
 }
 
 interface Preview {
@@ -274,7 +276,7 @@ export class Viewer {
     this.cache = new TileCache(this.opts.cacheBytes);
     this.ctx = canvas.getContext("2d", { alpha: false })!;
     this.thumbnails = new ThumbnailQueue({
-      isIdle: () => this.idleForBackground,
+      isIdle: () => this.idleForThumbnails,
       fromPreview: (docId, page, maxSide) => this.thumbnailFromPreview(docId, page, maxSide),
       // Half the backend workers: thumbnails run only when idle, but one still parsing when
       // a zoom starts holds up that worker's band, so leave the other half free.
@@ -782,6 +784,18 @@ export class Viewer {
   }
 
   /**
+   * Thumbnails may also run beside a render that occupies a single backend worker (a small
+   * region, or a page whose big image renders as one band, like Bayou's cover scan that takes
+   * seconds): the other workers are idle. Not beside a banded render, which uses every worker.
+   */
+  get idleForThumbnails(): boolean {
+    if (this.anim || this.settleTimer || this.queue.length > 0) return false;
+    if (performance.now() - this.lastInput <= IDLE_AFTER_INPUT_MS) return false;
+    for (const j of this.active) if (j.bands !== 1) return false;
+    return true;
+  }
+
+  /**
    * Rendering holds off only while the scale is changing: a zoom invalidates every tile,
    * so rendering mid-zoom would be wasted. A pan keeps every tile valid, so rendering
    * carries on throughout a drag and the newly uncovered strip fills in as you go.
@@ -961,6 +975,28 @@ export class Viewer {
     }
   }
 
+  /**
+   * Find out how many workers a running render occupies (see idleForThumbnails). Small
+   * regions always use one. A large one asks the backend, which knows once it has planned
+   * the page's first large render: retried a few times, since this can beat the plan.
+   */
+  private learnBands(job: Job, tries = 5): void {
+    if (job.req.w * job.req.h <= SMALL_REGION_PX) {
+      job.bands = 1;
+      return;
+    }
+    const doc = this.doc;
+    if (!doc || !this.renderer.knownBands) return;
+    this.renderer
+      .knownBands(doc.docId, job.page)
+      .then((n) => {
+        if (!this.active.has(job)) return;
+        if (n !== null) job.bands = n;
+        else if (tries > 1) setTimeout(() => this.learnBands(job, tries - 1), 100);
+      })
+      .catch(() => {});
+  }
+
   private start(job: Job): void {
     const gen = this.gen;
     const docId = this.doc!.docId;
@@ -968,6 +1004,7 @@ export class Viewer {
     job.ac = new AbortController();
     const signal = job.ac.signal;
     this.active.add(job);
+    this.learnBands(job);
     const t0 = performance.now();
     const stale = () => gen !== this.gen || signal.aborted;
 
