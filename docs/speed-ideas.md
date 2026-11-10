@@ -194,6 +194,52 @@ Vellum's roughly 90 ms front end on a 100 ms render (handoff, "Where the time go
 exactly the cost Foxit doesn't pay. Foxit also holds the old image until the new one is
 complete, which is why it feels smooth even where it isn't faster.
 
+### Observed from outside (10 November 2026)
+
+Black-box only: synthetic Ctrl+wheel input, screen-crop capture every ~8 ms, per-thread CPU
+and GPU engine counters through Windows. No decompiling. Curtis Hall page 48, dense upper
+plan, 2880×1800 at 150% scaling.
+
+What Foxit does:
+
+- **One render thread, no GPU.** One thread carries almost all the CPU during a zoom and
+  the GPU 3D engine stays idle, so it's GDI/GDI+/DirectWrite drawing, not a compositor.
+- **No zoom cache, and no stretched stand-in.** It steps through preset levels (81.82, 100,
+  115.84, 118.68, 125, 150, 200, 300, 400%) and renders each one fully, about 200 ms apart,
+  showing each frame sharp. It never shows a blurred or stretched frame.
+- **It falls behind the wheel.** It is still working through notches finished a second
+  earlier.
+
+Fit to 300%, five runs each, every changed frame scored against the settled frame. Foxit needs
+7 notches and Vellum 11 to get there; both land within 1% of 300%.
+
+| Median of 5 | Foxit | Vellum |
+|---|---:|---:|
+| Sharp, from the first notch (in) | 1329 ms | 802 ms |
+| Sharp, from the last notch (in) | ~1015 ms | ~255 ms |
+| Sharp, from the last notch (out) | ~1110 ms | ~260 ms |
+| First visible change (one run) | ~200 ms | ~10 ms |
+| Distinct frames shown | 7 | 41–52 |
+
+Earlier fit-to-400% run (settle after the last notch, median of 5): Foxit 526 ms in, 671 ms
+out; Vellum 296 ms in, 235 ms out.
+
+Vellum animates smoothly and keeps up, but from about 400 ms its frames are stretched, soft
+copies of coarser tiles. At about 700 ms it reaches the target zoom and holds a blurry frame
+for about 100 ms, visibly heavier and greyer than the result, then pops sharp. Neither app
+sharpens gradually: every frame stays far from the final image until the last one.
+
+**Reading it:** Foxit's edge is how it looks while zooming, not speed. It shows late but crisp
+frames where Vellum shows fresh but soft ones. Vellum's soft phase is roughly the last 100 to
+350 ms of a zoom, which is the window cutting the IPC cost (idea 4.1) shrinks. Worth a cheap
+look on top: making the stand-in closer to the sharp result (thin lines staying thin and
+light when stretched) so the pop is smaller.
+
+Caveats: absolute times differ between sessions (Foxit was slower in the 300% run, and the
+battery fell from 97% to 91%, so the laptop may have been throttled on battery); both apps
+ran back to back so the comparison holds. Foxit's Pages panel was open. A pixel-difference
+score is a stand-in for perceived sharpness, not a measure of it.
+
 ## 4. Wild ideas
 
 1. **Native surface under a transparent WebView2.** Foxit's trick in Tauri. The webview
