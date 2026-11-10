@@ -1,6 +1,8 @@
 // Low-priority page thumbnails (sidebar Pages panel). Requests wait until the viewer is idle
-// (nothing queued or rendering for the visible view, no recent input), run one at a time,
-// newest request first (the pages the user just scrolled to), and are cached per document.
+// (nothing queued or rendering for the visible view, no recent input), run a few at a time
+// (`concurrency`; pages go to their own backend workers, so neighbours render in parallel),
+// lowest page first so the list fills top-down, and are cached per document. The caller
+// drops requests for pages that scroll out of view (`cancel`), so only pages near view wait.
 // A thumbnail already in the cache, or one the caller can build from a page preview, never
 // touches the backend.
 
@@ -15,6 +17,8 @@ export interface ThumbnailOptions {
   budgetBytes?: number;
   /** How often to re-check for idleness while requests wait, ms. */
   pollMs?: number;
+  /** Thumbnails rendering at once (default 1). Read on every start, so it can follow the backend. */
+  concurrency?: () => number;
 }
 
 interface Entry {
@@ -44,8 +48,7 @@ export class ThumbnailQueue {
   private cache = new Map<string, Entry>();
   private bytes = 0;
   private queue: Pending[] = [];
-  private busy = false;
-  private inflight: Pending | null = null;
+  private inflight = new Set<Pending>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly budget: number;
   private readonly pollMs: number;
@@ -70,16 +73,14 @@ export class ThumbnailQueue {
       return copyOf(hit.bitmap);
     }
     return new Promise((res, rej) => {
-      if (this.inflight?.key === key) {
-        this.inflight.waiters.push({ res, rej });
+      const running = [...this.inflight].find((p) => p.key === key);
+      if (running) {
+        running.waiters.push({ res, rej });
         return;
       }
       const existing = this.queue.find((p) => p.key === key);
       if (existing) {
         existing.waiters.push({ res, rej });
-        // Re-requested: move to the front.
-        this.queue.splice(this.queue.indexOf(existing), 1);
-        this.queue.push(existing);
       } else {
         this.queue.push({ key, renderer, docId, page, maxSide, waiters: [{ res, rej }] });
       }
@@ -92,10 +93,22 @@ export class ThumbnailQueue {
     return this.cache.get(keyOf(docId, page, Math.max(1, Math.round(maxSide))))?.bitmap;
   }
 
+  /**
+   * Drop a waiting request (its page scrolled out of view): its promises reject. One already
+   * rendering finishes and is cached.
+   */
+  cancel(docId: number, page: number, maxSide: number): void {
+    const key = keyOf(docId, page, Math.max(1, Math.round(maxSide)));
+    const i = this.queue.findIndex((p) => p.key === key);
+    if (i < 0) return;
+    const [p] = this.queue.splice(i, 1);
+    p.waiters.forEach((w) => w.rej(new Error("cancelled")));
+  }
+
   /** Forget a document: reject its waiting requests and free its cached thumbnails. */
   cancelDoc(docId: number): void {
     const prefix = `${docId}|`;
-    if (this.inflight?.docId === docId) this.inflight.cancelled = true;
+    for (const p of this.inflight) if (p.docId === docId) p.cancelled = true;
     this.queue = this.queue.filter((p) => {
       if (p.docId !== docId) return true;
       p.waiters.forEach((w) => w.rej(new Error("document closed")));
@@ -117,24 +130,27 @@ export class ThumbnailQueue {
     return this.bytes;
   }
 
-  /** Try to run the next request now; called by the viewer when it goes idle. */
+  /** Start waiting requests up to `concurrency`; called by the viewer when it goes idle. */
   kick(): void {
-    if (this.busy || this.queue.length === 0) return;
-    if (!this.opts.isIdle()) {
-      this.timer ??= setTimeout(() => {
-        this.timer = null;
+    const max = Math.max(1, this.opts.concurrency?.() ?? 1);
+    while (this.inflight.size < max && this.queue.length > 0) {
+      if (!this.opts.isIdle()) {
+        this.timer ??= setTimeout(() => {
+          this.timer = null;
+          this.kick();
+        }, this.pollMs);
+        return;
+      }
+      // Lowest page first: the list fills top-down.
+      let k = 0;
+      for (let i = 1; i < this.queue.length; i++) if (this.queue[i].page < this.queue[k].page) k = i;
+      const [job] = this.queue.splice(k, 1);
+      this.inflight.add(job);
+      void this.run(job).finally(() => {
+        this.inflight.delete(job);
         this.kick();
-      }, this.pollMs);
-      return;
+      });
     }
-    const job = this.queue.pop()!; // newest first
-    this.busy = true;
-    this.inflight = job;
-    void this.run(job).finally(() => {
-      this.busy = false;
-      this.inflight = null;
-      this.kick();
-    });
   }
 
   private async run(job: Pending): Promise<void> {

@@ -15,6 +15,7 @@
     sizes: PageSize[];
     current: number;
     thumbnail: (page: number, maxSide: number) => Promise<ImageBitmap>;
+    cancelThumbnail: (page: number, maxSide: number) => void;
     outline: ((docId: number) => Promise<OutlineNode[]>) | null;
     onTab: (t: SidebarTab) => void;
     onWidth: (w: number, done: boolean) => void;
@@ -47,7 +48,7 @@
     <p class="empty">No document open</p>
   {:else if p.tab === "pages"}
     {#key p.docId}
-      <Thumbnails docId={p.docId} sizes={p.sizes} current={p.current} thumbnail={p.thumbnail} onGoto={p.onGoto} />
+      <Thumbnails docId={p.docId} sizes={p.sizes} current={p.current} thumbnail={p.thumbnail} cancelThumbnail={p.cancelThumbnail} onGoto={p.onGoto} />
     {/key}
   {:else}
     <div class="outline">

@@ -44,22 +44,65 @@ describe("ThumbnailQueue", () => {
     expect(b.width).toBe(132);
   });
 
-  it("runs one at a time, newest request first", async () => {
+  it("runs one at a time by default, lowest page first", async () => {
     idle = false;
-    const ps = [0, 1, 2].map((page) => q.request(r, 1, page, 132));
+    const ps = [2, 0, 1].map((page) => q.request(r, 1, page, 132));
     idle = true;
     await vi.advanceTimersByTimeAsync(100);
-    expect(r.asked).toEqual([2]);
+    expect(r.asked).toEqual([0]);
     r.release[0]();
     await settle();
     await settle();
-    expect(r.asked).toEqual([2, 1]);
+    expect(r.asked).toEqual([0, 1]);
     r.release[1]();
     await settle();
     await settle();
     r.release[2]();
     await Promise.all(ps);
-    expect(r.asked).toEqual([2, 1, 0]);
+    expect(r.asked).toEqual([0, 1, 2]);
+  });
+
+  it("runs up to `concurrency` at once, top-down", async () => {
+    q.dispose();
+    let n = 3;
+    q = new ThumbnailQueue({ isIdle: () => idle, pollMs: 100, concurrency: () => n });
+    idle = false;
+    const ps = [4, 3, 2, 1, 0].map((page) => q.request(r, 1, page, 132));
+    idle = true;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.asked).toEqual([0, 1, 2]);
+    r.release[1]();
+    await settle();
+    await settle();
+    expect(r.asked).toEqual([0, 1, 2, 3]);
+    n = 1; // the limit is read on every start
+    r.release[0]();
+    r.release[2]();
+    await settle();
+    await settle();
+    expect(r.asked).toEqual([0, 1, 2, 3]);
+    r.release[3]();
+    await settle();
+    await settle();
+    expect(r.asked).toEqual([0, 1, 2, 3, 4]);
+    r.release[4]();
+    await Promise.all(ps);
+  });
+
+  it("cancel drops a waiting request and rejects it; others carry on", async () => {
+    idle = false;
+    const a = q.request(r, 1, 0, 132);
+    const b = q.request(r, 1, 1, 132);
+    q.cancel(1, 0, 132);
+    await expect(a).rejects.toThrow("cancelled");
+    expect(q.pending).toBe(1);
+    idle = true;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.asked).toEqual([1]);
+    r.release[0]();
+    await b;
+    // Cancelling something not waiting is a no-op.
+    q.cancel(1, 5, 132);
   });
 
   it("dedupes repeated requests and serves later ones from the cache", async () => {

@@ -11,15 +11,25 @@
     sizes: PageSize[];
     current: number;
     thumbnail: (page: number, maxSide: number) => Promise<ImageBitmap>;
+    /** Drop a waiting request whose page has scrolled out of view. */
+    cancelThumbnail: (page: number, maxSide: number) => void;
     onGoto: (page: number) => void;
   }
-  let { docId, sizes, current, thumbnail, onGoto }: Props = $props();
+  let { docId, sizes, current, thumbnail, cancelThumbnail, onGoto }: Props = $props();
 
   const W = 132;
   const MAX_H = 187;
 
   let list: HTMLDivElement;
+  /** Pages asked for and not yet drawn. */
   const requested = new Set<number>();
+  /** Pages already drawn. */
+  const drawn = new Set<number>();
+
+  const sideFor = (page: number) => {
+    const box = boxSize(sizes[page]);
+    return Math.max(box.w, box.h) * (window.devicePixelRatio || 1);
+  };
 
   function boxSize(s: PageSize): { w: number; h: number } {
     let w = W;
@@ -32,17 +42,17 @@
   }
 
   function load(page: number, canvas: HTMLCanvasElement) {
-    if (requested.has(page)) return;
+    if (requested.has(page) || drawn.has(page)) return;
     requested.add(page);
-    const box = boxSize(sizes[page]);
-    const dpr = window.devicePixelRatio || 1;
     const id = docId;
-    thumbnail(page, Math.max(box.w, box.h) * dpr)
+    thumbnail(page, sideFor(page))
       .then((bmp) => {
+        requested.delete(page);
         if (id !== docId || !canvas.isConnected) {
           bmp.close();
           return;
         }
+        drawn.add(page);
         canvas.width = bmp.width;
         canvas.height = bmp.height;
         canvas.getContext("2d")?.drawImage(bmp, 0, 0);
@@ -50,7 +60,7 @@
         bmp.close();
       })
       .catch(() => {
-        // Document closed or render failed: let it try again if it scrolls back into view.
+        // Cancelled, document closed or render failed: try again if it scrolls back into view.
         requested.delete(page);
       });
   }
@@ -59,9 +69,10 @@
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (!e.isIntersecting) continue;
           const c = e.target as HTMLCanvasElement;
-          load(Number(c.dataset.page), c);
+          const page = Number(c.dataset.page);
+          if (e.isIntersecting) load(page, c);
+          else if (requested.has(page)) cancelThumbnail(page, sideFor(page));
         }
       },
       { root: list, rootMargin: "300px 0px" },

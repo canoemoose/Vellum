@@ -755,6 +755,7 @@
         {sizes}
         current={ui.page}
         thumbnail={(p, m) => viewer!.thumbnail(p, m)}
+        cancelThumbnail={(p, m) => viewer?.cancelThumbnail(p, m)}
         outline={(id) => rendererFor(active?.path ?? ".pdf").outline?.(id) ?? Promise.resolve([])}
         onTab={(t) => {
           settings.sidebarTab = t;

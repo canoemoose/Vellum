@@ -276,6 +276,9 @@ export class Viewer {
     this.thumbnails = new ThumbnailQueue({
       isIdle: () => this.idleForBackground,
       fromPreview: (docId, page, maxSide) => this.thumbnailFromPreview(docId, page, maxSide),
+      // Half the backend workers: thumbnails run only when idle, but one still parsing when
+      // a zoom starts holds up that worker's band, so leave the other half free.
+      concurrency: () => Math.max(1, Math.floor(((this.renderer as { workers?: number }).workers ?? 0) / 2)),
     });
   }
 
@@ -737,6 +740,11 @@ export class Viewer {
   thumbnail(page: number, maxSide: number): Promise<ImageBitmap> {
     if (!this.doc) return Promise.reject(new Error("no document"));
     return this.thumbnails.request(this.renderer, this.doc.docId, page, maxSide);
+  }
+
+  /** Drop a waiting thumbnail request (its page scrolled out of the sidebar). */
+  cancelThumbnail(page: number, maxSide: number): void {
+    if (this.doc) this.thumbnails.cancel(this.doc.docId, page, maxSide);
   }
 
   private thumbnailFromPreview(docId: number, page: number, maxSide: number): ImageBitmap | null {
