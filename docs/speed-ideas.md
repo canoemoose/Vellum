@@ -9,7 +9,7 @@ those; read them first. The yardstick throughout is Foxit on Curtis Hall page 48
 Section 5's tests A to F, run on main at `3899208` (release exe copied to
 `%TEMP%\vellum-smoke\`), bench lock held for every timing. Medians of at least five runs.
 All probes and config changes were removed afterwards; nothing here is in the code. Test G is
-Matt's and not done yet.
+Matt's: done 10 November, both checks fine (below).
 
 ### A. MuPDF against PDFium, one thread, whole page 48
 
@@ -124,6 +124,10 @@ checked: resize, maximise, snap, the drag region, or any performance effect.
   webview) and a transparent WebView2 shows what's behind it (idea 4.1 is viable).
 
 Nothing was skipped or left incomplete.
+
+**Test G (Matt, 10 November):** both checks look fine. Thin lines hold up while zooming out
+through the downscaled tiles, so `RS_MAX_DOWN` stays at 1.6 and idea 1.3 isn't needed. Bayou
+Towers scans don't drop out or shimmer at fit, so idea 1.4 doesn't earn its place.
 
 ## 1. Ideas for tricky PDFs
 

@@ -15,9 +15,10 @@ zoom, plus multi-second stalls when zoomed out. Landed on main today:
 | `49fdf92` | Bench options `--page N` and `--size WxH` |
 | `e8c6172` | Cancelled renders skip every strip a worker hasn't started; small regions (≤ 0.5 MP) render whole on the page's own worker (`page % workers`) |
 | `3899208` | Render scales quantised in 2^¼ steps and rendered a notch ahead on zoom-in (kept until 1.6x too fine on zoom-out); wheel zoom settles 60 ms after its ease lands (pinch keeps 150 ms); sharper cached copies drawn on top while tiles render; up to one small region per worker in flight |
+| `1ccad08` | *10 Nov:* every cached scale is drawn under a rendering zoom, not just the two nearest, so scraps from cancelled renders no longer push a complete earlier render out and let the blurry preview show through |
 
-Matt confirmed the zoom-out and pan stalls are fixed. He has not yet judged thin-line quality
-with tiles drawn at up to 1.6x downscale (`RS_MAX_DOWN` in `src/lib/render/tiles.ts`).
+Matt confirmed the zoom-out and pan stalls are fixed. *10 Nov:* he also judged thin lines at
+up to 1.6x downscale (`RS_MAX_DOWN` in `src/lib/render/tiles.ts`) fine, so it stays.
 
 ### Numbers to beat
 
@@ -41,8 +42,10 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
 - First render of a page: each worker parses it, 230 to 550 ms (all 8 in parallel for a
   banded render).
 - At 400% PDFium finishes in about 100 ms of a roughly 190 ms settle: **about 90 ms is
-  the front end** (IPC of a ~14 MB region, band assembly, `createImageBitmap` per band and
-  per tile). Not broken down yet.
+  the front end**. *Broken down 9 Nov (speed-ideas, Results C):* almost all of it is IPC.
+  A 5 MB band takes 66 ms median from `Channel::send` to `onmessage` (211 ms p90, because
+  bands queue at 140 to 200 MB/s); everything after receipt (assembly, band and tile
+  bitmaps, cache) is 1 to 6 ms a band.
 
 ## Tried and rejected (don't redo without a new angle)
 
