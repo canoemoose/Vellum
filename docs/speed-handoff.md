@@ -66,14 +66,16 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
    The real fix is the native surface under a transparent WebView2 (speed-ideas 4.1; test F
    says it's viable). The JS-side candidates (one bitmap per band, skipping the overlay,
    `OffscreenCanvas` assembly) are dropped: they shave the 3 ms, not the 66.
-2. **Bayou-style heavy images.** *Built 10 Nov, awaiting Matt's check by eye; see
-   [bayou-image-scope.md](bayou-image-scope.md).* The 4 s per render was PDFium converting
-   the 24 MP scan through its 188 KB scanner ICC profile, every time; the JPEG decode itself
-   is 78 ms. JPEGs of 16 MP or more are now decoded by us at full size, converted to sRGB
-   with `moxcms` (matches PDFium to about a level per channel) and swapped in: fit 4,283 →
-   187 ms, 400% 936 → 90 ms, about 155 MB more memory. No ¼ / ½ levels needed. Colour
-   differs from Acrobat and Foxit (both richer); not the intent, black point or display
-   path, parked.
+2. **Heavy images.** *Done 11 Nov, checked by Matt; measurements and reasoning in
+   [bayou-image-scope.md](bayou-image-scope.md), code in `src-tauri/src/pdfium_swap.rs`.*
+   PDFium keeps a decoded image only between about 12 and 60 MB, and a lookup-table ICC
+   profile costs it 170 to 240 ms per MP on every render it doesn't keep (Bayou's cover:
+   4.2 s every render). Now swapped (decoded once, set into a second copy of the page): any
+   image over 60 MB decoded, and any from 0.5 MP with a table profile. Pixels come from our
+   decode plus `moxcms` when a per-profile check matches PDFium (v2 profiles do), otherwise
+   from PDFium's own decode, once (v4 table profiles, CMYK, non-JPEG). Pages with a swap,
+   or an image estimated at 150 ms or more to decode, render as one band. Bayou fit
+   4,283 → about 100 ms. Colour still differs from Acrobat and Foxit (both richer); parked.
 2a. **The aerial drawing (`projectlayoutmarch2021.pdf`) is slow because of vectors, not
    images.** *Probed 10 Nov.* One 746 × 14400 pt page with 327,207 objects (280,109 paths,
    46,202 text, 896 images). Its 730 JPEG tiles are about 1 MP, DeviceRGB, no profile, and
