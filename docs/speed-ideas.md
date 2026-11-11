@@ -119,7 +119,9 @@ checked: resize, maximise, snap, the drag region, or any performance effect.
   p90, as bands queue) against about 3 ms of front-end work, so WebView2's channel delivery is
   the cost and the native surface (idea 4.1) is the real fix.
 - **Q4** With the page: 8 bands cost 76 to 99% of what 2 bands cost each, not 25%. Render
-  these pages as one band (idea 1.9).
+  these pages as one band (idea 1.9). *Superseded 11 Nov:* measured whole, one band made
+  the sample 2.4x slower at 400% (PDFium keeps its image, so each worker decodes it once),
+  so it stays banded; see bayou-image-scope.md.
 - **Q5** Yes, both, on this machine: WebGPU gives a hardware adapter (idea 4.2 can run in the
   webview) and a transparent WebView2 shows what's behind it (idea 4.1 is viable).
 
@@ -173,6 +175,9 @@ Roughly in order of value. None of these is started.
    a soft mask. PDFium composites transparency groups in full buffers, so banding may make
    each band redo the whole group. If band cost on that page doesn't drop as bands shrink,
    those pages should render as one band, as big-image pages already do (test D).
+   *Answered 11 Nov: no.* Settle time, not per-band CPU, is what counts, and banded was
+   2.4x faster at 400%. One band is now only for pages with an image swap or an image slow
+   to decode (speed-handoff idea 2).
 10. **A deadline per worker.** A pathological page shouldn't stall the pool. Pair the
     progressive-render cancel (handoff idea 6) with a per-render deadline that surfaces
     "this page is slow" rather than hanging.

@@ -16,6 +16,8 @@ zoom, plus multi-second stalls when zoomed out. Landed on main today:
 | `e8c6172` | Cancelled renders skip every strip a worker hasn't started; small regions (≤ 0.5 MP) render whole on the page's own worker (`page % workers`) |
 | `3899208` | Render scales quantised in 2^¼ steps and rendered a notch ahead on zoom-in (kept until 1.6x too fine on zoom-out); wheel zoom settles 60 ms after its ease lands (pinch keeps 150 ms); sharper cached copies drawn on top while tiles render; up to one small region per worker in flight |
 | `1ccad08` | *10 Nov:* every cached scale is drawn under a rendering zoom, not just the two nearest, so scraps from cancelled renders no longer push a complete earlier render out and let the blurry preview show through |
+| `9929e0a`, `847df53` | *10 Nov:* sidebar thumbnails render top-down, up to half the workers at once, drop pages scrolled away, and run beside a render that holds a single worker (Bayou's thumbnails no longer wait 6 s) |
+| `acd32d2`, `7767993` | *10 and 11 Nov:* image swaps (`pdfium_swap.rs`): images PDFium would decode on every render are decoded once, with a per-profile colour check; Bayou fit 4.3 s → about 100 ms (idea 2) |
 
 Matt confirmed the zoom-out and pan stalls are fixed. *10 Nov:* he also judged thin lines at
 up to 1.6x downscale (`RS_MAX_DOWN` in `src/lib/render/tiles.ts`) fine, so it stays.
@@ -66,6 +68,29 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
    The real fix is the native surface under a transparent WebView2 (speed-ideas 4.1; test F
    says it's viable). The JS-side candidates (one bitmap per band, skipping the overlay,
    `OffscreenCanvas` assembly) are dropped: they shave the 3 ms, not the 66.
+1a. **Bands are cut from the page, not from the view, so zoomed in only one to three
+   workers render.** *Found 11 Nov; parked by Matt, important for later.* `split_region`
+   divides the *page* into eight fixed bands along its long axis and sends band k to worker k.
+   At fit the view covers the page and all eight work. Zoomed in, the view falls inside one
+   or two page bands, so one or two workers render it and the rest idle. On the aerial
+   drawing at 1600% a 4096 × ~3000 px region went out as two strips (4096 × 1435 and
+   4096 × 1637, 131 to 163 ms each); at 400%, two or three strips of 200 to 280 ms. On Curtis
+   Hall at 400% the view covers about a quarter of the page: two or three workers.
+   - This is what Matt feels as a slow **zoom out, pan, zoom in** (the natural way round a
+     drawing): on the aerial drawing from about 200% to 1200% at dpr 1, 315 ms settle→sharp,
+     349 ms region render. Pausing before the zoom-in doesn't help, so it isn't left-over
+     uncancellable work; plain panning is fine because it renders thin strips.
+   - Fix: split the *region* into eight strips (along its own longer axis) instead of
+     intersecting it with page bands. Expected on the aerial drawing at 1600%: slowest strip
+     from about 150 ms to 20 to 30 ms, settle from about 210 ms to about 100 ms (the rest is
+     the pixel transfer, idea 1). Keep `split_region`'s exact-coverage tests
+     (`tests/bands.rs`): an off-by-one corrupts memory.
+   - Risk: fixed page bands give each worker the same part of the page every time, so its
+     decoded images get reused; region strips move with the view and may decode images
+     again. Cheap for vector drawings, to be measured on image-heavy pages. Not the same as
+     the rejected "more, smaller strips" (Tried and rejected, above), which was measured at
+     fit, where region and page coincide.
+   - Bench all five files at fit, 400% and 1600%, then Matt by feel.
 2. **Heavy images.** *Done 11 Nov, checked by Matt; measurements and reasoning in
    [bayou-image-scope.md](bayou-image-scope.md), code in `src-tauri/src/pdfium_swap.rs`.*
    PDFium keeps a decoded image only between about 12 and 60 MB, and a lookup-table ICC
@@ -76,15 +101,32 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
    from PDFium's own decode, once (v4 table profiles, CMYK, non-JPEG). Pages with a swap,
    or an image estimated at 150 ms or more to decode, render as one band. Bayou fit
    4,283 → about 100 ms. Colour still differs from Acrobat and Foxit (both richer); parked.
-2a. **The aerial drawing (`projectlayoutmarch2021.pdf`) is slow because of vectors, not
-   images.** *Probed 10 Nov.* One 746 × 14400 pt page with 327,207 objects (280,109 paths,
-   46,202 text, 896 images). Its 730 JPEG tiles are about 1 MP, DeviceRGB, no profile, and
-   PDFium decodes one in 1.5 ms (ours 2.3 ms), so image work (our decode, the ⅛ LOD copies)
-   can't help it. A whole-page render costs 1.3 to 2.4 s even at 50 × 965 px: the cost is
-   walking the objects. Candidates: renders that touch fewer objects (bands sized by object
-   count, idea 9) or a parse-once display list (the MuPDF idea, speed-ideas 4.3, dropped on
-   Curtis Hall's numbers but this file is the case it was made for).
-3. **One band for soft-mask and big-image pages.** *New 9 Nov: test D.* On the 50 MB sample,
+2a. **The aerial drawing (`projectlayoutmarch2021.pdf`) is slow at fit, and only at fit.**
+   *Probed 10 and 11 Nov; parked by Matt, may revisit with the native surface.* One
+   746 × 14400 pt page with 327,207 objects (280,109 paths, 46,202 text, 896 images: 730
+   DeviceRGB JPEG tiles of about 1 MP, 166 small Indexed images). Bench: first page about
+   3.5 s, settle at fit 2.3 to 2.6 s, peak memory about 5 GB; 400% and 1600% are in line with
+   the other files.
+   - **Fit runs on one worker.** The fit view is a 70 × 1350 px strip, under the 0.5 MP
+     `SMALL_REGION_PX`, so the whole render goes to the page's own worker: 2.2 to 2.4 s,
+     every render, while seven workers idle. An eighth of the page takes 163 ms, so banded it
+     would be roughly 300 ms. Fix: treat object-heavy pages (say over 50,000 objects) as
+     never small. The small-region rule exists to stop workers thrashing when many pages are
+     on screen, which doesn't apply to one giant page. Cost: every worker then parses the page
+     (690 ms and 256 MB each).
+   - **Two thirds of the fit time is images**, not vectors: images only 1,540 to 1,600 ms,
+     paths only 800 ms, text only 7 ms. PDFium keeps the decoded images (the first fit render
+     adds 2.3 GB to one instance, freed when the page closes) but shrinks 885 MP of them to a
+     70 px strip on every render. That is what the ⅛ copies (`pdfium_lod.rs`, behind
+     `VELLUM_IMAGE_LOD`) target; worth retrying with what we now know.
+   - **Zoomed-in regions are cheap:** 512 × 512 at 400% takes 6 to 17 ms, 2048 × 512 27 to
+     64 ms, and an off-screen 16 × 16 region 3 to 4 ms (PDFium culls well). Matt confirmed
+     plain panning settles in a few tens of ms on this file and on Curtis Hall.
+   - The earlier note that image work "can't help" was wrong: a single tile is cheap to
+     decode, but at fit all 896 are resampled every render.
+3. **One band for soft-mask and big-image pages.** *Superseded 11 Nov: banding the 50 MB sample
+   turned out 2.4x faster at 400% than one band; pages now go to one band only for a swap or an
+   image slow to decode (idea 2, bayou-image-scope.md).* *Was, 9 Nov, test D:* On the 50 MB sample,
    8-band strips cost 76 to 99% of what 2-band strips do, so banding multiplies the work.
    Extend the large-image one-band rule to these pages (speed-ideas 1.9).
 4. **Pre-parse the next and previous page before they're needed.** First visit to a page

@@ -1,5 +1,11 @@
 # Bayou image fix: scope (10 November 2026)
 
+**Status (11 November): done and committed (`7767993`), checked by Matt.** The rules that
+shipped are in "Build plan" and "Built" further down, and in ARCHITECTURE.md ("Image swaps").
+The Objective, Approach and Steps sections below are the original plan (a 16 MP rule) and
+are kept as the record of how it got there; the measurement sections in between are what
+changed it.
+
 ## Objective
 
 Make pages dominated by one huge JPEG fast. Bayou Towers page 1 (a 6144 × 3976 colour scan,

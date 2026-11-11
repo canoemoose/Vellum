@@ -51,10 +51,18 @@ changes. It is the one bit of maths everything else depends on, so it has the mo
    redraws from whatever bitmaps are cached, scaled to the new view. Nothing renders.
    Wheel notches animate (exponential ease, ~45 ms time constant) towards a target scale;
    touchpad pinch and drags apply directly.
-2. **Sharp stage.** 150 ms after the last input ("settle"), `plan()` lists the tiles that
-   cover the viewport at the exact current scale, plus a one-tile prefetch ring, skips any
-   already cached, and queues region renders: visible tiles first, nearest the centre
+2. **Sharp stage.** After the last input ("settle": 60 ms after a wheel zoom's ease lands,
+   150 ms after anything else, such as a pinch), `plan()` lists the tiles that cover the
+   viewport at the render scale for the current zoom, plus a one-tile prefetch ring, skips
+   any already cached, and queues region renders: visible tiles first, nearest the centre
    first, then the ring, then a page preview if the page has none.
+
+**Render scales** (`chooseRenderScale` in `tiles.ts`) are quantised to steps of 2^¼, so
+zooming back and forth lands on scales already cached, and they run ahead of the display:
+zooming in renders 1.25x past the new zoom (`RS_AHEAD`), so the next wheel notch in needs no
+render. A render scale is kept while the display stays within 1.6x below it
+(`RS_MAX_DOWN`): zooming out reuses the sharper tiles, downscaled, until they would be too
+fine.
 
 A zoom clears the queue (it was planned for a view that no longer exists) and aborts
 in-flight renders at the old scale. A pan does neither: its tiles stay valid, so rendering
@@ -94,8 +102,13 @@ the same requests; for it, region area matters more than call count.
   tiles so panning into unrendered areas shows soft content, never white. At fit zoom the
   preview is composed for free by downscaling the already-cached tiles; otherwise it is a
   low-priority render after the visible tiles.
-- When the zoom changes, tiles from the two nearest **other scales** are drawn (scaled)
-  under the current scale's tiles, which is what makes the instant stage look right.
+- When the zoom changes, tiles from **every other cached scale** within reach are drawn
+  (scaled) under the current scale's tiles, which is what makes the instant stage look right
+  (`fallbackScales`): scales below the target down to 1/16 of it, coarsest first, then scales
+  above it up to 4x, sharpest first, so the nearest sharper copy ends on top. All of them,
+  not just the nearest: a render cancelled by the next wheel notch leaves a scale with only a
+  band or two cached, and picking the two nearest let those scraps push a complete earlier
+  render out, so the blurry preview showed through mid-zoom.
 
 - **On disk** (v0.1): previews are also stored as WebP in
   `%LOCALAPPDATA%\Vellum\preview-cache` (`previewcache.rs`), keyed by the file's content key
@@ -150,15 +163,26 @@ Previews have their own 96 MB budget.
   render runs on all workers at once, and each image is decoded and cached by one worker
   only, render after render. (Round-robin dispatch was tried first: every worker ended up
   decoding every image, 13.6 GB on the real test file.)
+- **Some renders go to one worker.** A small region (0.5 MP or less, `SMALL_REGION_PX`:
+  zoomed out, usually one per page) renders whole on its page's own worker
+  (`page % workers`), so with many pages on screen each page is parsed by one worker rather
+  than all of them thrashing through `PAGES_PER_DOC`. So does any region of a page with an
+  image swap or an image slow to decode (`pdfium_swap::one_band`, asked once per page through
+  `bands_for_page` and cached).
+- **Known limitation: zoomed in, few workers render.** Bands are fixed eighths of the page,
+  so a view that covers a small part of the page falls in one to three bands and only those
+  workers render it (on the aerial drawing at 1600%, two strips of 130 to 160 ms each). The
+  fix (cut the region, not the page) is idea 1a in `docs/speed-handoff.md`.
 - `FPDF_RenderPageBitmapWithMatrix` renders in RGBA order (`FPDF_REVERSE_BYTE_ORDER`); the
   buffer goes back as a raw binary IPC response and is wrapped in `ImageData` with no
   conversion. Streaming (progressive paint) is described below. Commands are `async` + `spawn_blocking`, so the window's event loop is never
   blocked.
-- Two region requests in flight from the front end, so one renders while the other's bytes
-  become bitmaps.
-- Cancellation skips queued requests; a render already inside PDFium runs to completion.
-  PDFium's progressive API (`FPDF_RenderPageBitmap_Start` with a pause callback) would allow
-  mid-render abort; not needed at the region sizes used here.
+- Two large region requests in flight from the front end, so one renders while the other's
+  bytes become bitmaps; small regions, which each occupy one worker, up to one per worker.
+- Cancellation skips queued requests and, within a request, every strip a worker hasn't
+  started yet; a strip already inside PDFium runs to completion. PDFium's progressive API
+  (`FPDF_RenderPageBitmap_Start` with a pause callback) would allow mid-strip abort (idea 7
+  in `docs/speed-handoff.md`).
 - **Memory guard (off by default).** PDFium caches every decoded image on the parsed page,
   which is how the real test file reaches 3 GB. `VELLUM_PDFIUM_TRIM_MB=<n>` closes and
   re-parses pages when the process tree passes *n* MB. On that file re-parsing costs 0.7 to
@@ -228,8 +252,9 @@ closed with `doc_close`.
 
 Every page any worker renders, measures or reads is parsed in one place:
 `pdfium.rs::load_page(bindings, doc, index)`, called only from the per-document page cache.
-Work that must happen once per parsed page (WP-LOD's downsampled image swap) hooks in
-there.
+The image swaps and the 1/8 prototype hook in at render time instead (`render_strip` asks
+`pdfium_swap::page_for_render`, then `pdfium_lod::page_for_render`), because each renders
+from a second copy of the page in a second document handle.
 
 ## Streaming (progressive paint, v0.1)
 
@@ -301,14 +326,18 @@ to the screen and rounds its edges there, so tiles still share exact edges at 90
 
 ### Thumbnails
 
-`ThumbnailQueue` (`thumbnails.ts`) runs one thumbnail at a time and only while the viewer is
-idle for background work: nothing queued or rendering, no settle pending and no input for
-300 ms. Newest requests go first (the pages the user just scrolled to), repeats share one
-render, results are cached per document (64 MB, LRU) and dropped when the document closes. A
-page with a cached preview at least as sharp as the thumbnail is downscaled from it without
-touching the backend; otherwise `doc_thumbnail` renders it through the pool. A thumbnail
-render already inside PDFium can't be interrupted, so a heavy page (about 1 s on the aerial
-drawing) can still delay a zoom that starts while it runs.
+`ThumbnailQueue` (`thumbnails.ts`) renders thumbnails top-down (lowest page first), up to
+half the workers at once, and only while the viewer is idle for background work
+(`Viewer.idleForThumbnails`): no animation, no settle pending, nothing queued, no input for
+300 ms, and nothing rendering except renders that occupy a single worker (a small region or
+a one-band page, such as Bayou's cover, whose 7 s render used to hold the thumbnails back).
+The sidebar asks for a page's thumbnail as it scrolls into view and cancels the request if it
+scrolls away first. Repeats share one render, results are cached per document (64 MB, LRU)
+and dropped when the document closes. A page with a cached preview at least as sharp as the
+thumbnail is downscaled from it without touching the backend; otherwise `doc_thumbnail`
+renders it through the pool. A thumbnail render already inside PDFium can't be interrupted,
+so a heavy page (about 1 s on the aerial drawing) can still delay a zoom that starts while it
+runs.
 
 ## Images (`imagedoc.rs`)
 
@@ -325,6 +354,33 @@ and the half-pixel past the page's exact extent) and resamples just that with
 `fast_image_resize` (bilinear convolution). Streaming sends an image region as one band.
 Images over 120 megapixels are kept at half resolution, page size unchanged, and
 `DocMeta.note` says so for the tab.
+
+## Image swaps (`pdfium_swap.rs`)
+
+PDFium keeps a decoded image between renders only while it's between about 12 and 60 MB
+decoded, and converting through an ICC profile with a lookup table costs it 170 to 240 ms
+per megapixel whenever it isn't kept: Bayou Towers' 24 MP cover scan cost 4.2 s on every
+render. So on the first render of a page, each image is looked at (including images nested
+in form XObjects) and swapped when its decoded size is over 60 MB, or it has a lookup-table
+profile and is at least 0.5 MP; never images with transparency, nor 1-bit scans (which
+PDFium keeps). Biggest first, at most 400 MB a page.
+
+The swapped pixels come from our own decode (`jpeg-decoder`, and `moxcms` with tetrahedral
+interpolation for a profile) for a plain grey or RGB JPEG whose profile passes a check, or
+otherwise from PDFium's own decode, taken once (`FPDFImageObj_GetBitmap`): v4 table
+profiles, CMYK, Lab, Indexed, non-JPEG. The check runs once per profile per process: a
+17 x 17 x 17 grid of colours converted by both, ours used only if they agree (mean at most
+one level, at most 1% of samples more than 8 off). `moxcms` matches PDFium closely on v2
+profiles but not on v4 table profiles (it has no black-point compensation, which LittleCMS
+applies to v4 perceptual).
+
+The pixels are set (`FPDFImageObj_SetBitmap`) into a copy of the page loaded from a second
+document handle (PDFium shares one image object per stream across a document, so the
+original must stay untouched), and that copy is rendered at every scale. Each swapped page
+has its own handle so closing it frees the pixels: at most 1 GB a worker, least recently
+used closed first. Pages with a swap, or an image whose estimated decode is 150 ms or more,
+render as one band, so only one worker ever holds the copy. `[swap]` lines on stderr log
+every swap and profile check. Measurements and reasoning: `docs/bayou-image-scope.md`.
 
 ## Image level of detail (experimental, off: `pdfium_lod.rs`)
 

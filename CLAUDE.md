@@ -16,6 +16,10 @@ v0.1, the first real app: brief in [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-
   (PDFium is the only renderer; `--renderer pdfium` is accepted). Honours `CARGO_TARGET_DIR`.
 - `VELLUM_PDFIUM_TIMING=1` logs per-strip render times; `VELLUM_IMAGE_LOD=1` turns on the
   experimental image level of detail (off: it measured slower, see docs/v0.1-handoff/lod.md).
+  Image swaps (`pdfium_swap.rs`) are always on and log each swap and colour-profile check
+  as `[swap]` lines on stderr.
+- Speed work: start from [docs/speed-handoff.md](docs/speed-handoff.md) (state, numbers,
+  ideas ranked, how to measure).
 - `node tools/fetch-pdfium.mjs`: download `pdfium.dll` into `src-tauri/pdfium/`.
 
 ## Conventions
