@@ -4,6 +4,7 @@ mod memory;
 pub mod pdfium;
 pub mod previewcache;
 pub mod pdfium_lod; // WP-LOD
+pub mod pdfium_swap;
 // WP-Print
 pub mod print;
 // End WP-Print

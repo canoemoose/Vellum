@@ -1066,6 +1066,10 @@ fn open_doc(
     want_info: bool,
 ) -> Result<(Doc, Option<PdfOpened>), String> {
     let lod_path = match &src { DocSource::Path(p) => Some(p.clone()), DocSource::Memory(_) => None }; // WP-LOD
+    let reopen = match &src {
+        DocSource::Path(p) => crate::pdfium_swap::Reopen::Path(p.clone()),
+        DocSource::Memory(m) => crate::pdfium_swap::Reopen::Memory(m.clone()),
+    };
     let (handle, bytes) = match src {
         DocSource::Path(p) => (unsafe { b.FPDF_LoadDocument(&p.to_string_lossy(), password) }, None),
         DocSource::Memory(m) => (unsafe { b.FPDF_LoadMemDocument64(&m, password) }, Some(m)),
@@ -1082,6 +1086,7 @@ fn open_doc(
         });
     }
     crate::pdfium_lod::on_open(handle, lod_path); // WP-LOD
+    crate::pdfium_swap::on_open(handle, reopen, password.map(str::to_owned));
     let mut d = Doc { handle, pages: HashMap::new(), order: Vec::new(), _bytes: bytes };
     if !want_info {
         return Ok((d, None));
@@ -1158,36 +1163,23 @@ fn load_page(b: &dyn PdfiumLibraryBindings, doc: FPDF_DOCUMENT, i: usize) -> Res
     Ok(p)
 }
 
-/// PDFium decodes an image in full even when only part of it is visible, so an image that
-/// spans several bands would be decoded (and cached) once per band. Pages dominated by a
-/// large image therefore render on one worker; everything else uses all of them.
+/// A swapped image is held by every worker that renders its page, and an image that's slow to
+/// decode is decoded by every one, so those pages render on one worker; everything else uses
+/// all of them (pdfium_swap::one_band).
 fn bands_for_page(b: &dyn PdfiumLibraryBindings, d: &mut Doc, page: usize, max: usize) -> Result<usize, String> {
-    const FPDF_PAGEOBJ_IMAGE: i32 = 3;
     let p = get_page(b, d, page)?;
-    let page_area = unsafe { b.FPDF_GetPageWidthF(p) * b.FPDF_GetPageHeightF(p) } as f64;
-    let n = unsafe { b.FPDFPage_CountObjects(p) };
-    for i in 0..n {
-        let o = unsafe { b.FPDFPage_GetObject(p, i) };
-        if o.is_null() || unsafe { b.FPDFPageObj_GetType(o) } != FPDF_PAGEOBJ_IMAGE {
-            continue;
+    if crate::pdfium_swap::page_one_band(b, p) {
+        if timing() {
+            eprintln!("[pdfium] page {} has a swapped or slow-to-decode image: 1 band", page + 1);
         }
-        let (mut l, mut bo, mut r, mut t) = (0f32, 0f32, 0f32, 0f32);
-        if unsafe { b.FPDFPageObj_GetBounds(o, &mut l, &mut bo, &mut r, &mut t) } == 0 {
-            continue;
-        }
-        let area = ((r - l) as f64 * (t - bo) as f64).abs();
-        if area > page_area * 0.25 {
-            if timing() {
-                eprintln!("[pdfium] page {} has a large image: 1 band", page + 1);
-            }
-            return Ok(1);
-        }
+        return Ok(1);
     }
     Ok(max)
 }
 
 fn close_doc(b: &dyn PdfiumLibraryBindings, d: Doc) {
     crate::pdfium_lod::on_close(b, d.handle); // WP-LOD
+    crate::pdfium_swap::on_close(b, d.handle);
     unsafe {
         for (_, p) in d.pages {
             b.FPDF_ClosePage(p);
@@ -1200,7 +1192,10 @@ fn close_doc(b: &dyn PdfiumLibraryBindings, d: Doc) {
 /// Render the strip's device-pixel rect of the page at `rs` device px per point.
 fn render_strip(b: &dyn PdfiumLibraryBindings, d: &mut Doc, s: &Strip) -> Result<(), String> {
     let page = get_page(b, d, s.page)?;
-    let page = crate::pdfium_lod::page_for_render(b, d.handle, s.page, s.rs, page); // WP-LOD
+    let page = match crate::pdfium_swap::page_for_render(b, d.handle, s.page, page) {
+        Some(swapped) => swapped,
+        None => crate::pdfium_lod::page_for_render(b, d.handle, s.page, s.rs, page), // WP-LOD
+    };
     let (pw, ph) = unsafe { (b.FPDF_GetPageWidthF(page), b.FPDF_GetPageHeightF(page)) };
     let bmp = unsafe { b.FPDFBitmap_CreateEx(s.w, s.h, FPDF_BITMAP_BGRA, s.ptr as *mut _, s.stride) };
     if bmp.is_null() {
