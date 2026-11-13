@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+<!-- Vellum's app icon at 16 px, drawn on the 16-pixel grid: a teal arm on top, a white front page and a
+     teal back page whose tip sits a pixel higher. Plain tile. Also the title bar's logo. See vellum.svg. -->
+<rect x="0" y="0" width="16" height="16" rx="3.5" fill="#0a4540"/>
+<polygon points="11.7,2.5 13.4,2.5 9,13 8.4,13" fill="#14b8a6"/>
+<polygon points="10,3.5 12,3.5 8.6,13 6,13" fill="#ffffff"/>
+<polygon points="2,3 5,3 9,13 6,13" fill="#2dd4bf"/>
+</svg>

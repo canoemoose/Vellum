@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="130 128 1670 1670">
+<!-- Vellum's app icon, 32 px and up. Drawn in docs/mockups/icon.html (traced from a Gemini concept, then
+     refined); the 24 and 16 px images use vellum-24.svg and vellum-16.svg. Regenerate the icon set with
+     `node tools/make-icons.mjs`. Colours: the tile is Deep teal (#0d9488, hue 175) darkened; the arm runs
+     from the app's link teal #2dd4bf to #5eead4. -->
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0c5c55"/><stop offset=".5" stop-color="#0a4540"/><stop offset="1" stop-color="#08302d"/></linearGradient>
+<linearGradient id="arm" gradientUnits="userSpaceOnUse" x1="400" y1="500" x2="1080" y2="1450"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#5eead4"/></linearGradient>
+<linearGradient id="pageStroke" gradientUnits="userSpaceOnUse" x1="1080" y1="1400" x2="1500" y2="500"><stop offset="0" stop-color="#5eead4"/><stop offset=".6" stop-color="#b8f5ec"/><stop offset="1" stop-color="#ffffff"/></linearGradient>
+<linearGradient id="pageFill" gradientUnits="userSpaceOnUse" x1="1080" y1="1400" x2="1450" y2="520"><stop offset="0" stop-color="#0d6e66"/><stop offset="1" stop-color="#169488"/></linearGradient>
+<filter id="glowWide" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="64"/></filter>
+<filter id="glowTight" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="28"/></filter>
+<clipPath id="tileClip"><rect x="130" y="128" width="1670" height="1670" rx="330"/></clipPath>
+<clipPath id="armClip"><path d="M392 510 L600 508 C680 508 722 548 745 602 L1068 1448 L870 1450 C800 1450 762 1410 740 1360 Z" transform="translate(945 969) scale(1.08) translate(-923.5 -975.5)"/></clipPath>
+<radialGradient id="lit" gradientUnits="userSpaceOnUse" cx="965" cy="230" r="1150"><stop offset="0" stop-color="#1fb3a2" stop-opacity=".4"/><stop offset=".45" stop-color="#14897d" stop-opacity=".18"/><stop offset=".8" stop-color="#14897d" stop-opacity="0"/></radialGradient>
+<radialGradient id="vignette" gradientUnits="userSpaceOnUse" cx="965" cy="860" r="1250"><stop offset=".5" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></radialGradient>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#99f6e4" stop-opacity=".35"/><stop offset=".35" stop-color="#99f6e4" stop-opacity=".06"/><stop offset="1" stop-color="#99f6e4" stop-opacity="0"/></linearGradient>
+<!-- The three pages (back, middle, front) and the left arm, in the traced coordinates. -->
+<path id="pBack" d="M1068 1448 L829 1300 L951 1000 C1000 880 1250 540 1456 500 L1068 1448 Z"/>
+<path id="pMid" d="M1068 1448 L829 1300 L951 1000 C1000 880 1130 560 1350 502 C1200 870 1080 1180 1068 1448 Z"/>
+<path id="pFront" d="M1068 1448 L829 1300 L951 1000 C1000 880 1040 600 1240 505 C1114 806 1056 1121 1068 1448 Z"/>
+<path id="armShape" d="M392 510 L600 508 C680 508 722 548 745 602 L1068 1448 L870 1450 C800 1450 762 1410 740 1360 Z"/>
+<g id="tile">
+<rect x="130" y="128" width="1670" height="1670" rx="330" fill="url(#bg)"/>
+<rect x="130" y="128" width="1670" height="1670" rx="330" fill="url(#lit)"/>
+<rect x="130" y="128" width="1670" height="1670" rx="330" fill="url(#vignette)"/>
+<rect x="136" y="134" width="1658" height="1658" rx="324" fill="none" stroke="url(#rim)" stroke-width="8"/>
+</g>
+</defs>
+
+<use href="#tile"/>
+
+<!-- Glow, under the lines: a wide soft layer and a mid layer in deeper teal. -->
+<g clip-path="url(#tileClip)">
+<g transform="translate(945 969) scale(1.08) translate(-923.5 -975.5)">
+<g fill="none" stroke="#2dd4bf" stroke-linejoin="round" stroke-linecap="round" filter="url(#glowWide)" opacity=".75">
+<use href="#pBack" stroke-width="40"/><use href="#pMid" stroke-width="40"/><use href="#pFront" stroke-width="40"/><use href="#armShape" stroke-width="42"/>
+</g>
+<g fill="none" stroke="#14b8a6" stroke-linejoin="round" stroke-linecap="round" filter="url(#glowTight)" opacity=".7">
+<use href="#pBack" stroke-width="40"/><use href="#pMid" stroke-width="40"/><use href="#pFront" stroke-width="40"/><use href="#armShape" stroke-width="42"/>
+</g>
+</g>
+</g>
+
+<!-- Pages, back to front: solid, so none shows through another. -->
+<g transform="translate(945 969) scale(1.08) translate(-923.5 -975.5)" fill="url(#pageFill)" stroke="url(#pageStroke)" stroke-width="40" stroke-linejoin="round" stroke-linecap="round">
+<use href="#pBack"/><use href="#pMid"/><use href="#pFront"/>
+</g>
+
+<!-- The arm on top: its middle is the tile itself, clipped to the arm, so nothing behind shows through. -->
+<g clip-path="url(#armClip)"><use href="#tile"/></g>
+<use href="#armShape" transform="translate(945 969) scale(1.08) translate(-923.5 -975.5)" fill="none" stroke="url(#arm)" stroke-width="42" stroke-linejoin="round"/>
+</svg>

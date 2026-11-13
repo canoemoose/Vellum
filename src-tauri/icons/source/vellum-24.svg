@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="130 128 1670 1670">
+<!-- Vellum's app icon at 24 px: the big icon's shapes filled solid, larger in the tile, on a plain tile
+     (the glow and lighting cost contrast this small). See vellum.svg. -->
+<defs><linearGradient id="front" gradientUnits="userSpaceOnUse" x1="1080" y1="1400" x2="1450" y2="500"><stop offset="0" stop-color="#99f6e4"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs>
+<rect x="130" y="128" width="1670" height="1670" rx="330" fill="#0a4540"/>
+<g transform="translate(955 966) scale(1.15) translate(-923.5 -975.5)" stroke-width="40" stroke-linejoin="round">
+<path d="M1068 1448 L829 1300 L951 1000 C1000 880 1250 540 1456 500 L1068 1448 Z" fill="#14b8a6" stroke="#14b8a6"/>
+<path d="M1068 1448 L829 1300 L951 1000 C1000 880 1040 600 1240 505 C1114 806 1056 1121 1068 1448 Z" fill="url(#front)" stroke="url(#front)"/>
+<path d="M392 510 L600 508 C680 508 722 548 745 602 L1068 1448 L870 1450 C800 1450 762 1410 740 1360 Z" fill="#2dd4bf" stroke="#2dd4bf"/>
+</g>
+</svg>
