@@ -353,12 +353,44 @@ mode with no faults.
 10. **What goes into `src-tauri/Cargo.toml` and when:** `lopdf`, in phase 2, when the writer
     moves into the app. That's one of the files the release pipeline also touches.
 
+### Matt's check in other apps (13 November 2026)
+
+- **Chrome:** shows every markup; can't select or edit them (its viewer doesn't edit
+  annotations).
+- **Acrobat, Foxit, PDF-XChange:** show every markup; moving or editing one restyles it in
+  that app's own way.
+- **Edge:** likewise restyles on move or edit. A callout loses its leader entirely and
+  becomes a plain transparent text box; text boxes turn transparent. It treats the area as a
+  measurement; the distance gets a comment icon whose comment doesn't give the value (the
+  value is only in the drawing).
+- **Measurements in Acrobat:** both the distance and the area are treated as dimension
+  markups, so the `/Measure` dictionary works there.
+- **Signatures in Acrobat:** 14 (signed) "at least one signature requires validating"; 15
+  (certified, comments allowed) validity unknown because the signer can't be verified (the
+  throwaway test certificate, expected) and notes that changes were made; 16 (certified, no
+  comments) certification invalid. As predicted: confirms finding 2.
+
+What it means: every app draws our appearance streams as written, so markups *look* right
+everywhere until someone edits them elsewhere. On edit, each app redraws from the annotation
+dictionary, so how close it stays depends on which keys that app reads. The decisions above
+say round-trip editing in other apps matters less than how markups look and print, so this
+is acceptable as it stands. Edge's transparent text boxes look like it reads the background
+from a key other than the `/C` we write (PDF 2.0 also allows `/IC` on FreeText); untested.
+**Deferred to phase 3** (Matt, 13 November 2026): when the text box and callout tools are
+built, compare against a reference file whose text box, callout and distance were made in
+Acrobat and edited in Edge; copy whatever keys differ, or record Edge as the limit if
+Acrobat's own markups break there too.
+
 ### What phase 0 could not verify
 
-- **How the samples look and behave in Acrobat, Edge or Chrome, and macOS Preview** (Matt;
-  the checklist is in `spikes/annot-writer/README.md` and beside the samples). In particular:
-  whether Acrobat treats the dimension and area as measurements, how it redraws a cloud or
-  text box after you edit one, and what its signature panel says about samples 14 to 16.
+- **Sample 19 in Acrobat:** the edits are right (old square and line replaced in place, note
+  gone). It looked duplicated only because the new red arrow lines up with the edited red
+  line and the new red rectangle sits beside the edited square; a sample's layout problem,
+  not the writer's. All nine markups, labels, cloud scallops and callout arrowhead draw as
+  written.
+- **macOS Preview:** not checked (it needs an old Mac brought back to life). Accepted as a
+  gap: every app tried drew our appearance streams as written, and nothing in the plan
+  depends on Preview's behaviour. Check it opportunistically.
 - Bluebeam (no licence).
 - A hybrid-reference file (no tool here writes one) and a real encrypted or signed drawing
   (none in `test-files/`).
