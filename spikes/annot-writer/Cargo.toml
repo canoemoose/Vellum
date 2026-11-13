@@ -1,0 +1,19 @@
+[package]
+name = "annot-writer-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Phase 0 spike: append PDF annotations by incremental update with lopdf"
+
+# Standalone: not part of the app build.
+[workspace]
+
+[dependencies]
+lopdf = "0.47"
+pdfium-render = { version = "0.9", default-features = false, features = ["pdfium_latest"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+
+[profile.release]
+debug = false
