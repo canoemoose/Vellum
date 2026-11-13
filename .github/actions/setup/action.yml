@@ -1,0 +1,40 @@
+name: Set up the Vellum build
+description: Node and npm from the Volta pin, the Rust toolchain, caches, packages and PDFium.
+
+runs:
+  using: composite
+  steps:
+    # Node and npm at the versions pinned in package.json ("volta"), the same as at the desk.
+    - uses: volta-cli/action@615a78f6c83e116339c53b94f3f82b4d6c0b7d18 # v5.0.0
+
+    - name: Find npm's download cache
+      id: npm-cache
+      shell: bash
+      run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.npm-cache.outputs.dir }}
+        key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+        restore-keys: npm-${{ runner.os }}-
+
+    # The runner image ships rustup with the MSVC toolchain; this only brings stable up to date.
+    - name: Rust toolchain (stable, MSVC)
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal --no-self-update
+        rustup default stable
+        rustc --version --verbose
+
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        workspaces: src-tauri
+
+    - name: Install packages
+      shell: bash
+      run: npm ci
+
+    # Before any test: the Rust tests load the DLL.
+    - name: Fetch PDFium
+      shell: bash
+      run: node tools/fetch-pdfium.mjs

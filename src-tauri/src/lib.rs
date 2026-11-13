@@ -12,6 +12,7 @@ pub mod print;
 pub mod scale;
 pub mod shell; // WP-Shell
 pub mod snap;
+pub mod update; // in-app updates
 
 use docs::{DocInfo, Docs};
 use memory::{MemState, MemStats};
@@ -377,6 +378,7 @@ pub fn run() {
     // WP-Shell end
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Launch(args))
         .manage(mem)
         .manage(pdfium_state.clone())
@@ -422,6 +424,10 @@ pub fn run() {
             shell::open_notices,
             snap::snap_max_button,
             // WP-Shell end
+            update::update_other_instances,
+            update::update_open_release_page,
+            update::update_save_handover,
+            update::update_take_handover,
             // WP-Print
             print::print_features,
             print::print_compose,

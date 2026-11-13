@@ -1,0 +1,63 @@
+# A v* tag becomes a DRAFT GitHub Release holding the installer (and, once the updater is
+# configured, its signature and latest.json). Nothing reaches an installed copy until the
+# draft is published by hand. See docs/release-pipeline-scope.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write # create the draft release and upload to it; no other job has this
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # First, before anything slow: a tag that disagrees with the files never builds.
+      - name: Check the tag matches the version files
+        shell: bash
+        run: node tools/set-version.mjs --check "$GITHUB_REF_NAME"
+
+      - uses: ./.github/actions/setup
+
+      - name: Type check
+        run: npm run check
+
+      - name: Build the front end and the notices
+        run: |
+          node tools/make-notices.mjs
+          npm run build
+
+      - name: Front-end tests
+        run: npm test
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+      # Builds the installer, signs the update artefacts (when the key is set) and creates the
+      # draft release. A version with a pre-release part (0.1.1-rc1) is marked a prerelease,
+      # which the updater's "latest" endpoint never serves.
+      - name: Build the installer and draft the release
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Vellum __VERSION__
+          releaseBody: Replace this with what's new in this version, then publish.
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          updaterJsonPreferNsis: true
