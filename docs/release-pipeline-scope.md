@@ -1,7 +1,7 @@
 # Release pipeline: GitHub Actions build and in-app updates
 
-Status: **draft for review** (13 November 2026). Nothing is built. This is the source of truth
-for the work; update it as phases land.
+Status: **scoped, decisions recorded** (13 November 2026). Nothing is built. This is the source
+of truth for the work; update it as phases land.
 
 ## Objective
 
@@ -14,7 +14,7 @@ merges, so 0.2.0 reaches installed copies through the updater.
 - **Its own branch and worktree, in parallel with the editing work** (`docs/editing-scope.md`,
   branch `editing`). Suggested branch: `release-pipeline`.
 - **Small and merged first.** This is days, the editing work is weeks. Merge this to `main`
-  as soon as phase 4 passes; `editing` then picks it up from `main`.
+  once phase 3 is done (phase 4 releases from `main`); `editing` then picks it up from `main`.
 - **Keep out of the editing work's way.** The two branches both touch a few shared files
   (below). Keep changes to those minimal and put everything else in new files.
 - **This work can't be tested without pushing.** Workflows only run on GitHub. Matt's standing
@@ -53,6 +53,11 @@ merges, so 0.2.0 reaches installed copies through the updater.
 
 Details:
 
+- Order matters: `node tools/fetch-pdfium.mjs` before any test (the Rust tests need the DLL),
+  and the Rust toolchain before `npm test` (it runs the print round trip through cargo).
+  Install with `npm ci`; both lockfiles are committed.
+- The throwaway tag in phase 2 needs the three version files set to match it on the branch
+  (`0.1.1-rc1`), then set back.
 - Runner `windows-latest`. Node and npm from the Volta pin (`volta-cli/action`), so CI uses
   the same versions as the desk.
 - Cache cargo's build (`Swatinem/rust-cache`) and npm's download cache; a cold Tauri build is
@@ -87,7 +92,12 @@ Details:
   progress shown.
 - **A setting** to turn the automatic check off. The check is one request to GitHub and sends
   nothing about the user or their files; say so beside the setting.
-- **Restarting** reopens the tabs that were open. Once the editing work lands, "Install and
+- **Restarting** reopens the tabs that were open. Vellum doesn't restore tabs on start today,
+  so this is new: note the open files just before the restart and reopen them once after it
+  (a one-off hand-over, not a general "restore last session" feature).
+- **Other Vellum windows** (`--new-instance`) keep the exe in use and block the installer:
+  check what the installer does then, and say "close other Vellum windows" if it can't proceed.
+- Once the editing work lands, "Install and
   restart" must go through the same unsaved-changes prompt as closing the window. Write the
   restart as "ask the shell to close, then install", so that prompt applies when it exists.
 - Benchmark runs (`--bench`) never check.

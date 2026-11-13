@@ -1,7 +1,8 @@
 # Editing, markup and reading: scope
 
-Status: **draft for review** (13 November 2026). Nothing is built. This is the source of truth
-for the work; update it as phases land.
+Status: **scoped, decisions recorded** (13 November 2026). Nothing is built. This is the source
+of truth for the work; update it as phases land. "Matt" is the owner; "the builder" is whoever
+(person or session) is doing the work from this document.
 
 ## Objective
 
@@ -56,8 +57,9 @@ Checked in `pdfium-render` 0.9.5's bindings and `src-tauri/pdfium/include/fpdf_a
 | Page operations (import, delete, move, rotate, new) | Yes | |
 | Add, move, remove page objects; flatten | Yes | Place image, delete object, flatten signatures. |
 | Text: characters, boxes, find, links | Yes | Search, selection, text markups, clickable links. |
-| Form filling | Yes (`FORM_*`, `FPDF_FFLDraw`) | Later phase. |
-| Save | `FPDF_SaveAsCopy`, full rewrite or incremental | |
+| Form filling | Yes (`FORM_*`, `FPDF_FFLDraw`) | Phase 6. |
+| Save | `FPDF_SaveAsCopy`, full rewrite or incremental | Used only when PDFium itself changed the document (see "Two kinds of save"). |
+| Identify an annotation by its object number | No (index on the page only) | The writer must match existing annotations by position in the page's `/Annots` array. Check in phase 0. |
 | Write encrypted files, create digital signatures | No | Ruled out above. |
 
 **The main finding:** PDFium's annotation writer covers the document-reader types but not the
@@ -82,6 +84,24 @@ measurement) can't be created through it. So Vellum needs **its own annotation w
   incremental-document mode. **Not yet verified** on our files; that's phase 0.
 - After a save the file is reopened on the PDFium workers and the changed pages' tiles are
   dropped, so what's on screen is what's in the file.
+- **Text is laid out once, the same way in both places.** A text box wraps identically on the
+  overlay and in the saved appearance only if both use the same character widths, so line
+  breaking is a pure function over the built-in font's published metrics, shared by the
+  overlay and the writer, not left to the canvas.
+- **Scale:** a page's annotations are read on first view of that page, not all on open, and
+  the overlay draws only what's in view. Opening a file must not get slower (check with the
+  existing bench).
+
+**Two kinds of save.** The "original bytes untouched" promise holds for the common case and
+not for every case:
+
+- *Append only* (markups, measurements, stamps, text markups; edits to existing annotations):
+  our writer appends an incremental update. Nothing before it changes.
+- *Rebuild* (page operations, flattening a signature, placing or deleting page content): PDFium
+  has to rewrite the file, then our writer appends the annotations. The file is new throughout.
+  The first-save confirmation should say which kind is about to happen.
+- Filled form values are PDFium's change; whether they can be saved incrementally
+  (`FPDF_INCREMENTAL`) rather than by a rebuild is to be checked in phase 6.
 
 ### 2. Existing annotations
 
@@ -104,17 +124,22 @@ page index to source page, so reordering never re-renders.
 
 - One history per tab covering markups, page operations and content edits.
 - A tab knows when it has unsaved changes: a dot on the tab, a prompt on close and on quit.
+  The edit state belongs to the tab, not the viewer: it must survive `detach()`/`attach()`
+  when switching tabs (one viewer serves them all).
+- If the save fails (file open in another app, read-only, network drive gone), say why and
+  offer "Save a copy"; never lose the edits.
 - Save writes to a temporary file beside the original and renames over it, so a crash or a
   full disk never leaves half a file. If the file changed on disk since it was opened, ask.
 - Images can't hold annotations: a marked-up image offers "Save as PDF" (the image on a page
   at its page size, markups as annotations).
-- Printing and Save as PDF from the print dialog include unsaved markups.
+- Printing and Save as PDF from the print dialog include unsaved markups. Print composition
+  reopens its sources by path today (`compose.rs`), so it would miss them: it needs to take
+  the tab's current state saved to memory instead.
 
 ### 5. The edit lock
 
-Matt asked for destructive edits behind an unlock, "unless you have a better idea". My
-proposal keeps the lock but draws the line at **adding versus changing what the file came
-with**:
+Matt asked for destructive edits behind an unlock. Agreed design: the line is **adding versus
+changing what the file came with**:
 
 - **Always free:** adding markups, measurements, stamps and signatures; editing or deleting
   markups you added this session; searching, selecting and copying.
@@ -228,10 +253,14 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    heavy test files by incremental update with `lopdf`; reopen in Vellum; Matt opens them in
    Acrobat, Edge and macOS Preview. Also: files with object streams and
    cross-reference streams, encrypted files, signed files, a 36 MB file's load time and
-   memory, lifting an existing annotation. **Exit:** go with `lopdf`, or write down what else.
+   memory, lifting an existing annotation, matching an existing annotation to its object in
+   the file, and appending to an encrypted file (new strings and streams must be encrypted
+   with the file's key). **Exit:** go with `lopdf`, or write down what else.
 1. **Reading, part one:** search, text selection, copy, links. No save path needed.
 2. **Foundation:** markup model, overlay, select tool, history, unsaved state, save / save a
-   copy / confirm once, close prompts, edit lock, toolbar centre and properties strip.
+   copy / confirm once, close prompts, edit lock, toolbar centre and properties strip. Built
+   with the rectangle tool as its test case, so there is something to draw, save and reopen;
+   nothing here is worth releasing until phase 3.
 3. **First five markup tools:** arrow, rectangle, cloud, text box, pen.
 4. **Measuring** and calibration.
 5. **Stamps and signatures.**
@@ -247,38 +276,27 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
   different session, so anything not written here is not known to the builder.
 - **On its own branch**, not `main`. Suggested name: `editing`. Phases are committed as they
   land; nothing is pushed or merged without Matt asking.
-- **Merging back makes a new version.** The app is 0.1.0 today (in `package.json`,
-  `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`; no git tags yet). Suggested: 0.2.0
-  at the merge, bumped in all three in one commit and tagged `v0.2.0`.
+- **Merging back makes a new version**, suggested 0.2.0 (see "Release pipeline" below for
+  how the number is set and the release cut).
 - **Start with phase 0** and stop at its exit for Matt's check in Acrobat, Edge and Preview
   before building on the writer.
 - Read first: [ARCHITECTURE.md](../ARCHITECTURE.md), `docs/v0.1-handoff/engine.md` and
   `shell.md`, and the toolchain notes in [CLAUDE.md](../CLAUDE.md).
 
-## Release pipeline (candidate, not yet decided)
+## Release pipeline (separate work, in parallel)
 
-Matt may want a GitHub Actions build and an update mechanism pointed at it. Separate from the
-editing work and independent of it: it can be built on `main` before or after the merge, and
-is best kept off the `editing` branch so the two don't tangle.
+A GitHub Actions build and an in-app updater are scoped in
+[release-pipeline-scope.md](release-pipeline-scope.md), built on their own branch
+(`release-pipeline`) and merged to `main` first. What that means here:
 
-- **Build:** a workflow on `windows-latest` (which has the MSVC toolchain this repo is
-  documented to build with), triggered by a `v*` tag: `npm ci`, `node tools/fetch-pdfium.mjs`,
-  `npm test`, `cargo test`, `npm run tauri build`, then attach the NSIS installer to a GitHub
-  Release. `tauri-apps/tauri-action` does the build-and-release half.
-- **Updates:** Tauri's updater plugin, pointed at the release's `latest.json`. It checks on
-  start (or from Help), downloads the new installer and runs it. The installer is already
-  per-user NSIS, which is what the updater expects.
-- **Needs from Matt:** an updater signing key pair (generated once; the private key and its
-  password go in the repository's Actions secrets, the public key in `tauri.conf.json`). This
-  is Tauri's own update signature, not Windows code signing.
-- **To check before building it:**
-  - The print round-trip test needs "Microsoft Print to PDF" on the runner; skip it there if
-    it's missing.
-  - Whether the repository is public (the updater fetches releases without credentials).
-  - Without a Windows code-signing certificate the installer still triggers SmartScreen on
-    first download; updates through the updater don't. A certificate is a cost decision.
-  - First CI build on MSVC: v0.1 was built on the GNU toolchain, so this is also the first
-    proof the documented toolchain works.
+- Pick up `main` once it lands, so `editing` has CI and the updater.
+- It touches `tauri.conf.json`, `Cargo.toml`, `package.json`, `lib.rs`, `App.svelte`, the menu,
+  About and `settings.ts` lightly. Expect small merges there.
+- Its "Install and restart" closes the app through the shell, so the unsaved-changes prompt
+  built in phase 2 must cover that path too.
+- By then the app will be at 0.1.2 (the pipeline's two proving releases). The version at the
+  merge is set with `tools/set-version.mjs` (0.2.0 suggested), and the release is cut by
+  pushing a `v0.2.0` tag, which needs Matt's say-so.
 
 ## Defaults I've assumed (correct any in one pass)
 
@@ -287,7 +305,7 @@ is best kept off the `editing` branch so the two don't tangle.
 | Tool behaviour after drawing | Stays in the tool (CAD habit); Esc or V returns to select. |
 | Navigation while a tool is active | Unchanged: middle-drag pans, wheel zooms, Space+drag pans. |
 | Line weights and text sizes | In points on paper, not screen pixels, so they print as drawn. |
-| Author on markups | Windows user name, editable in settings. |
+| Author on markups | Windows user name, editable in settings. It's written into the file, so recipients see it. |
 | Pen and touch | Pointer events work with a pen; pressure ignored (ink annotations have one width). |
 | Markups when printing | Printed by default, with a toggle in the print dialog. |
 | Existing annotations | Editable when unlocked; otherwise display only. |
@@ -295,7 +313,8 @@ is best kept off the `editing` branch so the two don't tangle.
 
 ## Testing
 
-Mine to set up and run. Plan:
+The builder sets up, writes and runs the tests (Matt is new to automated testing: hand over
+in plain terms what's covered, what isn't, and the one command). Plan:
 
 - **Model** (Vitest): geometry, hit-testing, handles, history, page list, measurement maths in
   both scales, search hit mapping. Pure, so fully covered.
@@ -332,4 +351,5 @@ Mine to set up and run. Plan:
 ## Open questions for Matt
 
 None open: the first round was answered on 13 November 2026 and is recorded under "Decisions
-made". The table of assumed defaults above is still unreviewed.
+made". The table of assumed defaults above is still unreviewed by Matt; treat it as
+provisional and raise it before phase 2.
