@@ -4,6 +4,8 @@
 
 import type { PageSize } from "../view/layout";
 import type { TileSpec } from "./tiles";
+import type { TextLayer } from "../text/layer";
+import type { PageHits, SearchOptions } from "../text/searchModel";
 
 export type RendererName = "pdfium" | "image";
 export type DocKind = "pdf" | "image";
@@ -122,6 +124,10 @@ export interface Renderer {
   outline?(docId: number): Promise<OutlineNode[]>;
   /** Drawing-scale notes on a page, best first (empty if none). */
   findScale?(docId: number, page: number): Promise<ScaleCandidate[]>;
+  /** Every character on a page with its box, and the page's links (src/lib/text/layer.ts). */
+  textLayer?(docId: number, page: number): Promise<TextLayer>;
+  /** Search one page with PDFium's matcher. */
+  searchPage?(docId: number, page: number, query: string, opts: SearchOptions): Promise<PageHits>;
   /**
    * The page preview stored on disk for this document's file by an earlier session (the
    * persistent preview cache), or null.

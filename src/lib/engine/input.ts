@@ -5,6 +5,7 @@
 //   wheel (notched)        zoom at cursor   wheel (touchpad)      pan
 //   shift + wheel          horizontal pan   ctrl + wheel / pinch  zoom at cursor
 //   space + left drag      pan
+//   left drag / click      the left-button handler (text selection and links, textTool.ts)
 // Document navigation
 //   wheel scrolls, shift+wheel scrolls sideways, ctrl+wheel / pinch zooms.
 // Keyboard (both): + / - zoom, Ctrl+0 fit page, Ctrl+1 actual size, Ctrl+2 fit width,
@@ -27,6 +28,21 @@ export interface InputCallbacks {
   blocked?(): boolean;
   /** False with no document open: the view keys then do nothing, as their menu items are disabled. */
   hasDoc?(): boolean;
+  /** The left button (without Space): text selection and links. */
+  left?: LeftButton;
+  /** Right-click on the canvas, at client coordinates. */
+  contextMenu?(clientX: number, clientY: number): void;
+}
+
+/** What the left button does on the canvas. Coordinates are CSS px in the viewport. */
+export interface LeftButton {
+  /** Button down; `clicks` counts quick repeats (2 double, 3 triple). True takes the gesture. */
+  down(x: number, y: number, clicks: number): boolean;
+  move(x: number, y: number): void;
+  up(): void;
+  leave(): void;
+  /** The cursor to show, or null for the default. */
+  cursor(): string | null;
 }
 
 const DOUBLE_CLICK_MS = 350;
@@ -36,6 +52,9 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   let dragging: { id: number; x: number; y: number } | null = null;
   let spaceHeld = false;
   let lastMiddle = { t: 0, x: 0, y: 0 };
+  let lastLeft = { t: 0, x: 0, y: 0, clicks: 0 };
+  /** The pointer holding the left button for cb.left, if any. */
+  let leftId: number | null = null;
   const wheel = new WheelClassifier();
 
   const local = (e: MouseEvent): [number, number] => {
@@ -44,7 +63,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   };
 
   const setCursor = () => {
-    el.style.cursor = dragging ? "grabbing" : spaceHeld ? "grab" : "default";
+    el.style.cursor = dragging ? "grabbing" : spaceHeld ? "grab" : (cb.left?.cursor() ?? "default");
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -77,6 +96,20 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   const onPointerDown = (e: PointerEvent) => {
     const middle = e.button === 1;
     const spaceLeft = e.button === 0 && spaceHeld;
+    if (e.button === 0 && !spaceHeld && cb.left && (cb.hasDoc?.() ?? true)) {
+      const now = performance.now();
+      const again = now - lastLeft.t < DOUBLE_CLICK_MS && Math.hypot(e.clientX - lastLeft.x, e.clientY - lastLeft.y) < DOUBLE_CLICK_PX;
+      const clicks = again ? (lastLeft.clicks % 3) + 1 : 1;
+      lastLeft = { t: now, x: e.clientX, y: e.clientY, clicks };
+      const [x, y] = local(e);
+      if (cb.left.down(x, y, clicks)) {
+        e.preventDefault();
+        leftId = e.pointerId;
+        el.setPointerCapture(e.pointerId);
+      }
+      setCursor();
+      return;
+    }
     if (!middle && !spaceLeft) return;
     e.preventDefault(); // no Windows autoscroll on middle click
     if (middle) {
@@ -101,6 +134,10 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
     if (e.pointerType !== "touch") {
       const [x, y] = local(e);
       viewer.setPointer(x, y);
+      if (!dragging) {
+        cb.left?.move(x, y);
+        setCursor();
+      }
     }
     if (!dragging || e.pointerId !== dragging.id) return;
     const dx = e.clientX - dragging.x;
@@ -111,6 +148,13 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   };
 
   const onPointerUp = (e: PointerEvent) => {
+    if (leftId !== null && e.pointerId === leftId) {
+      leftId = null;
+      cb.left?.up();
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      setCursor();
+      return;
+    }
     if (!dragging || e.pointerId !== dragging.id) return;
     dragging = null;
     viewer.endDrag();
@@ -119,7 +163,15 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   };
 
   const onPointerLeave = () => {
-    if (!dragging) viewer.setPointer(null);
+    if (!dragging && leftId === null) {
+      viewer.setPointer(null);
+      cb.left?.leave();
+    }
+  };
+
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault(); // no WebView menu (Back, Reload, Inspect) over the drawing
+    cb.contextMenu?.(e.clientX, e.clientY);
   };
 
   // Middle mousedown must be cancelled separately or Chromium starts autoscroll.
@@ -179,6 +231,8 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
 
   const onBlur = () => {
     spaceHeld = false;
+    if (leftId !== null) cb.left?.up();
+    leftId = null;
     dragging = null;
     viewer.endDrag();
     setCursor();
@@ -192,6 +246,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   el.addEventListener("pointerleave", onPointerLeave);
   el.addEventListener("mousedown", onMouseDown);
   el.addEventListener("auxclick", onAuxClick);
+  el.addEventListener("contextmenu", onContextMenu);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
@@ -205,6 +260,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
     el.removeEventListener("pointerleave", onPointerLeave);
     el.removeEventListener("mousedown", onMouseDown);
     el.removeEventListener("auxclick", onAuxClick);
+    el.removeEventListener("contextmenu", onContextMenu);
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("blur", onBlur);

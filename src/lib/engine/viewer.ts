@@ -39,11 +39,13 @@ import {
   type Rotation,
   normRotation,
   rotatePoint,
+  rotateRect,
   rotatedDrawTransform,
   rotatedSize,
   unrotatePoint,
   unrotateRect,
 } from "../view/rotation";
+import { revealView } from "../view/reveal";
 import {
   TILE,
   TileCache,
@@ -212,8 +214,25 @@ export interface FrameSample {
   drawMs: number;
 }
 
+/**
+ * Rectangles drawn over the page, above the tiles (search hits, the text selection). The
+ * fill is multiplied into the page, so the drawing stays readable underneath.
+ */
+export interface Highlight {
+  /** Per page, [x0, y0, x1, y1] in page points (y down, unrotated). */
+  rects: Map<number, [number, number, number, number][]>;
+  fill: string;
+  /** Optional outline, drawn normally (not multiplied), one device pixel wide. */
+  stroke?: string;
+  /** Lower draws first. */
+  order: number;
+  /** The document it belongs to: drawn only while that document is attached. */
+  docId: number;
+}
+
 export class Viewer {
   readonly opts: ViewerOptions;
+  private highlights = new Map<string, Highlight>();
   readonly cache: TileCache;
   readonly thumbnails: ThumbnailQueue;
   private ctx: CanvasRenderingContext2D;
@@ -886,6 +905,33 @@ export class Viewer {
     this.stopAnimations();
     this.fitted = null;
     this.setView({ scale: s, tx: this.vw / 2 - (r.x + X) * s, ty: this.vh / 2 - (r.y + Y) * s }, "pan");
+  }
+
+  /** Set (or with null, remove) a named highlight layer and redraw. */
+  setHighlights(name: string, h: Highlight | null): void {
+    if (h) this.highlights.set(name, h);
+    else if (!this.highlights.delete(name)) return;
+    this.requestFrame();
+  }
+
+  /**
+   * Bring a rectangle on a page (page points) into view: centre it if it's off screen, and
+   * zoom in if it would be too small to read (search hits on a drawing at fit). Eases there.
+   */
+  revealRect(page: number, b: [number, number, number, number]): void {
+    if (!this.doc || page < 0 || page >= this.doc.numPages) return;
+    if (this.layoutMode === "single" && page !== this.page) {
+      this.page = page;
+      this.relayout();
+      this.setView(this.view, "jump");
+    }
+    const r = this.layout.rects[page];
+    if (!r) return;
+    const rr = rotateRect({ x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] }, this.doc.sizes[page], this.rotationDeg);
+    const v = revealView(this.view, { x: r.x + rr.x, y: r.y + rr.y, w: rr.w, h: rr.h }, this.vw, this.vh);
+    if (!v) return;
+    this.fitted = null;
+    this.animateTo(v);
   }
 
   /** Show a page point at the top of the viewport (bookmark targets with a y). */
@@ -1635,6 +1681,7 @@ export class Viewer {
         blit(b.bitmap, dev(b.x / b.rs, b.y / b.rs, (b.x + b.w) / b.rs, (b.y + b.h) / b.rs));
       }
       if (this.cache.scalesFor(p).includes(target)) drawTiles(target);
+      if (this.highlights.size) this.drawHighlights(p, dev);
       ctx.restore();
     }
 
@@ -1642,6 +1689,33 @@ export class Viewer {
     if (cp !== this.page && this.layoutMode !== "single") {
       this.page = cp;
       this.emitUi();
+    }
+  }
+
+  /** Highlight layers on page p, through the page's point -> device rect mapping. */
+  private drawHighlights(p: number, dev: (x0: number, y0: number, x1: number, y1: number) => [number, number, number, number]): void {
+    const ctx = this.ctx;
+    const min = 2 * this.dpr; // a hit on a drawing at fit is still a visible mark
+    const id = this.doc?.docId;
+    const layers = [...this.highlights.values()].filter((h) => h.docId === id).sort((a, b) => a.order - b.order);
+    for (const h of layers) {
+      const rects = h.rects.get(p);
+      if (!rects?.length) continue;
+      const boxes = rects.map((b) => {
+        let [x0, y0, x1, y1] = dev(b[0], b[1], b[2], b[3]);
+        if (x1 - x0 < min) [x0, x1] = [Math.round((x0 + x1 - min) / 2), Math.round((x0 + x1 + min) / 2)];
+        if (y1 - y0 < min) [y0, y1] = [Math.round((y0 + y1 - min) / 2), Math.round((y0 + y1 + min) / 2)];
+        return [x0, y0, x1, y1];
+      });
+      ctx.globalCompositeOperation = "multiply";
+      ctx.fillStyle = h.fill;
+      for (const [x0, y0, x1, y1] of boxes) ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.globalCompositeOperation = "source-over";
+      if (h.stroke) {
+        ctx.strokeStyle = h.stroke;
+        ctx.lineWidth = Math.max(1, Math.round(this.dpr));
+        for (const [x0, y0, x1, y1] of boxes) ctx.strokeRect(x0 - 0.5, y0 - 0.5, x1 - x0 + 1, y1 - y0 + 1);
+      }
     }
   }
 
