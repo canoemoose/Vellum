@@ -89,6 +89,33 @@ pub fn shell_take_pending(pending: tauri::State<PendingOpens>) -> Vec<String> {
     pending.take()
 }
 
+/// Open the third-party notices installed beside the exe (tools/make-notices.mjs) in the
+/// default text editor. In a dev build they're read from src-tauri/licenses, if generated.
+#[tauri::command]
+pub fn open_notices<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    const NAME: &str = "THIRD-PARTY-NOTICES.txt";
+    let installed = app.path().resource_dir().map(|d| d.join(NAME)).ok();
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("licenses").join(NAME);
+    let path = installed.filter(|p| p.exists()).or_else(|| dev.exists().then_some(dev)).ok_or_else(|| {
+        crate::errcode::coded("not_found", "The third-party notices aren't installed (run node tools/make-notices.mjs in a dev build)")
+    })?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // explorer.exe opens a file with its default app.
+        std::process::Command::new("explorer.exe")
+            .raw_arg(format!("\"{}\"", path.display()))
+            .spawn()
+            .map_err(|e| crate::errcode::coded("explorer_failed", format!("Couldn't open the notices: {e}")))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("Opening the notices only works on Windows".into())
+    }
+}
+
 /// Open an Explorer window with the file selected.
 #[tauri::command]
 pub fn reveal_in_explorer(path: String) -> Result<(), String> {

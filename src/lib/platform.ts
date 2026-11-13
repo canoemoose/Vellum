@@ -37,6 +37,8 @@ export const writeBinaryFile = (path: string, bytes: Uint8Array) =>
   invoke<void>("write_binary_file", bytes, { headers: { path } });
 export const exitApp = (code = 0) => invoke<void>("exit_app", { code });
 export const revealInExplorer = (path: string) => invoke<void>("reveal_in_explorer", { path });
+/** Open THIRD-PARTY-NOTICES.txt (installed beside the exe) in the default text editor. */
+export const openNotices = () => invoke<void>("open_notices");
 
 /** Every extension Vellum opens (PDF plus the image types). */
 export const OPEN_EXTENSIONS = ["pdf", ...IMAGE_EXTENSIONS];

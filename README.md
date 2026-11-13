@@ -203,6 +203,13 @@ Drop your own PDFs in `test-files\` (git ignores it) and they're included. Resul
 spotting seams and missing content. The benchmark window stays on top; leave the machine alone
 until it's done.
 
+## Licence
+
+Vellum is MIT licensed ([LICENSE](LICENSE)). It ships PDFium and a few hundred open-source
+crates and packages; `tauri build` collects every one of their notices and licences into
+`THIRD-PARTY-NOTICES.txt` ([tools/make-notices.mjs](tools/make-notices.mjs)), which the
+installer puts beside the exe and Help > About opens.
+
 ## Where things are written down
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): how it works.

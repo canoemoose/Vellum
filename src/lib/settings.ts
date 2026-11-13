@@ -1,5 +1,5 @@
 // Persisted user settings. localStorage lives in the WebView2 profile under
-// %LOCALAPPDATA%\engineering.event.vellum, so it survives restarts. Print presets and last
+// %LOCALAPPDATA%\io.github.canoemoose.vellum (the app identifier), so it survives restarts. Print presets and last
 // print settings are WP-Print's, under their own vellum.print.* keys.
 
 import { type LayoutMode, MAX_COLUMNS, MIN_COLUMNS } from "./view/layout";

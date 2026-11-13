@@ -21,6 +21,10 @@ v0.1, the first real app: brief in [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-
 - Speed work: start from [docs/speed-handoff.md](docs/speed-handoff.md) (state, numbers,
   ideas ranked, how to measure).
 - `node tools/fetch-pdfium.mjs`: download `pdfium.dll` into `src-tauri/pdfium/`.
+- `node tools/make-notices.mjs`: write `src-tauri/licenses/THIRD-PARTY-NOTICES.txt` (every
+  shipped crate, front-end package and PDFium library with its licence). `tauri build` runs it;
+  the installer ships it and Help > About opens it. After updating PDFium, run
+  `node tools/fetch-pdfium-licences.mjs` and commit `src-tauri/licenses/pdfium/`.
 - `node tools/make-icons.mjs`: rebuild the app icon set in `src-tauri/icons` from the SVGs in
   `src-tauri/icons/source` (rendered with headless Edge; 16 and 24 px have their own drawings).
 

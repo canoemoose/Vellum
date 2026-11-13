@@ -419,6 +419,7 @@ pub fn run() {
             // WP-Shell
             shell::shell_take_pending,
             shell::reveal_in_explorer,
+            shell::open_notices,
             snap::snap_max_button,
             // WP-Shell end
             // WP-Print

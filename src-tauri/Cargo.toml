@@ -1,8 +1,10 @@
 [package]
 name = "vellum"
 version = "0.1.0"
-description = "Vellum PDF viewer (phase 0 rendering spike)"
-authors = ["Event Engineering"]
+description = "A fast PDF and image viewer for CAD drawings"
+authors = ["Matt James"]
+license = "MIT"
+repository = "https://github.com/canoemoose/vellum"
 edition = "2024"
 
 [lib]

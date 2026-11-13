@@ -4,6 +4,8 @@ node_modules
 /test-files
 /bench-output
 /src-tauri/pdfium
+# Generated at build by tools/make-notices.mjs
+/src-tauri/licenses/THIRD-PARTY-NOTICES.txt
 .DS_Store
 *.log
 vite.config.ts.timestamp-*
