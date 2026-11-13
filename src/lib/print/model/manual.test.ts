@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { boxH, boxW, centreX, centreY, mmToPt } from "./geom";
 import {
   type ManualItem, type ManualLayout, addItem, addSheet, areaOfLayout, clearSheet, cropFromEdge, cropToSheetBox,
-  defaultScale, duplicateSheet, emptyLayout, findItem, freeSpot, fullPageBox, itemBox, labelText, manualToJob,
+  defaultScale, duplicateSheet, emptyLayout, findItem, freeSpot, fullPageBox, itemBox, labelText, layoutFileCount, manualToJob,
   moveItem, pageToSheet, placedKeys, removeItem, removeSheet, resetCrop, scaleFromCorner, scaleLabel, setCrop,
-  setRatio, setRotation, setScale, sheetCount, sheetToPage, sourceDescription, updateItem,
+  setRatio, setRotation, setScale, sheetCount, sheetJob, sheetToPage, showsName, labelParts, sourceDescription, updateItem,
 } from "./manual";
 import { A1, A3, A4, ref, uniform } from "./testkit";
 
@@ -15,7 +15,7 @@ function layout(): ManualLayout {
 }
 
 function item(extra: Partial<ManualItem> = {}): ManualItem {
-  return { id: 1, ref: ref(200, 100), crop: null, x: 10, y: 20, scale: 1, rotation: 0, border: false, label: true, ...extra };
+  return { id: 1, ref: ref(200, 100), crop: null, x: 10, y: 20, scale: 1, rotation: 0, border: false, showName: null, showPage: true, showScale: true, ...extra };
 }
 
 describe("placement maths", () => {
@@ -221,6 +221,49 @@ describe("labels and output", () => {
     expect(scaleLabel(item({ ref: ref(100, 100, { page: 8, drawingScale: 20 }), crop: { x0: 0, y0: 0, x1: 10, y1: 10 } }))).toBe("p9 crop · 1:20");
     expect(scaleLabel(item({ ref: ref(100, 100, { kind: "image", title: "Truss.jpg" }), scale: 0.5 }))).toBe("Truss.jpg · 50%");
     expect(sourceDescription(ref(A1.h, A1.w, { title: "Stage plan.pdf", drawingScale: 100 }))).toBe("Stage plan.pdf · source A1, 1:100");
+  });
+
+  it("labels with any mix of file name, page number and scale", () => {
+    const it = item({ ref: ref(100, 100, { page: 2, drawingScale: 100, title: "Site plan.pdf" }), scale: 0.5 });
+    expect(scaleLabel(it, { name: true, page: true, scale: true })).toBe("Site plan p3 · 1:200");
+    expect(scaleLabel(it, { name: true, page: false, scale: true })).toBe("Site plan · 1:200");
+    expect(scaleLabel(it, { name: true, page: false, scale: false })).toBe("Site plan");
+    expect(scaleLabel(it, { name: false, page: false, scale: true })).toBe("1:200");
+    expect(scaleLabel(it, { name: false, page: false, scale: false })).toBe("");
+    expect(scaleLabel({ ...it, crop: { x0: 0, y0: 0, x1: 10, y1: 10 } }, { name: true, page: false, scale: false })).toBe("Site plan crop");
+    const img = item({ ref: ref(100, 100, { kind: "image", title: "Truss.jpg" }), scale: 0.5 });
+    expect(scaleLabel(img, { name: true, page: true, scale: true })).toBe("Truss.jpg · 50%");
+  });
+
+  it("shortens a long file name in the middle to fit the item", () => {
+    const it = item({ ref: ref(100, 100, { page: 10, title: "BayouTowersFullDrawingSet_dwgs_1_13.pdf" }), scale: 0.069 });
+    const all = { name: true, page: true, scale: true };
+    expect(scaleLabel(it, all)).toBe("BayouTowersFullDrawingSet_dwgs_1_13 p11 · 6.9%");
+    const short = scaleLabel(it, all, 30);
+    expect(short.length).toBeLessThanOrEqual(30);
+    expect(short).toMatch(/^Bayou.*\.\.\..*_13 p11 · 6\.9%$/);
+  });
+
+  it("leaves the label out when every part is off", () => {
+    let l = addItem(layout(), 0, ref(100, 100, { docId: 1, path: "C:/a/Plan.pdf", title: "Plan.pdf" })).layout;
+    l = updateItem(l, 0, l.sheets[0].items[0].id, { showName: false, showPage: false, showScale: false });
+    expect(sheetJob(l, 0, { enabled: false, date: "" }).texts).toEqual([]);
+    const img = item({ ref: ref(100, 100, { kind: "image", title: "Truss.jpg" }) });
+    expect(labelParts(layout(), img)).toEqual({ name: true, page: false, scale: true });
+  });
+
+  it("shows file names automatically once the layout mixes files, unless chosen", () => {
+    let l = addItem(layout(), 0, ref(100, 100, { docId: 1, path: "C:/a/Plan.pdf", title: "Plan.pdf" })).layout;
+    l = addItem(l, 0, ref(100, 100, { docId: 1, path: "c:\\A\\plan.PDF", title: "Plan.pdf", page: 1 })).layout;
+    const first = l.sheets[0].items[0];
+    expect(layoutFileCount(l)).toBe(1); // same file, however the path is written
+    expect(showsName(l, first)).toBe(false);
+    l = addItem(l, 0, ref(100, 100, { docId: 2, path: "C:/a/Section.pdf", title: "Section.pdf" })).layout;
+    expect(showsName(l, first)).toBe(true);
+    expect(showsName(l, { ...first, showName: false })).toBe(false);
+    expect(showsName(layout(), { ...first, showName: true })).toBe(true);
+    const job = sheetJob(l, 0, { enabled: false, date: "" });
+    expect(job.texts[0].text).toBe("Plan p1 · 100%");
   });
 
   it("puts the label under the item when there's room, else inside", () => {

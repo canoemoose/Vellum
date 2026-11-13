@@ -27,7 +27,12 @@ export interface SavedItem {
   scale: number;
   rotation: Rotation;
   border: boolean;
-  label: boolean;
+  /** Layouts saved before the label had separate parts: one tick for page and scale. */
+  label?: boolean;
+  /** Null or missing: automatic. */
+  showName?: boolean | null;
+  showPage?: boolean;
+  showScale?: boolean;
 }
 
 export interface SavedLayout {
@@ -59,7 +64,9 @@ export function serialise(l: ManualLayout): string {
         scale: it.scale,
         rotation: it.rotation,
         border: it.border,
-        label: it.label,
+        showName: it.showName,
+        showPage: it.showPage,
+        showScale: it.showScale,
       })),
     })),
   };
@@ -151,7 +158,10 @@ export function restore(
         scale: it.scale,
         rotation: quarter(isNum(it.rotation) ? it.rotation : 0),
         border: !!it.border,
-        label: it.label !== false,
+        // Older files: one "label" tick for page and scale, the name automatic.
+        showName: typeof it.showName === "boolean" ? it.showName : it.label === false ? false : null,
+        showPage: typeof it.showPage === "boolean" ? it.showPage : it.label !== false,
+        showScale: typeof it.showScale === "boolean" ? it.showScale : it.label !== false,
       });
     }
     return { id, items };

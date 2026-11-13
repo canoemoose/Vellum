@@ -2,6 +2,7 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Job } from "./model/job";
+import { userMessage } from "../shell/messages";
 import type { ColourMode, Duplex, Quality } from "./model/settings";
 
 export interface PrinterInfo {
@@ -48,6 +49,8 @@ export interface SendOptions {
   collate: boolean;
   duplex: Duplex;
   colour: ColourMode;
+  /** Black lines: how faint a line still prints, 0-100. */
+  blackSensitivity: number;
   quality: Quality;
   paper: number | null;
   trayBySize: boolean;
@@ -62,7 +65,15 @@ export const printerMargins = (printer: string, paper: number | null, landscape:
   invoke<MarginsMm>("print_margins", { printer, paper, landscape });
 export const printerProperties = (printer: string) => invoke<boolean>("print_properties", { printer });
 export const composeJob = (job: Job) => invoke<Composed>("print_compose", { job });
-export const savePdf = (jobId: number, path: string) => invoke<void>("print_save_pdf", { jobId, path });
+/** How Save as PDF treats colour: Colour saves the composed (vector) PDF; Greyscale and Black
+ * lines save a raster PDF at `dpi`, filtered as printing is. */
+export interface SaveOptions {
+  colour: ColourMode;
+  blackSensitivity: number;
+  dpi: number;
+}
+
+export const savePdf = (jobId: number, path: string, options?: SaveOptions) => invoke<void>("print_save_pdf", { jobId, path, options });
 export const releaseJob = (jobId: number) => invoke<void>("print_release", { jobId }).catch(() => {});
 export const cancelPrinting = () => invoke<void>("print_cancel").catch(() => {});
 
@@ -72,9 +83,7 @@ export function sendJob(jobId: number, options: SendOptions, onProgress: (done: 
   return invoke<void>("print_send", { jobId, options, onProgress: ch });
 }
 
-/** Errors from invoke are strings meant for the user; anything else gets a generic line. */
-export function errorText(e: unknown): string {
-  if (typeof e === "string") return e;
-  if (e instanceof Error) return e.message;
-  return "Something went wrong";
+/** The message for an error while trying to `verb` (shell/messages.ts: by code, never wording). */
+export function errorText(e: unknown, verb = "print"): string {
+  return userMessage(e, verb);
 }

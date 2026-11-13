@@ -10,6 +10,7 @@ import { type Box, intersect, quarter } from "./model/geom";
 import type { JobItem, JobLine, JobText } from "./model/job";
 import { type ManualItem, itemBox, sheetToPage } from "./model/manual";
 import type { ColourMode } from "./model/settings";
+import { BLACK_RADIUS_PT, BLACK_SENSITIVITY_DEFAULT, type PxRect, blackLinesIn } from "./blackLines";
 
 /** Canvas pixels per sheet point, and where the sheet's origin is on the canvas. */
 export interface SheetView {
@@ -40,7 +41,9 @@ export function asItem(it: JobItem): ManualItem {
     scale: it.scale,
     rotation: quarter(it.rotation),
     border: false,
-    label: false,
+    showName: false,
+    showPage: false,
+    showScale: false,
   };
 }
 
@@ -229,18 +232,28 @@ export function drawTexts(ctx: CanvasRenderingContext2D, texts: JobText[], v: Sh
 }
 
 /** Show a colour mode on a canvas region the way printing will apply it to the raster. */
-export function applyColourPreview(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, mode: ColourMode): void {
+/**
+ * The colour mode on a drawn preview, in place. Black lines needs `sensitivity` and the preview's
+ * scale (`pxPerPt`, canvas px per sheet point) to size its neighbourhood as printing does.
+ */
+export function applyColourPreview(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, mode: ColourMode,
+  sensitivity = BLACK_SENSITIVITY_DEFAULT, pxPerPt = 1, pages: PxRect[] = [{ x0: x, y0: y, x1: x + w, y1: y + h }],
+): void {
   if (mode === "colour" || w <= 0 || h <= 0) return;
   const img = ctx.getImageData(x, y, w, h);
   const d = img.data;
+  if (mode === "blackLines") {
+    // Page by page (`pages` in canvas px), as printing does.
+    const local = pages.map((p) => ({ x0: p.x0 - x, y0: p.y0 - y, x1: p.x1 - x, y1: p.y1 - y }));
+    blackLinesIn(d, w, h, local, sensitivity, BLACK_RADIUS_PT * pxPerPt);
+    ctx.putImageData(img, x, y);
+    return;
+  }
   for (let i = 0; i < d.length; i += 4) {
     if (mode === "greyscale") {
       const yv = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114 + 500) / 1000;
       d[i] = d[i + 1] = d[i + 2] = yv;
-    } else {
-      // Black lines: the same rule as the Rust raster path (darkest channel under 245).
-      const v = Math.min(d[i], d[i + 1], d[i + 2]) < 245 ? 0 : 255;
-      d[i] = d[i + 1] = d[i + 2] = v;
     }
   }
   ctx.putImageData(img, x, y);

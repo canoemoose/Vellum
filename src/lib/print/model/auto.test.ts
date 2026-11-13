@@ -19,7 +19,7 @@ describe("Fit", () => {
     expect(contains(sh.area, p.box)).toBe(true);
     expect(p.box.x0 - sh.area.x0).toBeCloseTo(sh.area.x1 - p.box.x1, 6); // centred
     // The mockup's info line.
-    expect(sizingInfo(input([]).options, sh)).toBe("A1 on A3 prints at 1:206. Choose “To scale” for exactly 1:200.");
+    expect(sizingInfo(input([]).options, sh)).toEqual({ text: "A1 on A3 prints at 1:206. Choose “To scale” for exactly 1:200.", warn: false });
   });
 
   it("fits to the full paper when asked", () => {
@@ -84,18 +84,19 @@ describe("Actual and To scale", () => {
     // A known dimension: 1 m at 1:200 is 5 mm on paper; the page is 841 mm wide at 1:100 so
     // 84.1 m real, 420.5 mm printed.
     expect(ptToMm(boxW(sh.placed[0].box))).toBeCloseTo(420.5, 6);
-    expect(sizingInfo({ ...input([]).options, sizing: "scale", scaleRatio: 200 }, sh)).toBe("At 1:200 the page is 11 mm bigger than the printable area, so its outer edge may not print.");
+    expect(sizingInfo({ ...input([]).options, sizing: "scale", scaleRatio: 200 }, sh)).toEqual({ text: "At 1:200 the page is 11 mm bigger than the printable area, so its outer edge may not print.", warn: true });
   });
 
   it("says when To scale fits exactly", () => {
     const r = autoLayout(input([src(ref(A1L.w, A1L.h, { drawingScale: 100 }))], { sizing: "scale", scaleRatio: 250 }));
-    expect(sizingInfo({ ...input([]).options, sizing: "scale", scaleRatio: 250 }, r.sheets[0])).toBe("A1 on A3 prints at exactly 1:250.");
+    expect(sizingInfo({ ...input([]).options, sizing: "scale", scaleRatio: 250 }, r.sheets[0])).toEqual({ text: "A1 on A3 prints at exactly 1:250.", warn: false });
   });
 
-  it("prints at 100% with a note when the drawing scale is unknown", () => {
-    const r = autoLayout(input([src(ref(500, 300))], { sizing: "scale", scaleRatio: 200 }));
-    expect(r.sheets[0].placed[0].factor).toBe(1);
-    expect(sizingInfo({ ...input([]).options, sizing: "scale" }, r.sheets[0])).toMatch(/isn't known/);
+  it("prints at a percentage when the drawing scale is unknown", () => {
+    const r = autoLayout(input([src(ref(500, 300))], { sizing: "scale", scaleRatio: 200, scalePercent: 50 }));
+    expect(r.sheets[0].placed[0].factor).toBe(0.5);
+    const info = sizingInfo({ ...input([]).options, sizing: "scale", scalePercent: 50 }, r.sheets[0]);
+    expect(info).toMatchObject({ text: expect.stringMatching(/prints at 50%\. Set the drawing scale/), warn: false });
   });
 
   it("shrinks oversized pages only, in Actual", () => {
@@ -107,7 +108,7 @@ describe("Actual and To scale", () => {
 
   it("describes Fit without a drawing scale as a percentage", () => {
     const r = autoLayout(input([src(ref(A1.w, A1.h))]));
-    expect(sizingInfo(input([]).options, r.sheets[0])).toMatch(/^A1 on A3 prints at \d+% of actual size\.$/);
+    expect(sizingInfo(input([]).options, r.sheets[0])?.text).toMatch(/^A1 on A3 prints at \d+% of actual size\.$/);
   });
 });
 

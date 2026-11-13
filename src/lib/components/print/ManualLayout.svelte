@@ -6,6 +6,11 @@
 
   let kept: { layout: Layout; marginMode: string; extra: PrintDoc[] } | null = null;
 
+  /** The layout made so far while the print dialog is open, or null. */
+  export function keptManualLayout(): Layout | null {
+    return kept?.layout ?? null;
+  }
+
   /** Forget the manual layout; returns documents opened only for it (to close in the backend). */
   export function resetManualLayout(): PrintDoc[] {
     const extra = kept?.extra ?? [];
@@ -18,11 +23,15 @@
   // The manual print layout (docs/mockups/PrintManual.png, project/PrintManual.dc.html).
   // Thin over the pure model in src/lib/print/model/manual.ts; pan and zoom use the engine's
   // view maths, items render through the shared renderer (painter.ts).
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
+  import { PRINT_BOX, floating } from "../floating";
   import { invoke } from "@tauri-apps/api/core";
   import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import type { PrintContext } from "../../print/context";
   import { errorText } from "../../print/api";
+  import { isTypingTarget } from "../../engine/keys";
+  import { printMargin } from "../../print/marginColour";
+  import CloseButton from "../CloseButton.svelte";
   import { align, autoArrange, distributeH } from "../../print/model/arrange";
   import type { Source } from "../../print/model/auto";
   import {
@@ -33,13 +42,16 @@
   import {
     type Corner, type Edge, type ManualItem, addItem, addSheet, areaOfLayout, clearSheet, cropFromEdge, duplicateSheet,
     emptyLayout, findItem, itemBox, manualToJob, placedKeys, removeItem, removeSheet, resetCrop, scaleFromCorner,
-    scaleLabel, setCrop, setPaper, setRatio, setRotation, setScale, sheetCount, sheetJob, sourceDescription, updateItem,
+    scaleLabel, showsName, setCrop, defaultScale, setPaper, setRatio, setRotation, setScale, sheetCount, sheetJob, sourceDescription, updateItem,
   } from "../../print/model/manual";
   import { layoutPaths, parseLayout, restore, serialise } from "../../print/model/serial";
-  import { type PrintSettings, SCALE_PRESETS } from "../../print/model/settings";
+  import { type PrintSettings, PERCENT_PRESETS, SCALE_PRESETS } from "../../print/model/settings";
   import { type Guide, snapMove, snapPoint } from "../../print/model/snap";
   import { SheetPainter, applyColourPreview, drawLines, drawTexts } from "../../print/painter";
-  import { pageRef, stem } from "../../print/sources";
+  import { activeDoc, pageRef, stem } from "../../print/sources";
+  import { groupPapers } from "../../print/paperOrder";
+  import { forgetLayoutFor, loadLayoutFor, storeLayoutFor } from "../../print/layoutMemory";
+  import { pathKey } from "../../shell/tabs";
   import { loadSnap, saveSnap } from "../../print/store";
   import { type View, fitRect, screenToWorld, wheelZoomFactor, zoomBy } from "../../view/viewMath";
 
@@ -73,7 +85,10 @@
     onRun: (job: Job, mode: "print" | "pdf") => void;
   } = $props();
 
-  type MarginMode = "printer" | "none" | "5" | "10" | "15";
+  /** "printer", "none", or a margin in millimetres ("5", "12.5"). */
+  type MarginMode = string;
+  const MARGIN_PRESETS = ["5", "10", "15"];
+  let marginCustomOpen = $state(false);
 
   function marginsFor(mode: string, sheet: Size): Margins {
     if (mode === "none") return ZERO_MARGINS;
@@ -82,15 +97,22 @@
     return { left: m, top: m, right: m, bottom: m };
   }
 
-  function initial(): { layout: Layout; marginMode: MarginMode; extra: PrintDoc[] } {
-    if (kept) return kept as { layout: Layout; marginMode: MarginMode; extra: PrintDoc[] };
+  /** A new layout: the pages picked in the print dialog, arranged on one sheet. */
+  function fresh(): Layout {
     const sheet = orient(paper, true);
     let l = emptyLayout(sheet, marginsFor("printer", sheet));
     for (const s of initialSources.slice(0, 12)) l = addItem(l, 0, s.ref, { crop: s.crop }).layout;
     if (l.sheets[0].items.length > 1) l = autoArrange(l, 0);
-    return { layout: l, marginMode: "printer", extra: [] };
+    return l;
   }
 
+  function initial(): { layout: Layout; marginMode: MarginMode; extra: PrintDoc[] } {
+    if (kept) return kept as { layout: Layout; marginMode: MarginMode; extra: PrintDoc[] };
+    return { layout: fresh(), marginMode: "printer", extra: [] };
+  }
+
+  /** Back from the print settings, with this dialog's layout kept: no restoring. */
+  const resumed = kept !== null;
   const start = initial();
   let layout = $state.raw<Layout>(start.layout);
   let marginMode = $state<MarginMode>(start.marginMode);
@@ -106,6 +128,62 @@
   $effect(() => {
     kept = { layout, marginMode, extra: extraDocs };
   });
+
+  // ---- Remembered per file ----
+  // The layout is remembered with the file Print was opened from (print/layoutMemory.ts) and
+  // comes back the next time. It's only written once you change it: a layout restored with
+  // some of its files missing (a drive not connected) stays whole until you edit it.
+
+  const memoryKey = (() => {
+    const d = activeDoc(context);
+    return d ? pathKey(d.path) : null;
+  })();
+  /** The layout as loaded (new, restored, or kept from earlier in this dialog): not saved. */
+  let baseline: Layout | null = start.layout;
+  let pendingSave: (() => void) | null = null;
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function flushSave() {
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = null;
+    const f = pendingSave;
+    pendingSave = null;
+    f?.();
+  }
+
+  $effect(() => {
+    const l = layout;
+    const m = marginMode;
+    if (!memoryKey || l === baseline) return;
+    const key = memoryKey;
+    pendingSave = () => {
+      if (sheetCount(l) === 0) forgetLayoutFor(key);
+      else storeLayoutFor(key, serialise(l), m);
+    };
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 400);
+  });
+  onDestroy(flushSave);
+
+  onMount(() => {
+    if (resumed) return;
+    const saved = memoryKey ? loadLayoutFor(memoryKey) : null;
+    const okMargin = (m: string) => m === "printer" || m === "none" || (/^\d+(\.\d+)?$/.test(m) && Number(m) <= 100);
+    if (saved) void loadText(saved.text, "restored", okMargin(saved.margin) ? saved.margin : "printer");
+  });
+
+  /** Start again from the pages picked in the print dialog, forgetting the remembered layout. */
+  function startAgain() {
+    flushSave();
+    layout = fresh();
+    marginMode = "printer";
+    baseline = layout;
+    sheetIdx = 0;
+    selected = [];
+    localError = null;
+    localNotice = null;
+    if (memoryKey) forgetLayoutFor(memoryKey);
+  }
   $effect(() => saveSnap($state.snapshot(snap)));
   $effect(() => {
     if (sheetIdx >= layout.sheets.length) sheetIdx = layout.sheets.length - 1;
@@ -121,15 +199,19 @@
 
   // ---- Sheet and margins ----
 
+  /** Each printer paper both ways round; A sizes first (paperOrder.ts), the rest after. */
   const sheetOptions = $derived.by(() => {
     const list = papers.length ? papers : [{ name: "A4", w: 210, h: 297 }, { name: "A3", w: 297, h: 420 }];
-    const out: { key: string; label: string; size: Size }[] = [];
-    for (const p of list) {
-      const s = { w: mmToPt(p.w), h: mmToPt(p.h) };
-      for (const land of [true, false]) {
-        const o = orient(s, land);
-        const name = isoName(o) ?? p.name;
-        out.push({ key: `${p.name}|${land}`, label: `${name} ${land ? "landscape" : "portrait"}`, size: o });
+    const g = groupPapers(list);
+    const out: { key: string; label: string; size: Size; other: boolean }[] = [];
+    for (const [ps, other] of [[g.a, false], [g.other, true]] as const) {
+      for (const p of ps) {
+        const s = { w: mmToPt(p.w), h: mmToPt(p.h) };
+        for (const land of [true, false]) {
+          const o = orient(s, land);
+          const name = isoName(o) ?? p.name;
+          out.push({ key: `${p.name}|${land}`, label: `${name} ${land ? "landscape" : "portrait"}`, size: o, other });
+        }
       }
     }
     return out;
@@ -142,6 +224,13 @@
   function chooseSheet(key: string) {
     const o = sheetOptions.find((x) => x.key === key);
     if (o) layout = setPaper(layout, o.size, marginsFor(marginMode, o.size));
+  }
+
+  function chooseMarginOption(v: string) {
+    marginCustomOpen = v === "custom";
+    if (v === "custom") {
+      if (marginMode === "printer" || marginMode === "none") chooseMargins("10");
+    } else chooseMargins(v);
   }
 
   function chooseMargins(m: MarginMode) {
@@ -159,7 +248,11 @@
   let painter: SheetPainter | null = null;
   let frame = 0;
 
+  /** Still showing the whole sheet (not zoomed or panned since): a resize refits. */
+  let atFit = false;
+
   function fit() {
+    atFit = true;
     view = fitRect({ x: 0, y: 0, w: layout.paper.w, h: layout.paper.h }, size.w, size.h, 24, "page");
   }
 
@@ -180,17 +273,21 @@
       if (!fitted && size.w > 50) {
         fitted = true;
         fit();
-      }
+      } else if (atFit) fit();
     });
     ro.observe(host);
     return () => ro.disconnect();
   });
 
+  // Refit when the sheet size changes, and only then. Through deriveds, which notify only when
+  // the number changes: reading layout.paper directly would refit on every edit to the layout
+  // (each drag), throwing the zoom away.
+  const paperW = $derived(layout.paper.w);
+  const paperH = $derived(layout.paper.h);
   $effect(() => {
-    // Refit when the sheet size changes.
-    void layout.paper.w;
-    void layout.paper.h;
-    if (fitted) fit();
+    void paperW;
+    void paperH;
+    if (fitted) untrack(fit);
   });
 
   function schedule() {
@@ -209,10 +306,11 @@
     void selected;
     void guides;
     void settings.colour;
+    void settings.blackSensitivity;
     schedule();
   });
 
-  const accent = () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#e5484d";
+  const accent = () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0d9488";
 
   function paint() {
     if (!canvas || !painter || !sheet) return;
@@ -256,10 +354,14 @@
     ctx.restore();
     const cx0 = Math.max(0, Math.floor(sx));
     const cy0 = Math.max(0, Math.floor(sy));
-    applyColourPreview(ctx, cx0, cy0, Math.min(W, Math.ceil(sx + sw)) - cx0, Math.min(H, Math.ceil(sy + sh)) - cy0, settings.colour);
+    applyColourPreview(ctx, cx0, cy0, Math.min(W, Math.ceil(sx + sw)) - cx0, Math.min(H, Math.ceil(sy + sh)) - cy0, settings.colour, settings.blackSensitivity, v.k,
+      sheet.items.map((it) => {
+        const b = itemBox(it);
+        return { x0: sx + b.x0 * v.k, y0: sy + b.y0 * v.k, x1: sx + b.x1 * v.k, y1: sy + b.y1 * v.k };
+      }));
     // Printable area.
     ctx.save();
-    ctx.strokeStyle = "#e05555";
+    ctx.strokeStyle = printMargin();
     ctx.lineWidth = dpr;
     ctx.setLineDash([3 * dpr, 3 * dpr]);
     ctx.strokeRect(sx + area.x0 * v.k, sy + area.y0 * v.k, boxW(area) * v.k, boxH(area) * v.k);
@@ -290,19 +392,23 @@
         ctx.stroke();
       }
       // Scale badge, bottom-right inside the item.
-      const text = scaleLabel(sel);
+      const text = scaleLabel(sel); // the editing badge: always page and scale
       ctx.font = `${11 * dpr}px ${getComputedStyle(document.documentElement).getPropertyValue("--font-num") || "monospace"}`;
       const tw = ctx.measureText(text).width + 12 * dpr;
       const th = 18 * dpr;
+      // Only where it fits inside the item; a small item shows its numbers in the panel.
+      const fits = tw + 12 * dpr <= (b.x1 - b.x0) * v.k && th + 12 * dpr <= (b.y1 - b.y0) * v.k;
       const bx = sx + b.x1 * v.k - tw - 6 * dpr;
       const by = sy + b.y1 * v.k - th - 6 * dpr;
-      ctx.fillStyle = acc;
-      ctx.beginPath();
-      ctx.roundRect(bx, by, tw, th, 4 * dpr);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.textBaseline = "middle";
-      ctx.fillText(text, bx + 6 * dpr, by + th / 2 + dpr);
+      if (fits) {
+        ctx.fillStyle = acc;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, tw, th, 4 * dpr);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, bx + 6 * dpr, by + th / 2 + dpr);
+      }
       ctx.restore();
     }
     // Snap guides.
@@ -436,6 +542,7 @@
     }
     if (drag.kind === "pan") {
       view = { ...view, tx: drag.tx + (e.clientX - drag.sx), ty: drag.ty + (e.clientY - drag.sy) };
+      atFit = false;
       return;
     }
     const d = drag;
@@ -479,11 +586,11 @@
     e.preventDefault();
     const [x, y] = local(e);
     view = zoomBy(view, x, y, wheelZoomFactor(e.deltaY, e.deltaMode));
+    atFit = false;
   }
 
   function onKey(e: KeyboardEvent) {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+    if (isTypingTarget(e.target)) return;
     if (e.key === " ") {
       spaceDown = e.type === "keydown";
       cursor = spaceDown ? "grab" : "default";
@@ -549,7 +656,7 @@
       const h = bmp.height * s;
       const ctx = node.getContext("2d");
       if (!ctx) return;
-      ctx.fillStyle = "#fbfbf9";
+      ctx.fillStyle = "#ffffff"; // paper
       ctx.fillRect(0, 0, node.width, node.height);
       ctx.drawImage(bmp, (node.width - w) / 2, (node.height - h) / 2, w, h);
     };
@@ -586,27 +693,69 @@
     selected = [r.id];
   }
 
-  function onStripDragStart(e: DragEvent, sp: StripPage) {
-    e.dataTransfer?.setData("text/x-vellum-page", `${sp.doc.docId}:${sp.page}`);
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+  // Dragging from the strip to the sheet, with pointer events. Not HTML drag and drop: the
+  // window takes file drops from Explorer (dragDropEnabled), and on Windows that leaves HTML
+  // drag and drop inside the page refusing every drop.
+  let stripDrag = $state<{ sp: StripPage; pointer: number; x0: number; y0: number; x: number; y: number; moving: boolean; over: boolean } | null>(null);
+
+  function overSheet(e: { clientX: number; clientY: number }): boolean {
+    const r = canvas?.getBoundingClientRect();
+    return !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   }
 
-  function onCanvasDragOver(e: DragEvent) {
-    if (e.dataTransfer?.types.includes("text/x-vellum-page")) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
+  function onStripPointerDown(e: PointerEvent, sp: StripPage) {
+    if (e.button !== 0) return;
+    stripDrag = { sp, pointer: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, moving: false, over: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onStripPointerMove(e: PointerEvent) {
+    const d = stripDrag;
+    if (!d || e.pointerId !== d.pointer) return;
+    const moving = d.moving || Math.hypot(e.clientX - d.x0, e.clientY - d.y0) >= 5;
+    stripDrag = { ...d, x: e.clientX, y: e.clientY, moving, over: moving && overSheet(e) };
+  }
+
+  function onStripPointerUp(e: PointerEvent) {
+    const d = stripDrag;
+    if (!d || e.pointerId !== d.pointer) return;
+    stripDrag = null;
+    if (e.type === "pointerup" && d.moving && overSheet(e)) {
+      const [x, y] = toSheet(e);
+      addPage(d.sp, { x, y });
     }
   }
 
-  function onCanvasDrop(e: DragEvent) {
-    const v = e.dataTransfer?.getData("text/x-vellum-page");
-    if (!v) return;
-    e.preventDefault();
-    const [docId, page] = v.split(":").map(Number);
-    const doc = allDocs.find((d) => d.docId === docId);
-    if (!doc) return;
-    const [x, y] = toSheet(e);
-    addPage({ doc, page }, { x, y });
+  /** The dragged page's thumbnail under the pointer (if it has loaded). */
+  /**
+   * The drag preview's size, CSS px, centred on the pointer: over the sheet, the size the page
+   * will be placed at (as addPage places it); elsewhere, a small thumbnail.
+   */
+  const ghostBox = $derived.by(() => {
+    const d = stripDrag;
+    if (!d?.moving) return null;
+    const r = pageRef(d.sp.doc, d.sp.page);
+    if (!(r.w > 0 && r.h > 0)) return null;
+    if (d.over) {
+      const k = defaultScale(r, null, areaOfLayout(layout)) * view.scale;
+      return { w: r.w * k, h: r.h * k };
+    }
+    const k = Math.min(76 / r.w, 54 / r.h);
+    return { w: r.w * k, h: r.h * k };
+  });
+
+  /** Draw the dragged page's thumbnail (if it has loaded) into the preview. */
+  function ghost(node: HTMLCanvasElement, p: { key: string; w: number; h: number }) {
+    const draw = (q: { key: string }) => {
+      const g = node.getContext("2d");
+      if (!g) return;
+      g.fillStyle = "#ffffff"; // paper
+      g.fillRect(0, 0, node.width, node.height);
+      const b = thumbs.get(q.key);
+      if (b) g.drawImage(b, 0, 0, node.width, node.height);
+    };
+    draw(p);
+    return { update: draw };
   }
 
   const sameFile = (a: string, b: string) => a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
@@ -627,7 +776,7 @@
       extraDocs = [...extraDocs, doc];
       return doc;
     } catch (e) {
-      localError = `${fileName(path)}: ${errorText(e)}`;
+      localError = errorText(e, `open ${fileName(path)}`);
       return null;
     }
   }
@@ -670,7 +819,7 @@
     if (n) {
       return SCALE_PRESETS.filter((r) => r >= n / 4 && r <= n * 20).map((r) => ({ value: `r${r}`, label: `${fmtRatio(r)} (${fmtPercent(n / r)})` }));
     }
-    return [10, 25, 33, 50, 75, 100, 150, 200, 400].map((p) => ({ value: `p${p}`, label: `${p}%` }));
+    return PERCENT_PRESETS.map((p) => ({ value: `p${p}`, label: `${p}%` }));
   });
   const scaleValue = $derived.by(() => {
     if (!sel) return "";
@@ -795,9 +944,9 @@
     if (!path) return;
     try {
       await invoke("write_text_file", { path, contents: serialise(layout) });
-      localNotice = `Layout saved`;
+      localNotice = "Layout saved.";
     } catch (e) {
-      localError = errorText(e);
+      localError = errorText(e, "save the layout");
     }
   }
 
@@ -808,26 +957,37 @@
     if (!path) return;
     try {
       const buf = await invoke<ArrayBuffer>("read_file", { path });
-      const parsed = parseLayout(new TextDecoder().decode(buf));
-      if (!parsed.ok) {
-        localError = parsed.error;
-        return;
-      }
-      const docs = new Map<string, PrintDoc | null>();
-      for (const p of layoutPaths(parsed.layout)) docs.set(p, await openFile(p));
-      const res = restore(parsed.layout, (p) => {
-        const d = docs.get(p);
-        return d ? { docId: d.docId, numPages: d.info.numPages, sizes: d.info.sizes } : null;
-      });
-      layout = res.layout;
-      marginMode = "printer";
-      sheetIdx = 0;
-      selected = [];
-      localError = res.missing.length ? `Couldn't find ${res.missing.map(fileName).join(", ")}` : null;
-      localNotice = res.missing.length ? null : "Layout opened";
+      await loadText(new TextDecoder().decode(buf), "opened", "printer");
     } catch (e) {
-      localError = errorText(e);
+      localError = errorText(e, "open the layout");
     }
+  }
+
+  /**
+   * Load a layout's text: opening its files (or finding them open) and leaving out the items
+   * whose file can't be found, which are named. A restored layout isn't written back until it's
+   * changed, so missing files aren't forgotten just by looking.
+   */
+  async function loadText(text: string, how: "opened" | "restored", margin: MarginMode) {
+    localError = null;
+    const parsed = parseLayout(text);
+    if (!parsed.ok) {
+      localError = how === "restored" ? null : parsed.error;
+      return;
+    }
+    const docs = new Map<string, PrintDoc | null>();
+    for (const p of layoutPaths(parsed.layout)) docs.set(p, await openFile(p));
+    const res = restore(parsed.layout, (p) => {
+      const d = docs.get(p);
+      return d ? { docId: d.docId, numPages: d.info.numPages, sizes: d.info.sizes } : null;
+    });
+    if (how === "restored") baseline = res.layout;
+    layout = res.layout;
+    marginMode = margin;
+    sheetIdx = 0;
+    selected = [];
+    localError = res.missing.length ? `Couldn't find ${res.missing.map(fileName).join(", ")}; ${res.missing.length === 1 ? "its" : "their"} items are left out.` : null;
+    localNotice = res.missing.length ? null : how === "restored" ? "Your last layout for this file." : "Layout opened.";
   }
 
   const status = $derived(
@@ -847,35 +1007,42 @@
 
 <svelte:window onkeydown={onKey} onkeyup={onKey} />
 
-<div class="dialog" role="dialog" aria-modal="true" aria-label="Print, manual layout">
+<div class="dialog" role="dialog" aria-modal="true" aria-label="Print, manual layout" use:floating={PRINT_BOX}>
   <header>
     <button type="button" class="icon" aria-label="Back to print settings" onclick={onBack}>
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M8.5 3L4.5 7l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
     </button>
-    <span class="title">Print — manual layout</span>
-    <span class="sub">Arrange pages, crops and scales freely on each sheet</span>
+    <span class="title">Print: manual layout</span>
+    <span class="sub">Arrange pages and images, crops and scales freely on each sheet</span>
     <div class="grow"></div>
-    <button type="button" class="icon close" aria-label="Close" onclick={onClose}>
-      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-    </button>
+    <CloseButton onclick={onClose} />
   </header>
 
   <div class="body">
     <div class="left">
       <div class="block">
-        <span class="head">Sheet</span>
-        <select aria-label="Sheet size" value={sheetKey} onchange={(e) => chooseSheet(e.currentTarget.value)}>
+        <span class="head">Paper</span>
+        <select aria-label="Paper size" value={sheetKey} onchange={(e) => chooseSheet(e.currentTarget.value)}>
           {#if !sheetKey}<option value="">{describeSize(layout.paper)}</option>{/if}
-          {#each sheetOptions as o (o.key)}<option value={o.key}>{o.label}</option>{/each}
+          {#each sheetOptions.filter((o) => !o.other) as o (o.key)}<option value={o.key}>{o.label}</option>{/each}
+          {#if sheetOptions.some((o) => o.other)}
+            <optgroup label="Other sizes">
+              {#each sheetOptions.filter((o) => o.other) as o (o.key)}<option value={o.key}>{o.label}</option>{/each}
+            </optgroup>
+          {/if}
         </select>
         <label for="ml-margin" class="lbl">Margins</label>
-        <select id="ml-margin" value={marginMode} onchange={(e) => chooseMargins(e.currentTarget.value as MarginMode)}>
+        <select id="ml-margin" value={marginCustomOpen || !["printer", "none", ...MARGIN_PRESETS].includes(marginMode) ? "custom" : marginMode} onchange={(e) => chooseMarginOption(e.currentTarget.value)}>
           <option value="printer">Printer minimum ({printerMinMm.toFixed(1)} mm)</option>
           <option value="none">None</option>
-          <option value="5">5 mm</option>
-          <option value="10">10 mm</option>
-          <option value="15">15 mm</option>
+          {#each MARGIN_PRESETS as m (m)}<option value={m}>{m} mm</option>{/each}
+          <option value="custom">Custom…</option>
         </select>
+        {#if marginCustomOpen || !["printer", "none", ...MARGIN_PRESETS].includes(marginMode)}
+          <div class="pair">
+            <input class="mono pct" aria-label="Margin in millimetres" value={Number(marginMode) || 0} onchange={(e) => { const n = parseFloat(e.currentTarget.value); if (n >= 0 && n <= 100) chooseMargins(String(n)); }} /><span class="dim">mm</span>
+          </div>
+        {/if}
       </div>
 
       <div class="block">
@@ -906,7 +1073,7 @@
       <div class="block tight">
         <button type="button" class="btn" disabled={!sheet?.items.length} onclick={() => (layout = autoArrange(layout, sheetIdx))}>Auto-arrange this sheet</button>
         <button type="button" class="btn" onclick={() => { layout = duplicateSheet(layout, sheetIdx); sheetIdx += 1; selected = []; }}>Duplicate sheet</button>
-        <button type="button" class="btn plain" disabled={!sheet?.items.length} onclick={() => { layout = clearSheet(layout, sheetIdx); selected = []; }}>Clear sheet</button>
+        <button type="button" class="btn ghost" disabled={!sheet?.items.length} onclick={() => { layout = clearSheet(layout, sheetIdx); selected = []; }}>Clear sheet</button>
       </div>
 
       <div class="block tight">
@@ -915,28 +1082,23 @@
           <button type="button" class="btn" onclick={saveLayout}>Save layout…</button>
           <button type="button" class="btn" onclick={openLayout}>Open layout…</button>
         </div>
+        <button type="button" class="btn ghost" onclick={startAgain}>Start again</button>
       </div>
 
       <div class="grow"></div>
-      <p class="hint">Middle-drag pans and scroll zooms here too. Drag a page edge to crop; drag a corner to scale.</p>
+      <p class="hint">Middle-drag pans and the wheel zooms here too. Drag an item's edge to crop; drag a corner to scale.</p>
     </div>
 
     <div class="centre">
       <div class="tabs">
         {#each layout.sheets as s, i (s.id)}
-          <button type="button" class="tab" class:on={i === sheetIdx} onclick={() => { sheetIdx = i; selected = []; }}>
-            Sheet {i + 1}
+          <!-- A tab is a label button and, on the current sheet, the shared close button. -->
+          <div class="tab" class:on={i === sheetIdx}>
+            <button type="button" class="tab-label" onclick={() => { sheetIdx = i; selected = []; }}>Sheet {i + 1}</button>
             {#if layout.sheets.length > 1 && i === sheetIdx}
-              <span
-                class="x"
-                role="button"
-                tabindex="-1"
-                aria-label="Remove sheet {i + 1}"
-                onclick={(e) => { e.stopPropagation(); layout = removeSheet(layout, i); selected = []; }}
-                onkeydown={() => {}}
-              >×</span>
+              <CloseButton size="small" label="Remove sheet {i + 1}" tabindex={-1} onclick={() => { layout = removeSheet(layout, i); selected = []; }} />
             {/if}
-          </button>
+          </div>
         {/each}
         <button type="button" class="icon small" aria-label="Add sheet" onclick={() => { layout = addSheet(layout); sheetIdx = layout.sheets.length - 1; selected = []; }}>
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
@@ -957,15 +1119,26 @@
           onpointercancel={onPointerUp}
           onwheel={onWheel}
           onauxclick={(e) => e.preventDefault()}
-          ondragover={onCanvasDragOver}
-          ondrop={onCanvasDrop}
           ondblclick={(e) => { if (e.button === 1) fit(); }}
           aria-label="Sheet editor"
         ></canvas>
         {#if !sheet?.items.length}
-          <p class="placeholder">Drag pages here from the strip below</p>
+          <p class="placeholder">Drag pages or images here from the strip below</p>
         {/if}
       </div>
+      {#if stripDrag?.moving && ghostBox}
+        <canvas
+          class="drag-ghost"
+          class:over={stripDrag.over}
+          width={Math.max(1, Math.round(ghostBox.w * (window.devicePixelRatio || 1)))}
+          height={Math.max(1, Math.round(ghostBox.h * (window.devicePixelRatio || 1)))}
+          style:width="{ghostBox.w}px"
+          style:height="{ghostBox.h}px"
+          style:left="{stripDrag.x - ghostBox.w / 2}px"
+          style:top="{stripDrag.y - ghostBox.h / 2}px"
+          use:ghost={{ key: `${stripDrag.sp.doc.docId}:${stripDrag.sp.page}`, w: ghostBox.w, h: ghostBox.h }}
+        ></canvas>
+      {/if}
 
       <div class="strip">
         <span class="dim small">Drag pages or images onto the sheet · placed items are marked · drop files from Explorer to add them</span>
@@ -986,13 +1159,16 @@
                 height="108"
                 class:placed={placed.has(key)}
                 class:selected={sel?.ref.docId === sp.doc.docId && sel?.ref.page === sp.page}
-                draggable="true"
-                ondragstart={(e) => onStripDragStart(e, sp)}
+                style:cursor={stripDrag?.moving && stripDrag.sp === sp ? (stripDrag.over ? "copy" : "no-drop") : null}
+                onpointerdown={(e) => onStripPointerDown(e, sp)}
+                onpointermove={onStripPointerMove}
+                onpointerup={onStripPointerUp}
+                onpointercancel={onStripPointerUp}
                 ondblclick={() => addPage(sp)}
                 use:thumb={sp}
               ></canvas>
               <span class="small" class:dim={!placed.has(key)}>
-                {isImg ? sp.doc.title : allDocs.length > 1 && sp.page === 0 ? `${stem(sp.doc.title).slice(0, 10)} 1` : sp.page + 1}{placed.has(key) ? " ●" : ""}
+                {isImg ? sp.doc.title : allDocs.length > 1 && sp.page === 0 ? `${stem(sp.doc.title).length > 10 ? `${stem(sp.doc.title).slice(0, 9)}…` : stem(sp.doc.title)} 1` : sp.page + 1}{placed.has(key) ? " ●" : ""}
               </span>
             </div>
           {/each}
@@ -1015,13 +1191,19 @@
               {/if}
               {#each scaleChoices as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
             </select>
+            {#if !sel.ref.drawingScale}
+              <!-- No drawing scale: the scale is a percentage, typed here beside its presets. -->
+              <input class="mono pct" aria-label="Scale, percent" value={(Math.round(sel.scale * 1000) / 10).toString()} onchange={(e) => setPercent(e.currentTarget.value)} /><span class="dim">%</span>
+            {/if}
           </div>
-          <label for="ml-pct" class="lbl">Percent</label>
-          <input id="ml-pct" class="mono" value={(Math.round(sel.scale * 1000) / 10).toString()} onchange={(e) => setPercent(e.currentTarget.value)} />
-          <label for="ml-x" class="lbl">X / Y</label>
+          {#if sel.ref.drawingScale}
+            <label for="ml-pct" class="lbl">Percent</label>
+            <input id="ml-pct" class="mono" value={(Math.round(sel.scale * 1000) / 10).toString()} onchange={(e) => setPercent(e.currentTarget.value)} />
+          {/if}
+          <label for="ml-x" class="lbl">X / Y mm</label>
           <div class="pair">
-            <input id="ml-x" class="mono" value={`${fmtMm(sel.x)} mm`} onchange={(e) => setPos("x", e.currentTarget.value)} />
-            <input aria-label="Y position" class="mono" value={`${fmtMm(sel.y)} mm`} onchange={(e) => setPos("y", e.currentTarget.value)} />
+            <input id="ml-x" class="mono" aria-label="X position, mm" value={fmtMm(sel.x)} onchange={(e) => setPos("x", e.currentTarget.value)} />
+            <input aria-label="Y position, mm" class="mono" value={fmtMm(sel.y)} onchange={(e) => setPos("y", e.currentTarget.value)} />
           </div>
           <span class="lbl">Size</span>
           <span class="mono dim">{fmtMm(boxW(itemBox(sel)))} × {fmtMm(boxH(itemBox(sel)))} mm</span>
@@ -1035,24 +1217,31 @@
         </div>
         <div class="block tight">
           <span class="head">Crop</span>
-          <button type="button" class="btn" onclick={startCrop}>Crop to a region of the page…</button>
-          <button type="button" class="btn plain" disabled={!sel.crop} onclick={() => patch(resetCrop(sel!))}>Reset crop</button>
+          <button type="button" class="btn" onclick={startCrop}>Crop to an area…</button>
+          <button type="button" class="btn ghost" disabled={!sel.crop} onclick={() => patch(resetCrop(sel!))}>Reset crop</button>
         </div>
         <div class="block">
           <span class="head">This item</span>
           <label class="check"><input type="checkbox" checked={sel.border} onchange={(e) => patch({ border: e.currentTarget.checked })} /><span>Border</span></label>
-          <label class="check"><input type="checkbox" checked={sel.label} onchange={(e) => patch({ label: e.currentTarget.checked })} /><span>Scale label</span></label>
+          <span class="lbl">Label</span>
+          <label class="check" title={sel.ref.kind === "image" ? undefined : "Ticked automatically when the layout uses more than one file"}>
+            <input type="checkbox" checked={showsName(layout, sel)} onchange={(e) => patch({ showName: e.currentTarget.checked })} /><span>File name</span>
+          </label>
+          {#if sel.ref.kind !== "image"}
+            <label class="check"><input type="checkbox" checked={sel.showPage} onchange={(e) => patch({ showPage: e.currentTarget.checked })} /><span>Page number</span></label>
+          {/if}
+          <label class="check"><input type="checkbox" checked={sel.showScale} onchange={(e) => patch({ showScale: e.currentTarget.checked })} /><span>Scale</span></label>
         </div>
         <div class="grow"></div>
-        <button type="button" class="btn plain danger" onclick={() => { layout = removeItem(layout, sheetIdx, sel!.id); selected = []; }}>Remove from sheet</button>
+        <button type="button" class="btn ghost danger" onclick={() => { layout = removeItem(layout, sheetIdx, sel!.id); selected = []; }}>Remove from sheet</button>
       {:else if selected.length > 1}
         <span class="head">{selected.length} items selected</span>
         <p class="dim small">Use Align and distribute on the left, or drag to move them together.</p>
         <div class="grow"></div>
-        <button type="button" class="btn plain danger" onclick={() => { let l = layout; for (const id of selected) l = removeItem(l, sheetIdx, id); layout = l; selected = []; }}>Remove from sheet</button>
+        <button type="button" class="btn ghost danger" onclick={() => { let l = layout; for (const id of selected) l = removeItem(l, sheetIdx, id); layout = l; selected = []; }}>Remove from sheet</button>
       {:else}
         <span class="head">Nothing selected</span>
-        <p class="dim small">Click a page on the sheet to adjust its scale, position, rotation and crop. Shift-click to select several.</p>
+        <p class="dim small">Click an item on the sheet to adjust its scale, position, rotation and crop. Shift+click to select several.</p>
       {/if}
     </div>
   </div>
@@ -1061,21 +1250,21 @@
     <button type="button" class="btn" disabled={!nSheets || !!busy} onclick={() => onRun(job(), "pdf")}>Save as PDF…</button>
     <div class="grow"></div>
     <span class="status" role="status">
-      {#if busy}{busy.label}{busy.label === "Printing" && busy.total ? ` sheet ${Math.min(busy.done + 1, busy.total)} of ${busy.total}` : ""}
+      {#if busy}{busy.label}{busy.label === "Printing" && busy.total ? ` sheet ${Math.min(busy.done + 1, busy.total)} of ${busy.total}…` : ""}
       {:else if error || localError}<span class="err">{error ?? localError}</span>
       {:else if notice || localNotice}{notice ?? localNotice}
       {:else}{status}{/if}
     </span>
     <button type="button" class="btn" onclick={onClose}>{busy ? "Stop" : "Cancel"}</button>
     <button type="button" class="btn primary" disabled={!nSheets || !!busy || !printerName} onclick={() => onRun(job(), "print")}>
-      Print {nSheets} {nSheets === 1 ? "sheet" : "sheets"}
+      Print
     </button>
   </footer>
 
   {#if cropItem}
     <div class="crop-backdrop" role="presentation">
-      <div class="crop" role="dialog" aria-label="Crop to a region">
-        <span class="head">Drag a rectangle round the part of {cropItem.ref.kind === "image" ? cropItem.ref.title : `page ${cropItem.ref.page + 1}`} to print</span>
+      <div class="crop" role="dialog" aria-label="Crop to an area">
+        <span class="head">Drag round the area of {cropItem.ref.kind === "image" ? cropItem.ref.title : `page ${cropItem.ref.page + 1}`} to print</span>
         <canvas
           bind:this={cropCanvas}
           onpointerdown={(e) => {
@@ -1092,7 +1281,7 @@
           onpointerup={() => (cropDrag = null)}
         ></canvas>
         <div class="pair end">
-          <button type="button" class="btn plain" onclick={() => (cropRect = null)}>Whole page</button>
+          <button type="button" class="btn ghost" onclick={() => (cropRect = null)}>Whole page</button>
           <button type="button" class="btn" onclick={() => (cropping = null)}>Cancel</button>
           <button type="button" class="btn primary" onclick={applyCrop}>Crop</button>
         </div>
@@ -1117,7 +1306,7 @@
     border: 1px solid var(--bd-strong);
     border-radius: 10px;
     overflow: hidden;
-    box-shadow: 0 12px 48px var(--shadow);
+    box-shadow: var(--shadow-modal);
     user-select: none;
   }
   header {
@@ -1170,6 +1359,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    flex-shrink: 0; /* a short window scrolls the panel, never squashes its sections */
   }
   .block.tight {
     gap: 6px;
@@ -1205,18 +1395,20 @@
     width: 15px;
     height: 15px;
     margin: 0;
-    accent-color: var(--accent, #e5484d);
+    accent-color: var(--accent);
   }
+  /* Side-panel fields: compact, the page box's tighter size. */
   select,
   input:not([type="checkbox"]) {
-    height: 30px;
-    padding: 0 8px;
+    height: 24px;
+    padding: 0 6px;
     background: var(--ctl);
     border: 1px solid var(--bd-input);
-    border-radius: 6px;
+    border-radius: 4px;
     color: var(--tx);
     min-width: 0;
     box-sizing: border-box;
+    user-select: text;
   }
   .pair {
     display: flex;
@@ -1241,7 +1433,7 @@
     gap: 4px;
   }
   .aligns button {
-    height: 32px;
+    height: 28px;
     border: 1px solid var(--bd-ctl);
     background: var(--ctl);
     color: var(--tx2);
@@ -1249,6 +1441,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+  .aligns button:hover:not(:disabled) {
+    background: var(--tab-on);
+    color: var(--tx);
+  }
+  .aligns button:active:not(:disabled) {
+    background: var(--press);
   }
   .centre {
     flex: 1 1 auto;
@@ -1278,14 +1477,24 @@
     align-items: center;
     gap: 6px;
   }
-  .tab.on {
-    background: var(--tab-on);
-    color: var(--tx);
-    font-weight: 600;
+  .tab:hover:not(.on) {
+    background: var(--hover);
+    color: var(--tx2);
   }
-  .tab .x {
-    color: var(--tx3);
-    font-weight: 400;
+  .tab:active {
+    background: var(--press-soft);
+  }
+  /* The shared selected look (app.css .seg). */
+  .tab.on {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  .tab-label {
+    border: none;
+    background: none;
+    color: inherit;
+    padding: 0;
+    height: 100%;
   }
   .editor {
     flex: 1 1 auto;
@@ -1333,20 +1542,34 @@
     gap: 3px;
     flex-shrink: 0;
   }
+  /* Pages are white paper; the arrow at rest, the closed hand only while dragging. */
   .thumb canvas {
     width: 76px;
     height: 54px;
-    background: #fbfbf9;
+    background: var(--paper);
     border: 1px solid var(--bd-input);
     border-radius: 2px;
     box-sizing: border-box;
-    cursor: grab;
+    cursor: default;
+  }
+  .drag-ghost {
+    position: fixed;
+    z-index: 1;
+    pointer-events: none;
+    border: 1px solid var(--bd-strong);
+    border-radius: 2px;
+    box-shadow: var(--shadow-pop);
+    opacity: 0.6;
+  }
+  .drag-ghost.over {
+    border-color: var(--accent);
+    opacity: 0.9;
   }
   .thumb canvas.placed {
     border: 2px solid var(--tx3);
   }
   .thumb canvas.selected {
-    border: 2px solid var(--accent, #e5484d);
+    border: 2px solid var(--accent);
   }
   .thumb .add {
     width: 76px;
@@ -1362,6 +1585,13 @@
     gap: 2px;
     font-size: 11px;
   }
+  .thumb .add:hover {
+    background: var(--hover);
+    color: var(--tx);
+  }
+  .thumb .add:active {
+    background: var(--press-soft);
+  }
   .thumb span {
     max-width: 76px;
     overflow: hidden;
@@ -1373,6 +1603,14 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
+  }
+  .sel-head > * {
+    overflow-wrap: anywhere; /* long file names wrap instead of widening the column */
+  }
+  .pair .pct {
+    flex: 0 0 auto;
+    width: 52px;
   }
   .props {
     display: grid;
@@ -1416,50 +1654,20 @@
     height: 28px;
     color: var(--tx3);
   }
-  .icon.close {
-    width: 32px;
-    height: 32px;
-    color: var(--tx3);
-  }
-  .icon:hover {
-    background: var(--hover, rgba(127, 127, 127, 0.1));
-  }
-  .btn {
-    height: 32px;
-    padding: 0 14px;
-    border: 1px solid var(--bd-strong);
-    background: var(--ctl);
+  .icon:hover:not(:disabled) {
+    background: var(--hover);
     color: var(--tx);
-    border-radius: 6px;
-    white-space: nowrap;
   }
-  footer .btn {
-    height: 34px;
+  .icon:active:not(:disabled) {
+    background: var(--press-soft);
   }
-  .btn.plain {
-    border-color: transparent;
-    background: transparent;
-    color: var(--tx2);
-  }
-  .btn.danger {
-    color: var(--danger, #e5484d);
-  }
-  .btn.primary {
-    padding: 0 20px;
-    border-color: var(--accent-bd, rgba(0, 0, 0, 0.25));
-    background: var(--accent, #e5484d);
-    color: #fff;
-    font-weight: 600;
-  }
-  .btn:hover:not(:disabled) {
-    filter: brightness(1.08);
-  }
+  /* Buttons use the shared .btn (app.css). */
   .crop-backdrop {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--scrim);
     z-index: 5;
   }
   .crop {
@@ -1470,7 +1678,7 @@
     background: var(--app);
     border: 1px solid var(--bd-strong);
     border-radius: 8px;
-    box-shadow: 0 8px 32px var(--shadow);
+    box-shadow: var(--shadow-modal);
   }
   .crop canvas {
     align-self: center;

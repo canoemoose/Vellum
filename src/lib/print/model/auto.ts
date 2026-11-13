@@ -18,6 +18,8 @@ export interface AutoOptions {
   sizing: Exclude<Sizing, "manual">;
   fitTo: "printable" | "paper";
   scaleRatio: number;
+  /** To scale for pages whose drawing scale isn't known: a plain percentage. */
+  scalePercent: number;
   nUp: NUp;
   order: PageOrder;
   marginMode: "printer" | "none" | "custom";
@@ -126,7 +128,7 @@ export function sizingFactor(o: AutoOptions, src: Source, fitBox: Box): number {
       f = o.shrinkOversized ? Math.min(fit, 1) : fit;
       return f;
     case "scale":
-      f = src.ref.drawingScale ? factorForRatio(src.ref.drawingScale, o.scaleRatio) : 1;
+      f = src.ref.drawingScale ? factorForRatio(src.ref.drawingScale, o.scaleRatio) : o.scalePercent / 100;
       break;
     default:
       f = 1;
@@ -353,12 +355,20 @@ export function autoLayout(input: AutoInput): AutoResult {
   return { job: { sheets: pairs.map((p) => p[0]) }, sheets: pairs.map((p) => p[1]) };
 }
 
+/** The note under Sizing; `warn` when it's something that won't print as you'd expect. */
+export interface SizingNote {
+  text: string;
+  warn: boolean;
+}
+
+const note = (text: string, warn = false): SizingNote => ({ text, warn });
+
 /**
- * The info line under Sizing: what Fit (or the chosen sizing) means in scale terms, e.g.
- * "A1 on A3 prints at 1:206. Choose "To scale" for exactly 1:200." Null when there's
- * nothing useful to say.
+ * The note under Sizing: what Fit (or the chosen sizing) means in scale terms, e.g.
+ * "A1 on A3 prints at 1:206. Choose "To scale" for exactly 1:200.", or a warning when it
+ * won't print as you'd expect. Null when there's nothing useful to say.
  */
-export function sizingInfo(o: AutoOptions, sheet: SheetInfo | undefined): string | null {
+export function sizingInfo(o: AutoOptions, sheet: SheetInfo | undefined): SizingNote | null {
   const p = sheet?.placed[0];
   if (!sheet || !p) return null;
   const ref = p.source.ref;
@@ -370,7 +380,7 @@ export function sizingInfo(o: AutoOptions, sheet: SheetInfo | undefined): string
     return null;
   }
   if (o.sizing === "scale") {
-    if (!n) return "The drawing scale isn't known, so To scale prints at 100%. Set it from Document > Drawing scale.";
+    const how = n ? fmtRatio(o.scaleRatio) : fmtPercent(o.scalePercent / 100);
     const ow = boxW(p.box) - boxW(sheet.contentArea);
     const oh = boxH(p.box) - boxH(sheet.contentArea);
     const over = Math.max(ow, oh);
@@ -378,20 +388,21 @@ export function sizingInfo(o: AutoOptions, sheet: SheetInfo | undefined): string
       // A little over is normal for "A1 at 1:200 on A3": the drawing's own border margin goes.
       const rel = Math.max(ow / boxW(sheet.contentArea), oh / boxH(sheet.contentArea));
       if (rel < 0.08) {
-        return `At ${fmtRatio(o.scaleRatio)} the page is ${Math.ceil(ptToMm(over))} mm bigger than the printable area, so its outer edge may not print.`;
+        return note(`At ${how} the page is ${Math.ceil(ptToMm(over))} mm bigger than the printable area, so its outer edge may not print.`, true);
       }
-      return `At ${fmtRatio(o.scaleRatio)} the page is bigger than the printable area. Choose Tile, or a smaller scale.`;
+      return note(`At ${how} the page is bigger than the printable area. Choose Tile, or a smaller scale.`, true);
     }
-    return `${on} prints at exactly ${fmtRatio(effectiveRatio(n, p.factor))}.`;
+    if (!n) return note(`${on} prints at ${fmtPercent(p.factor)}. Set the drawing scale (Document > Drawing scale) to print at a ratio.`);
+    return note(`${on} prints at exactly ${fmtRatio(effectiveRatio(n, p.factor))}.`);
   }
   if (n) {
     const eff = effectiveRatio(n, p.factor);
-    if (Math.abs(eff - n) / n < 0.005) return `${on} prints at ${fmtRatio(eff)}, the drawing's own scale.`;
+    if (Math.abs(eff - n) / n < 0.005) return note(`${on} prints at ${fmtRatio(eff)}, the drawing's own scale.`);
     const std = nearestStandardRatio(eff);
     const hint = fmtRatio(std) !== fmtRatio(eff) ? ` Choose “To scale” for exactly ${fmtRatio(std)}.` : "";
-    return `${on} prints at ${fmtRatio(eff)}.${hint}`;
+    return note(`${on} prints at ${fmtRatio(eff)}.${hint}`);
   }
-  if (o.sizing === "fit") return `${on} prints at ${fmtPercent(p.factor)} of actual size.`;
+  if (o.sizing === "fit") return note(`${on} prints at ${fmtPercent(p.factor)} of actual size.`);
   return null;
 }
 

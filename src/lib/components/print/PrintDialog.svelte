@@ -2,26 +2,34 @@
   // The print dialog (docs/mockups/Print.png, project/Print.dc.html): options on the left,
   // a live preview of the sheets on the right. The layout is the pure model in
   // src/lib/print/model; printing and Save as PDF compose it in Rust (src-tauri/src/print).
-  // Sizing > Manual switches to the manual layout screen (ManualLayout.svelte).
+  // Layout: Manual uses a layout made in the manual layout editor (ManualLayout.svelte),
+  // previewed and printed here with the same colour, output and advanced settings.
   import { onDestroy, tick, untrack } from "svelte";
+  import { PRINT_BOX, floating } from "../floating";
+  import { groupPapers } from "../../print/paperOrder";
   import { save as saveDialog } from "@tauri-apps/plugin-dialog";
   import type { PageRect, PrintContext } from "../../print/context";
   import {
     type Capabilities, type PrinterInfo, cancelPrinting, composeJob, errorText, listPrinters, printFeatures,
     printerCapabilities, printerMargins, printerProperties, releaseJob, savePdf, sendJob,
   } from "../../print/api";
-  import { type AutoOptions, autoLayout, layoutSummary, sizingInfo } from "../../print/model/auto";
-  import { type Margins, type Size, describeSize, fmtRatio, isoSize, mmToPt } from "../../print/model/geom";
+  import { type AutoOptions, type AutoResult, autoLayout, sizingInfo } from "../../print/model/auto";
+  import { type Margins, type Size, describeSize, fmtRatio, intersect, isoName, isoSize, mmToPt } from "../../print/model/geom";
   import { type Job, formatDate } from "../../print/model/job";
   import {
-    type Preset, type PrintSettings, N_UP, SCALE_PRESETS, applyPreset, parseRatio, presetFrom,
+    type Preset, type PrintSettings, N_UP, PERCENT_PRESETS, SCALE_PRESETS, applyPreset, parseRatio, presetFrom,
   } from "../../print/model/settings";
   import { SheetPainter, applyColourPreview, asItem, drawLines, drawTexts } from "../../print/painter";
+  import { type View, fitRect, panBy, screenToWorld, wheelZoomFactor, zoomAt, zoomBy } from "../../view/viewMath";
   import { activeDoc, pickSources, stem } from "../../print/sources";
   import {
     loadPresetName, loadPresets, loadSettings, savePresetName, savePresets, saveSettings,
   } from "../../print/store";
-  import ManualLayout, { resetManualLayout } from "./ManualLayout.svelte";
+  import ManualLayout, { keptManualLayout, resetManualLayout } from "./ManualLayout.svelte";
+  import { type ManualLayout as ManualLayoutModel, areaOfLayout, itemBox, manualToJob, sheetCount as manualSheetCount } from "../../print/model/manual";
+  import { printMargin } from "../../print/marginColour";
+  import { errorString, hasCode } from "../../shell/messages";
+  import CloseButton from "../CloseButton.svelte";
 
   let { open, context, onClose }: { open: boolean; context: PrintContext | null; onClose: () => void } = $props();
 
@@ -42,7 +50,7 @@
   let busy = $state<{ label: string; done: number; total: number } | null>(null);
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
-  let sections = $state({ layout: true, paper: false, advanced: false });
+  let sections = $state({ arrangement: true, output: false, advanced: false });
   let presetEditor = $state<{ name: string } | null>(null);
   let customScale = $state("");
   let date = $state(formatDate(new Date()));
@@ -55,11 +63,35 @@
     paperObj ? { w: mmToPt(paperObj.w), h: mmToPt(paperObj.h) } : (isoSize("A4") as Size),
   );
   const papersPt = $derived(caps?.papers.map((p) => ({ w: mmToPt(p.w), h: mmToPt(p.h) })) ?? []);
+  /** The printer's papers, A sizes first (paperOrder.ts). */
+  const paperGroups = $derived(groupPapers(caps?.papers ?? []));
+
+  // Margins: Printer minimum, None, 5, 10 or 15 mm, or Custom (any mm), as the manual layout
+  // offers. The presets are stored as custom millimetres.
+  const MARGIN_PRESETS = [5, 10, 15];
+  let marginCustomOpen = $state(false);
+  const marginChoice = $derived(
+    settings.marginMode !== "custom"
+      ? settings.marginMode
+      : !marginCustomOpen && MARGIN_PRESETS.includes(settings.customMarginMm)
+        ? String(settings.customMarginMm)
+        : "custom",
+  );
+
+  function chooseMarginChoice(v: string) {
+    marginCustomOpen = v === "custom";
+    if (v === "printer" || v === "none") settings.marginMode = v;
+    else {
+      settings.marginMode = "custom";
+      if (v !== "custom") settings.customMarginMm = Number(v);
+    }
+  }
 
   const options = $derived<AutoOptions>({
     sizing: settings.sizing === "manual" ? "fit" : settings.sizing,
     fitTo: settings.fitTo,
     scaleRatio: settings.scaleRatio,
+    scalePercent: settings.scalePercent,
     nUp: settings.nUp,
     order: settings.order,
     marginMode: settings.marginMode,
@@ -78,7 +110,37 @@
   const result = $derived(
     picked?.ok ? autoLayout({ sources: picked.sources, paper, printerMargins: margins, papers: papersPt, date, options }) : null,
   );
-  const sheetCount = $derived(result?.job.sheets.length ?? 0);
+  // Layout: Manual. The layout is made in the manual layout editor (ManualLayout.svelte, which
+  // keeps it while the dialog is open); back here it's previewed and printed like an automatic
+  // one, with Colour, Output and Advanced applying to it.
+  let manualMode = $state(false);
+  let manualLayout = $state.raw<ManualLayoutModel | null>(null);
+  const manualResult = $derived.by((): AutoResult | null => {
+    const l = manualLayout;
+    if (!l) return null;
+    const job = manualToJob(l, { enabled: settings.stamp, date });
+    const area = areaOfLayout(l);
+    return { job, sheets: job.sheets.map(() => ({ size: l.paper, area, contentArea: area, placed: [], tile: null })) };
+  });
+  /** What the preview shows and Print prints: the manual layout in Manual, else the automatic one. */
+  const shown = $derived(manualMode ? manualResult : result);
+  const manualSummary = $derived.by(() => {
+    const l = manualLayout;
+    const n = l ? manualSheetCount(l) : 0;
+    if (!l || n === 0) return "No pages arranged yet";
+    return `${n} ${n === 1 ? "sheet" : "sheets"} · ${isoName(l.paper) ?? describeSize(l.paper)} ${l.paper.w > l.paper.h ? "landscape" : "portrait"}`;
+  });
+
+  function chooseLayoutMode(v: "auto" | "manual") {
+    if (v === "auto") {
+      manualMode = false;
+      return;
+    }
+    manualMode = true;
+    if (!manualLayout) setSizing("manual"); // nothing made yet: straight to the editor
+  }
+
+  const sheetCount = $derived(shown?.job.sheets.length ?? 0);
   const info = $derived(result ? sizingInfo(options, result.sheets[0]) : null);
   const printerMarginMm = $derived(Math.max(margins.portrait.left, margins.portrait.top) / mmToPt(1));
 
@@ -94,6 +156,8 @@
   /** Drop the manual layout and close files opened only for it. */
   function forgetManual() {
     manual = false;
+    manualMode = false;
+    manualLayout = null;
     const r = context?.renderer;
     const extra = resetManualLayout();
     for (const d of extra) {
@@ -117,6 +181,7 @@
     if (presetName && !presets.some((p) => p.name === presetName)) presetName = null;
     marquee = null;
     manual = settings.sizing === "manual";
+    manualMode = manual;
     if (manual) settings.sizing = "fit";
     sheetIndex = 0;
     error = null;
@@ -134,7 +199,7 @@
       printers = await listPrinters();
     } catch (e) {
       printers = [];
-      error = errorText(e);
+      error = errorText(e, "list the printers");
     }
     const want = settings.printer && printers.some((p) => p.name === settings.printer) ? settings.printer : null;
     settings.printer = want ?? printers.find((p) => p.isDefault)?.name ?? printers[0]?.name ?? null;
@@ -158,7 +223,7 @@
       if (!c.duplex) settings.duplex = "none";
       await loadMargins();
     } catch (e) {
-      error = errorText(e);
+      error = errorText(e, "read the printer's settings");
     }
   }
 
@@ -199,7 +264,8 @@
     customScale = SCALE_PRESETS.includes(settings.scaleRatio) ? "" : String(settings.scaleRatio);
     if (settings.sizing === "manual") {
       settings.sizing = "fit";
-      manual = true;
+      manualMode = true;
+      if (!manualLayout) manual = true;
     }
     loadPrinter();
   }
@@ -247,20 +313,52 @@
     settings.sizing = s;
   }
 
+  /** The driver's settings window is open, or still opening (some take several seconds). */
+  let propsOpen = $state(false);
+
+  function openPrinterProperties() {
+    const p = settings.printer;
+    if (!p || propsOpen) return;
+    propsOpen = true;
+    printerProperties(p)
+      .then(() => loadPrinter())
+      .catch((e) => (error = errorText(e, "open the printer's settings")))
+      .finally(() => (propsOpen = false));
+  }
+
   function setScaleText(t: string) {
     customScale = t;
     const n = parseRatio(t);
     if (n) settings.scaleRatio = n;
   }
 
+  /** The document printed from has a drawing scale: To scale is a ratio, else a percentage. */
+  const scaleKnown = $derived(!!doc?.scale);
+  let customPercent = $state(false);
+
+  function setPercentText(t: string) {
+    const n = parseFloat(t);
+    if (n > 0 && isFinite(n)) settings.scalePercent = Math.min(1000, Math.max(1, n));
+  }
+
   const qualityLabel = (q: PrintSettings["quality"]) =>
     q === "vector" ? "Vector" : q === "image300" ? "Image 300 dpi" : "Image 600 dpi";
 
-  const paperSummary = $derived(
+  const arrangementSummary = $derived(
     [
-      paperObj?.name ?? "Paper",
-      settings.trayBySize ? "by PDF page size" : null,
+      `${settings.nUp} per sheet`,
+      settings.centre ? "centred" : null,
+      settings.borders ? "borders" : null,
+      settings.stamp ? "stamp" : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  );
+  const outputSummary = $derived(
+    [
       settings.duplex === "none" ? "single-sided" : "two-sided",
+      settings.reverse ? "reversed" : null,
+      settings.trayBySize ? "tray by page size" : null,
     ]
       .filter(Boolean)
       .join(" · "),
@@ -278,13 +376,13 @@
         defaultPath: `${stem(title || "Vellum")} print.pdf`,
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       }).catch((e) => {
-        error = errorText(e);
+        error = errorText(e, "choose where to save");
         return null;
       });
       if (!p) return;
       path = p;
     } else if (!settings.printer) {
-      error = "No printer is installed";
+      error = "No printers found.";
       return;
     }
     busy = { label: "Preparing…", done: 0, total: job.sheets.length };
@@ -294,8 +392,8 @@
       jobId = c.jobId;
       if (mode === "pdf" && path) {
         busy = { label: "Saving…", done: 0, total: c.sheets };
-        await savePdf(c.jobId, path);
-        notice = `Saved ${c.sheets} ${c.sheets === 1 ? "sheet" : "sheets"}`;
+        await savePdf(c.jobId, path, { colour: settings.colour, blackSensitivity: settings.blackSensitivity, dpi: printDpi });
+        notice = `Saved ${c.sheets} ${c.sheets === 1 ? "sheet" : "sheets"}.`;
         busy = null;
         return;
       }
@@ -308,18 +406,24 @@
           collate: settings.collate,
           duplex: settings.duplex,
           colour: settings.colour,
+          blackSensitivity: settings.blackSensitivity,
           quality: settings.quality,
           paper: settings.paperId,
           trayBySize: settings.trayBySize,
           reverse: settings.reverse,
-          title: title ? `Vellum - ${title}` : "Vellum",
+          title: title ? `${title} - Vellum` : "Vellum",
         },
         (done, total) => (busy = { label: "Printing", done, total }),
       );
       busy = null;
       onClose();
     } catch (e) {
-      error = errorText(e);
+      // Stopping isn't a failure: say so in the normal colour.
+      if (hasCode(e, "cancelled")) notice = mode === "pdf" ? "Saving cancelled." : "Printing cancelled.";
+      else {
+        console.warn("print failed:", errorString(e));
+        error = errorText(e, mode === "pdf" ? "save the PDF" : "print");
+      }
       busy = null;
     } finally {
       if (jobId !== null) releaseJob(jobId);
@@ -380,54 +484,140 @@
 
   $effect(() => {
     // Repaint when the layout, the sheet shown, the stage size or the colour mode change.
-    void result;
+    void shown;
     void sheetIndex;
     void stageSize;
     void settings.colour;
+    void settings.blackSensitivity;
+    void zoomed;
     void open;
     void manual;
     tick().then(schedule);
   });
 
-  const preview = $derived.by(() => {
-    const sheet = result?.job.sheets[sheetIndex];
-    if (!sheet) return null;
-    const pad = 28;
-    const k = Math.max(0.01, Math.min((stageSize.w - 2 * pad) / sheet.w, (stageSize.h - 2 * pad) / sheet.h));
-    return { k, w: Math.round(sheet.w * k), h: Math.round(sheet.h * k) };
+  // The preview fills the stage and shows the sheet fitted, or zoomed in: the wheel zooms at
+  // the pointer, a drag moves it, a double-click fits it again. `zoomed` is the view in CSS px
+  // per sheet point while zoomed, null while fitted; a new sheet or layout goes back to fit.
+  let zoomed = $state<View | null>(null);
+  let previewDrag: { pointer: number; x: number; y: number } | null = null;
+  const fitView = $derived.by(() => {
+    const sheet = shown?.job.sheets[sheetIndex];
+    return sheet ? fitRect({ x: 0, y: 0, w: sheet.w, h: sheet.h }, stageSize.w, stageSize.h, 28, "page") : null;
+  });
+  const preview = $derived(fitView ? (zoomed ?? fitView) : null);
+  /** Which sheet is shown, and its size: a change goes back to fit (a settings tweak doesn't). */
+  const sheetKey = $derived.by(() => {
+    const s = shown?.job.sheets[sheetIndex];
+    return s ? `${sheetIndex}:${Math.round(s.w)}x${Math.round(s.h)}` : "";
+  });
+  $effect(() => {
+    void sheetKey;
+    zoomed = null;
   });
 
+  /** The resolution the sheet is printed at (Black lines is never sent as vector). */
+  const printDpi = $derived(settings.quality === "image300" ? 300 : 600);
+  /** The zoom where one screen dot is one printed dot (CSS px per sheet point). */
+  const printDotScale = () => printDpi / 72 / (window.devicePixelRatio || 1);
+
+  function onPreviewWheel(e: WheelEvent) {
+    const fit = fitView;
+    if (!fit || !preview || !canvas) return;
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const v = zoomBy(preview, e.clientX - r.left, e.clientY - r.top, wheelZoomFactor(e.deltaY, e.deltaMode));
+    // No smaller than fitted; up to twice print resolution (or 24 times fitted, if more).
+    const max = Math.max(fit.scale * 24, printDotScale() * 2);
+    zoomed = v.scale <= fit.scale * 1.001 ? null : v.scale > max ? preview : v;
+  }
+
+  /** Zoom the preview so one screen dot is one printed dot, about the middle of the view. */
+  function zoomToPrintDots() {
+    if (!preview) return;
+    zoomed = zoomAt(preview, stageSize.w / 2, stageSize.h / 2, printDotScale());
+  }
+
+  function onPreviewDown(e: PointerEvent) {
+    if (!zoomed || (e.button !== 0 && e.button !== 1)) return;
+    e.preventDefault();
+    previewDrag = { pointer: e.pointerId, x: e.clientX, y: e.clientY };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onPreviewMove(e: PointerEvent) {
+    const d = previewDrag;
+    if (!d || e.pointerId !== d.pointer || !zoomed) return;
+    zoomed = panBy(zoomed, e.clientX - d.x, e.clientY - d.y);
+    previewDrag = { ...d, x: e.clientX, y: e.clientY };
+  }
+
+  function onPreviewUp(e: PointerEvent) {
+    if (previewDrag?.pointer === e.pointerId) previewDrag = null;
+  }
+
   function paint() {
-    const sheet = result?.job.sheets[sheetIndex];
-    const meta = result?.sheets[sheetIndex];
-    const pv = preview;
-    if (!canvas || !sheet || !meta || !pv || !painter) return;
+    const sheet = shown?.job.sheets[sheetIndex];
+    const meta = shown?.sheets[sheetIndex];
+    const view = preview;
+    if (!canvas || !sheet || !meta || !view || !painter) return;
     const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round(pv.w * dpr));
-    const H = Math.max(1, Math.round(pv.h * dpr));
+    const W = Math.max(1, Math.round(stageSize.w * dpr));
+    const H = Math.max(1, Math.round(stageSize.h * dpr));
     if (canvas.width !== W) canvas.width = W;
     if (canvas.height !== H) canvas.height = H;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const v = { k: (pv.w * dpr) / sheet.w, ox: 0, oy: 0 };
+    const v = { k: view.scale * dpr, ox: view.tx * dpr, oy: view.ty * dpr };
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    // The sheet, with a shadow, like paper on the desk.
+    const sx = v.ox;
+    const sy = v.oy;
+    const sw = sheet.w * v.k;
+    const sh = sheet.h * v.k;
+    ctx.save();
+    ctx.shadowColor = getComputedStyle(document.documentElement).getPropertyValue("--shadow").trim() || "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = 24 * dpr;
+    ctx.shadowOffsetY = 6 * dpr;
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, W, H);
-    const vis = { x0: 0, y0: 0, x1: sheet.w, y1: sheet.h };
+    ctx.fillRect(sx, sy, sw, sh);
+    ctx.restore();
+    // Only what's on screen is rendered, sharp for the zoom.
+    const [wx0, wy0] = screenToWorld(view, 0, 0);
+    const [wx1, wy1] = screenToWorld(view, stageSize.w, stageSize.h);
+    const onScreen = { x0: Math.max(0, wx0), y0: Math.max(0, wy0), x1: Math.min(sheet.w, wx1), y1: Math.min(sheet.h, wy1) };
+    const clip = sheet.clip
+      ? { x0: Math.max(sheet.clip.x0, onScreen.x0), y0: Math.max(sheet.clip.y0, onScreen.y0), x1: Math.min(sheet.clip.x1, onScreen.x1), y1: Math.min(sheet.clip.y1, onScreen.y1) }
+      : onScreen;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(sx, sy, sw, sh);
+    ctx.clip();
     for (const it of sheet.items) {
       const mi = asItem(it);
-      painter.want(mi, sheet.clip ?? vis, v.k);
+      if (clip.x1 > clip.x0 && clip.y1 > clip.y0) painter.want(mi, clip, v.k);
       painter.drawItem(ctx, mi, v, sheet.clip);
     }
     drawLines(ctx, sheet.lines, v);
     drawTexts(ctx, sheet.texts, v);
-    applyColourPreview(ctx, 0, 0, W, H, settings.colour);
+    ctx.restore();
+    const cx0 = Math.max(0, Math.floor(sx));
+    const cy0 = Math.max(0, Math.floor(sy));
+    const cx1 = Math.min(W, Math.ceil(sx + sw));
+    const cy1 = Math.min(H, Math.ceil(sy + sh));
+    // Each placed page, clipped as printed, in canvas px: Black lines works page by page.
+    const pages = sheet.items.flatMap((it) => {
+      const b0 = itemBox(asItem(it));
+      const b = sheet.clip ? intersect(b0, sheet.clip) : b0;
+      return b ? [{ x0: sx + b.x0 * v.k, y0: sy + b.y0 * v.k, x1: sx + b.x1 * v.k, y1: sy + b.y1 * v.k }] : [];
+    });
+    applyColourPreview(ctx, cx0, cy0, cx1 - cx0, cy1 - cy0, settings.colour, settings.blackSensitivity, v.k, pages);
     const a = meta.area;
     ctx.save();
-    ctx.strokeStyle = "#e05555";
+    ctx.strokeStyle = printMargin();
     ctx.lineWidth = Math.max(1, dpr);
     ctx.setLineDash([4 * dpr, 4 * dpr]);
-    ctx.strokeRect(a.x0 * v.k + 0.5, a.y0 * v.k + 0.5, (a.x1 - a.x0) * v.k - 1, (a.y1 - a.y0) * v.k - 1);
+    ctx.strokeRect(sx + a.x0 * v.k + 0.5, sy + a.y0 * v.k + 0.5, (a.x1 - a.x0) * v.k - 1, (a.y1 - a.y0) * v.k - 1);
     ctx.restore();
   }
 
@@ -436,7 +626,7 @@
   });
 
   const sheetLabel = $derived.by(() => {
-    const m = result?.sheets[sheetIndex];
+    const m = shown?.sheets[sheetIndex];
     if (!m) return "";
     const tile = m.tile && sheetCount > 1 ? ` · tile ${m.tile}` : "";
     return `Sheet ${sheetIndex + 1} of ${sheetCount} · ${describeSize(m.size)}${tile}`;
@@ -480,17 +670,15 @@
         {error}
         {notice}
         initialSources={picked?.ok ? picked.sources : []}
-        onBack={() => { manual = false; error = null; notice = null; }}
+        onBack={() => { manualLayout = keptManualLayout(); manualMode = true; manual = false; error = null; notice = null; }}
         onClose={close}
         onRun={run}
       />
     {:else}
-      <div class="dialog" role="dialog" aria-modal="true" aria-label="Print">
+      <div class="dialog" role="dialog" aria-modal="true" aria-label="Print" use:floating={PRINT_BOX}>
         <header>
-          <span class="title">Print{title ? ` — ${title}` : ""}</span>
-          <button type="button" class="icon close" aria-label="Close" onclick={close}>
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-          </button>
+          <span class="title">Print{title ? `: ${title}` : ""}</span>
+          <CloseButton onclick={close} />
         </header>
 
         <div class="body">
@@ -522,32 +710,72 @@
                 <button type="button" class="btn" disabled={!presetEditor.name.trim()} onclick={storePreset}>
                   {presets.some((p) => p.name === presetEditor?.name.trim()) ? "Replace" : "Save"}
                 </button>
-                {#if presetName}<button type="button" class="btn plain" onclick={deletePreset}>Delete "{presetName}"</button>{/if}
-                <button type="button" class="btn plain" onclick={() => (presetEditor = null)}>Cancel</button>
+                {#if presetName}<button type="button" class="btn ghost" onclick={deletePreset}>Delete "{presetName}"</button>{/if}
+                <button type="button" class="btn ghost" onclick={() => (presetEditor = null)}>Cancel</button>
               </div>
             {/if}
 
             <div class="main">
-              <div class="printer-row">
+              <div class="row">
                 <label for="pr-printer">Printer</label>
                 <select id="pr-printer" value={settings.printer ?? ""} onchange={(e) => choosePrinter(e.currentTarget.value)} disabled={!printers.length}>
                   {#if !printers.length}<option value="">No printers found</option>{/if}
                   {#each printers as p (p.name)}<option value={p.name}>{p.name}</option>{/each}
                 </select>
-                <label for="pr-copies" class="right">Copies</label>
-                <input
-                  id="pr-copies"
-                  class="num"
-                  inputmode="numeric"
-                  value={settings.copies}
-                  onchange={(e) => (settings.copies = Math.min(999, Math.max(1, parseInt(e.currentTarget.value, 10) || 1)))}
-                />
+              </div>
+
+              <div class="row">
+                <label for="pr-copies">Copies</label>
+                <div class="pair">
+                  <input
+                    id="pr-copies"
+                    class="num"
+                    inputmode="numeric"
+                    value={settings.copies}
+                    onchange={(e) => (settings.copies = Math.min(999, Math.max(1, parseInt(e.currentTarget.value, 10) || 1)))}
+                  />
+                  <label class="check" title="Print each copy complete before the next"><input type="checkbox" bind:checked={settings.collate} disabled={settings.copies < 2} /><span>Collate</span></label>
+                </div>
+              </div>
+
+              {#if !manualMode}
+              <div class="row">
+                <label for="pr-paper">Paper</label>
+                <div class="pair">
+                  <select id="pr-paper" value={String(settings.paperId ?? "")} onchange={(e) => choosePaper(Number(e.currentTarget.value))} disabled={!caps}>
+                    {#if !caps}<option value="">A4</option>{/if}
+                    {#each paperGroups.a as p (p.id + p.name)}
+                      <option value={String(p.id)}>{p.name} ({Math.round(p.w)} × {Math.round(p.h)} mm)</option>
+                    {/each}
+                    {#if paperGroups.other.length}
+                      <optgroup label="Other sizes">
+                        {#each paperGroups.other as p (p.id + p.name)}
+                          <option value={String(p.id)}>{p.name} ({Math.round(p.w)} × {Math.round(p.h)} mm)</option>
+                        {/each}
+                      </optgroup>
+                    {/if}
+                  </select>
+                  <select
+                    aria-label="Orientation"
+                    class="orient"
+                    value={settings.autoRotate ? "auto" : settings.landscape ? "landscape" : "portrait"}
+                    onchange={(e) => {
+                      const v = e.currentTarget.value;
+                      settings.autoRotate = v === "auto";
+                      if (v !== "auto") settings.landscape = v === "landscape";
+                    }}
+                  >
+                    <option value="auto">Auto-rotate</option>
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </select>
+                </div>
               </div>
 
               <div class="group">
                 <span class="head">Pages</span>
                 {@render seg(
-                  [["all", pagesAll], ["current", "Current"], ["range", "Range"], ["view", "View"], ["marquee", "Marquee"]],
+                  [["all", pagesAll], ["current", "Current"], ["range", "Range"], ["view", "On screen"], ["marquee", "Area"]],
                   settings.pagesMode,
                   (v) => (v === "marquee" ? chooseMarquee() : (settings.pagesMode = v)),
                   "Pages",
@@ -556,15 +784,34 @@
                   <input class="wide" aria-label="Page range" placeholder="1-3, 7" bind:value={settings.range} />
                 {/if}
                 {#if settings.pagesMode === "marquee" && marquee}
-                  <button type="button" class="link" onclick={chooseMarquee}>Drag a new rectangle</button>
+                  <button type="button" class="link" onclick={chooseMarquee}>Drag a new area</button>
                 {/if}
                 {#if picked && !picked.ok}<span class="warn">{picked.error}</span>{/if}
               </div>
 
+              {/if}
+
+              <div class="group">
+                <span class="head">Layout</span>
+                {@render seg(
+                  [["auto", "Automatic"], ["manual", "Manual"]],
+                  manualMode ? "manual" : "auto",
+                  chooseLayoutMode,
+                  "Layout",
+                )}
+                {#if manualMode}
+                  <div class="manual-sum">
+                    <span>{manualSummary}</span>
+                    <button type="button" class="btn small" onclick={() => (manual = true)}>Edit layout…</button>
+                  </div>
+                {/if}
+              </div>
+
+              {#if !manualMode}
               <div class="group">
                 <span class="head">Sizing</span>
                 {@render seg(
-                  [["fit", "Fit"], ["actual", "Actual"], ["scale", "To scale"], ["tile", "Tile"], ["manual", "Manual"]],
+                  [["fit", "Fit"], ["actual", "Actual"], ["scale", "To scale"], ["tile", "Tile"]],
                   settings.sizing,
                   setSizing,
                   "Sizing",
@@ -576,6 +823,27 @@
                       <option value="printable">{fitLabel}</option>
                       <option value="paper">Full paper</option>
                     </select>
+                  </div>
+                {:else if settings.sizing === "scale" && !scaleKnown}
+                  <div class="row">
+                    <label for="pr-scale">Scale</label>
+                    <div class="pair">
+                      <select
+                        id="pr-scale"
+                        value={customPercent || !PERCENT_PRESETS.includes(settings.scalePercent) ? "custom" : String(settings.scalePercent)}
+                        onchange={(e) => {
+                          const v = e.currentTarget.value;
+                          customPercent = v === "custom";
+                          if (v !== "custom") settings.scalePercent = Number(v);
+                        }}
+                      >
+                        {#each PERCENT_PRESETS as n (n)}<option value={String(n)}>{n}%</option>{/each}
+                        <option value="custom">Custom…</option>
+                      </select>
+                      {#if customPercent || !PERCENT_PRESETS.includes(settings.scalePercent)}
+                        <input class="num mono" aria-label="Custom percentage" value={settings.scalePercent} onchange={(e) => setPercentText(e.currentTarget.value)} /><span class="muted">%</span>
+                      {/if}
+                    </div>
                   </div>
                 {:else if settings.sizing === "scale"}
                   <div class="row">
@@ -615,13 +883,46 @@
                     </div>
                   </div>
                 {/if}
+                <div class="row">
+                  <label for="pr-margins">Margins</label>
+                  <div class="pair">
+                    <select id="pr-margins" value={marginChoice} onchange={(e) => chooseMarginChoice(e.currentTarget.value)}>
+                      <option value="printer">Printer minimum</option>
+                      <option value="none">None</option>
+                      {#each MARGIN_PRESETS as m (m)}<option value={String(m)}>{m} mm</option>{/each}
+                      <option value="custom">Custom…</option>
+                    </select>
+                    {#if marginChoice === "custom"}
+                      <input
+                        class="num mono"
+                        aria-label="Margin in millimetres"
+                        value={settings.customMarginMm}
+                        onchange={(e) => (settings.customMarginMm = Math.min(100, Math.max(0, parseFloat(e.currentTarget.value) || 0)))}
+                      /><span class="muted">mm</span>
+                    {/if}
+                  </div>
+                </div>
+                {#if settings.sizing !== "tile"}
+                  <div class="row">
+                    <span></span>
+                    <label class="check" title={settings.sizing === "fit" ? "Pages already small enough print at 100%; only bigger ones are fitted" : "Pages too big for the sheet are shrunk to fit"}>
+                      <input type="checkbox" bind:checked={settings.shrinkOversized} /><span>{settings.sizing === "fit" ? "Never enlarge small pages" : "Shrink pages too big for the sheet"}</span>
+                    </label>
+                  </div>
+                {/if}
                 {#if info}
-                  <div class="info">
-                    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M8 7v4M8 4.8v0.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
-                    <span>{info}</span>
+                  <div class="info" class:warn={info.warn}>
+                    {#if info.warn}
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-label="Warning"><path d="M8 2L14.5 13.5H1.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /><path d="M8 6.5v3.2M8 11.6v0.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                    {:else}
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M8 7v4M8 4.8v0.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                    {/if}
+                    <span>{info.text}</span>
                   </div>
                 {/if}
               </div>
+
+              {/if}
 
               <div class="group">
                 <span class="head">Colour</span>
@@ -631,15 +932,40 @@
                   (v) => (settings.colour = v),
                   "Colour",
                 )}
+                {#if settings.colour === "blackLines"}
+                  <div class="threshold">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      bind:value={settings.blackSensitivity}
+                      aria-label="How faint a line still prints"
+                      title="Lines print black and the paper white, each judged against the paper around it. Left keeps only bold lines; right picks up faint ones (and more grain)."
+                    />
+                    <div class="ends"><span>Bold lines only</span><span>Faint lines too</span></div>
+                    <div class="exact">
+                      <span>Preview is exact only at 1:1</span>
+                      <button
+                        type="button"
+                        class="btn small"
+                        disabled={!preview}
+                        title="Zoom the preview to one screen pixel per printed dot"
+                        onclick={zoomToPrintDots}
+                      >View 1:1 at {printDpi} dpi</button>
+                    </div>
+                  </div>
+                {/if}
               </div>
             </div>
 
             <div class="sections">
-              <button type="button" class="sec" aria-expanded={sections.layout} onclick={() => (sections.layout = !sections.layout)}>
-                {@render chevron(sections.layout)}<span class="name">Layout</span><span class="sum">{layoutSummary(options)}</span>
+              <button type="button" class="sec" aria-expanded={sections.arrangement} onclick={() => (sections.arrangement = !sections.arrangement)}>
+                {@render chevron(sections.arrangement)}<span class="name">Arrangement</span><span class="sum">{arrangementSummary}</span>
               </button>
-              {#if sections.layout}
+              {#if sections.arrangement}
                 <div class="grid">
+                  {#if !manualMode}
                   <label for="pr-nup">Pages per sheet</label>
                   <div class="pair">
                     <select id="pr-nup" value={String(settings.nUp)} onchange={(e) => (settings.nUp = Number(e.currentTarget.value) as PrintSettings["nUp"])} disabled={settings.sizing === "tile"}>
@@ -650,73 +976,24 @@
                       <option value="down">Down, then across</option>
                     </select>
                   </div>
-                  <label for="pr-margins">Margins</label>
-                  <div class="pair">
-                    <select id="pr-margins" bind:value={settings.marginMode}>
-                      <option value="printer">Printer minimum</option>
-                      <option value="none">None</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                    {#if settings.marginMode === "custom"}
-                      <input
-                        class="num mono"
-                        aria-label="Margin in millimetres"
-                        value={settings.customMarginMm}
-                        onchange={(e) => (settings.customMarginMm = Math.min(100, Math.max(0, parseFloat(e.currentTarget.value) || 0)))}
-                      /><span class="muted">mm</span>
-                    {/if}
-                  </div>
                   <span class="lbl">Placement</span>
-                  <div class="checks">
-                    <label><input type="checkbox" bind:checked={settings.centre} /><span>Centre on sheet</span></label>
-                    <label><input type="checkbox" bind:checked={settings.autoRotate} /><span>Auto-rotate each page</span></label>
-                    <label><input type="checkbox" bind:checked={settings.borders} /><span>Page borders</span></label>
+                  <label class="check"><input type="checkbox" bind:checked={settings.centre} /><span>Centre on sheet</span></label>
+                  {/if}
+                  <span class="lbl top">Marks</span>
+                  <div class="checks col">
+                    {#if !manualMode}
+                      <label><input type="checkbox" bind:checked={settings.borders} /><span>Page borders</span></label>
+                    {/if}
+                    <label title="File name, page and date, printed small in the margin"><input type="checkbox" bind:checked={settings.stamp} /><span>Margin stamp</span></label>
                   </div>
-                  <label for="pr-special">Special</label>
-                  <select
-                    id="pr-special"
-                    value={settings.sizing === "tile" ? "tile" : "none"}
-                    onchange={(e) => (settings.sizing = e.currentTarget.value === "tile" ? "tile" : settings.sizing === "tile" ? "fit" : settings.sizing)}
-                  >
-                    <option value="none">None</option>
-                    <option value="tile">Tile with overlap and cut marks</option>
-                  </select>
-                  <span class="lbl">Margin stamp</span>
-                  <label class="check"><input type="checkbox" bind:checked={settings.stamp} /><span>File name, page, date</span></label>
                 </div>
               {/if}
 
-              <button type="button" class="sec" aria-expanded={sections.paper} onclick={() => (sections.paper = !sections.paper)}>
-                {@render chevron(sections.paper)}<span class="name">Paper</span><span class="sum">{paperSummary}</span>
+              <button type="button" class="sec" aria-expanded={sections.output} onclick={() => (sections.output = !sections.output)}>
+                {@render chevron(sections.output)}<span class="name">Output</span><span class="sum">{outputSummary}</span>
               </button>
-              {#if sections.paper}
+              {#if sections.output}
                 <div class="grid">
-                  <label for="pr-paper">Paper size</label>
-                  <select id="pr-paper" value={String(settings.paperId ?? "")} onchange={(e) => choosePaper(Number(e.currentTarget.value))} disabled={!caps}>
-                    {#if !caps}<option value="">A4</option>{/if}
-                    {#each caps?.papers ?? [] as p (p.id + p.name)}
-                      <option value={String(p.id)}>{p.name} ({Math.round(p.w)} × {Math.round(p.h)} mm)</option>
-                    {/each}
-                  </select>
-                  <label for="pr-orient">Orientation</label>
-                  <select
-                    id="pr-orient"
-                    value={settings.autoRotate ? "auto" : settings.landscape ? "landscape" : "portrait"}
-                    onchange={(e) => {
-                      const v = e.currentTarget.value;
-                      settings.autoRotate = v === "auto";
-                      if (v !== "auto") settings.landscape = v === "landscape";
-                    }}
-                  >
-                    <option value="auto">Automatic (per page)</option>
-                    <option value="portrait">Portrait</option>
-                    <option value="landscape">Landscape</option>
-                  </select>
-                  <span class="lbl">Mixed sizes</span>
-                  <div class="checks col">
-                    <label><input type="checkbox" bind:checked={settings.trayBySize} /><span>Choose tray by PDF page size</span></label>
-                    <label><input type="checkbox" bind:checked={settings.shrinkOversized} /><span>Shrink oversized pages only</span></label>
-                  </div>
                   {#if caps?.duplex}
                     <label for="pr-duplex">Two-sided</label>
                     <select id="pr-duplex" bind:value={settings.duplex}>
@@ -726,10 +1003,9 @@
                     </select>
                   {/if}
                   <span class="lbl">Order</span>
-                  <div class="checks">
-                    <label><input type="checkbox" bind:checked={settings.collate} /><span>Collate</span></label>
-                    <label><input type="checkbox" bind:checked={settings.reverse} /><span>Reverse order</span></label>
-                  </div>
+                  <label class="check"><input type="checkbox" bind:checked={settings.reverse} /><span>Reverse order</span></label>
+                  <span class="lbl">Paper tray</span>
+                  <label class="check"><input type="checkbox" bind:checked={settings.trayBySize} /><span>Choose by PDF page size</span></label>
                 </div>
               {/if}
 
@@ -744,13 +1020,17 @@
                     <option value="image600">Image, 600 dpi</option>
                     <option value="image300">Image, 300 dpi (driver workaround)</option>
                   </select>
+                  {#if settings.quality === "vector" && settings.colour === "blackLines"}
+                    <span></span><span class="note">Black lines always prints as an image, at 600 dpi.</span>
+                  {/if}
                   <span class="lbl">Driver</span>
                   <button
                     type="button"
                     class="btn small"
-                    disabled={!settings.printer}
-                    onclick={() => settings.printer && printerProperties(settings.printer).then(() => loadPrinter()).catch((e) => (error = errorText(e)))}
-                  >Printer properties…</button>
+                    disabled={!settings.printer || propsOpen}
+                    title={propsOpen ? "Waiting for the printer's own settings window (some drivers take a while to open it)" : undefined}
+                    onclick={openPrinterProperties}
+                  >{propsOpen ? "Opening printer settings…" : "Printer properties…"}</button>
                 </div>
               {/if}
             </div>
@@ -759,9 +1039,23 @@
           <div class="preview">
             <div class="stage" bind:this={stage}>
               {#if preview}
-                <canvas bind:this={canvas} style:width="{preview.w}px" style:height="{preview.h}px" aria-label="Print preview"></canvas>
+                <canvas
+                  bind:this={canvas}
+                  class:zoomed={!!zoomed}
+                  style:width="{stageSize.w}px"
+                  style:height="{stageSize.h}px"
+                  aria-label="Print preview"
+                  title={zoomed ? "Drag to move; double-click to fit" : "Wheel to zoom in"}
+                  onwheel={onPreviewWheel}
+                  onpointerdown={onPreviewDown}
+                  onpointermove={onPreviewMove}
+                  onpointerup={onPreviewUp}
+                  onpointercancel={onPreviewUp}
+                  onauxclick={(e) => e.preventDefault()}
+                  ondblclick={() => (zoomed = null)}
+                ></canvas>
               {:else}
-                <p class="empty">{picked && !picked.ok ? picked.error : "Nothing to print"}</p>
+                <p class="empty">{manualMode ? "No pages arranged yet: Edit layout… to add some" : picked && !picked.ok ? picked.error : "Nothing to print"}</p>
               {/if}
             </div>
             <div class="nav">
@@ -779,17 +1073,17 @@
         </div>
 
         <footer>
-          <button type="button" class="btn" disabled={!result || !!busy} onclick={() => result && run(result.job, "pdf")}>Save as PDF…</button>
-          <button type="button" class="btn plain" onclick={() => (presetEditor = { name: presetName ?? "" })}>Save preset…</button>
+          <button type="button" class="btn" disabled={!shown?.job.sheets.length || !!busy} onclick={() => shown && run(shown.job, "pdf")}>Save as PDF…</button>
+          <button type="button" class="btn ghost" onclick={() => (presetEditor = { name: presetName ?? "" })}>Save preset…</button>
           <div class="status" role="status">
             {#if busy}
-              {busy.label}{busy.total && busy.label === "Printing" ? ` sheet ${Math.min(busy.done + 1, busy.total)} of ${busy.total}` : ""}
+              {busy.label}{busy.total && busy.label === "Printing" ? ` sheet ${Math.min(busy.done + 1, busy.total)} of ${busy.total}…` : ""}
             {:else if error}<span class="err">{error}</span>
             {:else if notice}{notice}
             {:else if sheetCount}{sheetCount} {sheetCount === 1 ? "sheet" : "sheets"}{/if}
           </div>
           <button type="button" class="btn" onclick={close}>{busy ? "Stop" : "Cancel"}</button>
-          <button type="button" class="btn primary" disabled={!result || !!busy || !settings.printer} onclick={() => result && run(result.job, "print")}>Print</button>
+          <button type="button" class="btn primary" disabled={!shown?.job.sheets.length || !!busy || !settings.printer} onclick={() => shown && run(shown.job, "print")}>Print</button>
         </footer>
       </div>
     {/if}
@@ -800,17 +1094,17 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    z-index: 100;
+    z-index: var(--z-print);
     display: grid;
     place-items: center;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--scrim);
   }
   .backdrop.hidden {
     display: none;
   }
   .dialog {
-    width: 1080px;
-    height: 780px;
+    width: 1240px;
+    height: 800px;
     max-width: calc(100vw - 24px);
     max-height: calc(100vh - 24px);
     display: flex;
@@ -822,7 +1116,7 @@
     border: 1px solid var(--bd-strong);
     border-radius: 10px;
     overflow: hidden;
-    box-shadow: 0 12px 48px var(--shadow);
+    box-shadow: var(--shadow-modal);
     user-select: none;
   }
   header {
@@ -854,6 +1148,9 @@
     flex-direction: column;
     border-right: 1px solid var(--bd);
     overflow-y: auto;
+  }
+  .options > * {
+    flex-shrink: 0; /* a short window scrolls the panel, never squashes its sections */
   }
   .preset {
     display: flex;
@@ -890,29 +1187,48 @@
     gap: 14px;
     padding: 16px 20px;
   }
-  .printer-row {
-    display: grid;
-    grid-template-columns: 70px minmax(0, 1fr) 54px 56px;
-    align-items: center;
-    gap: 8px;
-  }
-  .printer-row label {
-    color: var(--tx2);
-  }
-  .right {
-    text-align: right;
-  }
   .group {
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
+  .threshold {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+  }
+  .threshold input[type="range"] {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--accent);
+  }
+  .threshold .ends {
+    display: flex;
+    justify-content: space-between;
+  }
+  .threshold .exact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
+    color: var(--tx3);
+    font-size: 12px;
+  }
+  .threshold .ends,
+  .note {
+    color: var(--tx3);
+    font-size: 12px;
+  }
   .head {
     font-weight: 600;
   }
+  /* One label column for the whole panel: these rows and the sections' grids line up. */
   .row {
     display: grid;
-    grid-template-columns: 70px minmax(0, 1fr);
+    grid-template-columns: 110px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
   }
@@ -929,42 +1245,46 @@
     flex: 1 1 auto;
     min-width: 0;
   }
+  /* Segments use the shared look (app.css .seg); here they share the width evenly and are
+     the compact fields' height (24 px), so every control in the panel lines up. */
   .seg {
-    display: flex;
-    gap: 2px;
-    padding: 2px;
-    background: var(--ctl);
-    border: 1px solid var(--bd-ctl);
-    border-radius: 8px;
+    padding: 1px;
+    border-radius: 5px;
   }
-  .seg button {
+  .seg > button {
     flex: 1 1 0;
-    height: 30px;
-    border: none;
-    background: transparent;
-    color: var(--tx2);
-    border-radius: 6px;
+    height: 20px;
     padding: 0 4px;
-    white-space: nowrap;
+    border-radius: 4px;
   }
-  .seg button:hover {
-    background: var(--hover, rgba(127, 127, 127, 0.1));
-  }
-  .seg button.on {
-    background: var(--accent-soft, #e5484d2e);
-    color: var(--accent, #e5484d);
-    font-weight: 600;
+  .pair select.orient {
+    flex: 0 0 auto;
+    width: 120px;
   }
   .info {
     display: flex;
     gap: 8px;
     align-items: flex-start;
-    padding: 8px 10px;
-    background: var(--ctl);
-    border: 1px solid var(--bd-ctl);
-    border-radius: 6px;
+    color: var(--tx3);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .info.warn {
+    color: var(--danger);
+  }
+  .manual-sum {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     color: var(--tx2);
-    line-height: 1.4;
+  }
+  /* Small buttons in the settings panel are the compact fields' height too. */
+  .main .btn.small,
+  .grid .btn.small {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 4px;
   }
   .info svg {
     flex-shrink: 0;
@@ -975,10 +1295,6 @@
   }
   .link {
     align-self: flex-start;
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--accent, #e5484d);
   }
   .sections {
     display: flex;
@@ -998,9 +1314,16 @@
     text-align: left;
     color: var(--tx);
   }
+  .sec:hover {
+    background: var(--hover);
+  }
+  .sec:active {
+    background: var(--press-soft);
+  }
   .sec .name {
     font-weight: 600;
-    width: 72px;
+    flex-shrink: 0;
+    margin-right: 4px;
   }
   .sec .sum {
     color: var(--tx3);
@@ -1014,12 +1337,16 @@
     grid-template-columns: 110px minmax(0, 1fr);
     align-items: center;
     gap: 10px;
-    padding: 12px 20px 14px 42px;
+    padding: 12px 20px 14px;
     border-bottom: 1px solid var(--bd);
   }
   .grid > label,
   .lbl {
     color: var(--tx2);
+  }
+  /* A label for a column of checkboxes sits level with the first, not the middle. */
+  .lbl.top {
+    align-self: start;
   }
   .checks {
     display: flex;
@@ -1039,23 +1366,20 @@
     width: 15px;
     height: 15px;
     margin: 0;
-    accent-color: var(--accent, #e5484d);
+    accent-color: var(--accent);
   }
+  /* Every field here is in the side panel: compact, the page box's tighter size. */
   select,
-  input:not([type="checkbox"]) {
-    height: 32px;
-    padding: 0 8px;
+  input:not([type="checkbox"]):not([type="range"]) {
+    height: 24px;
+    padding: 0 6px;
     background: var(--ctl);
     border: 1px solid var(--bd-input);
-    border-radius: 6px;
+    border-radius: 4px;
     color: var(--tx);
     min-width: 0;
     box-sizing: border-box;
-  }
-  .grid select,
-  .grid input:not([type="checkbox"]),
-  .pair input {
-    height: 30px;
+    user-select: text;
   }
   input.num {
     width: 56px;
@@ -1089,8 +1413,13 @@
     overflow: hidden;
   }
   .stage canvas {
-    background: #fff;
-    box-shadow: 0 6px 24px var(--shadow);
+    display: block;
+  }
+  .stage canvas.zoomed {
+    cursor: grab;
+  }
+  .stage canvas.zoomed:active {
+    cursor: grabbing;
   }
   .empty {
     color: var(--tx3);
@@ -1118,7 +1447,7 @@
   }
   .dash {
     width: 14px;
-    border-top: 1.5px dashed #e05555;
+    border-top: 1.5px dashed var(--print-margin);
   }
   .icon {
     width: 30px;
@@ -1133,17 +1462,17 @@
     flex-shrink: 0;
   }
   .icon:hover:not(:disabled) {
-    background: var(--hover, rgba(127, 127, 127, 0.1));
+    background: var(--hover);
+    color: var(--tx);
   }
-  .icon.close {
-    width: 32px;
-    height: 32px;
-    color: var(--tx3);
+  .icon:active:not(:disabled) {
+    background: var(--press-soft);
   }
   .icon.boxed {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 24px;
     border: 1px solid var(--bd-input);
+    border-radius: 4px;
     background: var(--ctl);
   }
   footer {
@@ -1167,35 +1496,8 @@
   .err {
     color: var(--danger, #e5484d);
   }
-  .btn {
-    height: 34px;
-    padding: 0 14px;
-    border: 1px solid var(--bd-strong);
-    background: var(--ctl);
-    color: var(--tx);
-    border-radius: 6px;
-    white-space: nowrap;
-  }
+  /* Buttons use the shared .btn (app.css); only the small one's placement is local. */
   .btn.small {
-    height: 30px;
-    padding: 0 10px;
     justify-self: start;
-    border-color: var(--bd-input);
-  }
-  .btn.plain {
-    border-color: transparent;
-    background: transparent;
-    color: var(--tx2);
-  }
-  .btn.primary {
-    padding: 0 20px;
-    /* Filled buttons get a visible, darker border (house rule). */
-    border-color: var(--accent-bd, rgba(0, 0, 0, 0.25));
-    background: var(--accent, #e5484d);
-    color: #ffffff;
-    font-weight: 600;
-  }
-  .btn:hover:not(:disabled) {
-    filter: brightness(1.08);
   }
 </style>

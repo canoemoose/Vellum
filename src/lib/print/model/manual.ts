@@ -21,8 +21,12 @@ export interface ManualItem {
   scale: number;
   rotation: Rotation;
   border: boolean;
-  /** Print the scale label ("p3 · 1:200") with the item. */
-  label: boolean;
+  /** The label printed with the item, "Site plan p3 · 1:200", is up to three independent
+   * parts; nothing is printed when all are off. The file name is true or false once chosen,
+   * null to follow the layout (see showsName). */
+  showName: boolean | null;
+  showPage: boolean;
+  showScale: boolean;
 }
 
 export interface ManualSheet {
@@ -173,7 +177,7 @@ export function addItem(l: ManualLayout, si: number, ref: PageRef, opts: { crop?
     y = spot?.y ?? area.y0;
   }
   const id = l.nextId;
-  const item: ManualItem = { id, ref, crop, x, y, scale, rotation: 0, border: false, label: true };
+  const item: ManualItem = { id, ref, crop, x, y, scale, rotation: 0, border: false, showName: null, showPage: true, showScale: true };
   const out = mapSheet({ ...l, nextId: id + 1 }, si, (sh) => ({ ...sh, items: [...sh.items, item] }));
   return { layout: out, id };
 }
@@ -324,12 +328,58 @@ export function placedKeys(l: ManualLayout): Set<string> {
 
 // ---- Labels ----
 
-/** "p3 · 1:200", "p7 · 48%", "p9 crop · 1:20", "Truss.jpg · 48%". */
-export function scaleLabel(it: ManualItem): string {
-  const name = it.ref.kind === "image" ? it.ref.title : `p${it.ref.page + 1}`;
-  const crop = it.crop ? " crop" : "";
-  const sc = it.ref.drawingScale ? fmtRatio(effectiveRatio(it.ref.drawingScale, it.scale)) : fmtPercent(it.scale);
-  return `${name}${crop} · ${sc}`;
+/** How many different files the layout's items come from. */
+export function layoutFileCount(l: ManualLayout): number {
+  const paths = new Set<string>();
+  for (const s of l.sheets) for (const it of s.items) paths.add(it.ref.path.replace(/\\/g, "/").toLowerCase());
+  return paths.size;
+}
+
+/**
+ * Whether the item's label names its file: as chosen, or automatically: always for an image (its
+ * name is all that identifies it), and for a page once the layout uses more than one file.
+ */
+export function showsName(l: ManualLayout, it: ManualItem): boolean {
+  if (it.showName !== null) return it.showName;
+  return it.ref.kind === "image" || layoutFileCount(l) > 1;
+}
+
+/** The parts a label shows. Images have no page number. */
+export interface LabelParts {
+  name: boolean;
+  page: boolean;
+  scale: boolean;
+}
+
+export function labelParts(l: ManualLayout, it: ManualItem): LabelParts {
+  return { name: showsName(l, it), page: it.showPage && it.ref.kind !== "image", scale: it.showScale };
+}
+
+export const hasLabel = (p: LabelParts): boolean => p.name || p.page || p.scale;
+
+const fileStem = (title: string) => title.replace(/\.[^.\\/]+$/, "");
+
+/**
+ * "p3 · 1:200", "p7 · 48%", "p9 crop · 1:20", "Truss.jpg · 48%", "Site plan p3 · 1:200",
+ * "Site plan", "1:200": the parts asked for, file name and page together, then the scale.
+ * Images use their whole file name. Empty when no part is asked for.
+ */
+export function scaleLabel(it: ManualItem, asked?: LabelParts, maxChars = Infinity): string {
+  const isImg = it.ref.kind === "image";
+  // By default (the editor's badge): what identifies it, and the scale.
+  const parts = asked ?? { name: isImg, page: true, scale: true };
+  const full = parts.name && it.ref.title ? (isImg ? it.ref.title : fileStem(it.ref.title)) : null;
+  // A long file name is shortened in the middle so the whole label fits in maxChars.
+  const rest = full ? scaleLabel(it, { ...parts, name: false }).length + 1 : 0;
+  const room = Math.max(8, maxChars - rest);
+  const name = full && full.length > room ? `${full.slice(0, Math.ceil((room - 3) / 2))}...${full.slice(full.length - Math.floor((room - 3) / 2))}` : full;
+  const what = [
+    name,
+    parts.page && !isImg ? `p${it.ref.page + 1}` : null,
+  ].filter(Boolean);
+  if (what.length && it.crop) what.push("crop");
+  const sc = parts.scale ? (it.ref.drawingScale ? fmtRatio(effectiveRatio(it.ref.drawingScale, it.scale)) : fmtPercent(it.scale)) : null;
+  return [what.join(" "), sc].filter((s) => s).join(" · ");
 }
 
 /** "Stage plan.pdf · source A1, 1:100" */
@@ -346,9 +396,9 @@ export const LABEL_SIZE = 5;
 /** Approximate Helvetica width (for right-aligning a label without font metrics). */
 export const approxTextWidth = (text: string, size: number): number => text.length * size * 0.52;
 
-export function labelText(it: ManualItem, area: Box): JobText {
+export function labelText(it: ManualItem, area: Box, parts?: LabelParts): JobText {
   const b = itemBox(it);
-  const text = scaleLabel(it);
+  const text = scaleLabel(it, parts, Math.floor(boxW(b) / (LABEL_SIZE * 0.52)));
   const w = approxTextWidth(text, LABEL_SIZE);
   const below = b.y1 + LABEL_SIZE + 1.5 <= area.y1;
   return { x: Math.max(b.x0, b.x1 - w), y: below ? b.y1 + LABEL_SIZE + 0.5 : b.y1 - 2, size: LABEL_SIZE, text };
@@ -375,7 +425,8 @@ export function sheetJob(l: ManualLayout, si: number, stamp: StampInfo): JobShee
   const texts: JobText[] = [];
   for (const it of s.items) {
     if (it.border) lines.push(...boxLines(itemBox(it)));
-    if (it.label) texts.push(labelText(it, area));
+    const parts = labelParts(l, it);
+    if (hasLabel(parts)) texts.push(labelText(it, area, parts));
   }
   if (stamp.enabled) texts.push(stampText(sheetStamp(l, si, stamp), area));
   return {

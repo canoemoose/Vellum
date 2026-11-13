@@ -8,7 +8,7 @@ const A3L = { w: A3.h, h: A3.w };
 function sample() {
   let l = emptyLayout(A3L, uniform(5));
   l = addItem(l, 0, ref(500, 300, { docId: 4, path: "C:/a b/plan (1).pdf", page: 2, drawingScale: 100, title: "plan (1).pdf" })).layout;
-  l = updateItem(l, 0, 2, { crop: { x0: 1, y0: 2, x1: 300, y1: 200 }, rotation: 90, border: true, label: false });
+  l = updateItem(l, 0, 2, { crop: { x0: 1, y0: 2, x1: 300, y1: 200 }, rotation: 90, border: true, showName: true, showPage: false, showScale: true });
   l = addSheet(l);
   l = addItem(l, 1, ref(100, 80, { docId: 9, path: "C:/img/truss.jpg", kind: "image", title: "truss.jpg" })).layout;
   return l;
@@ -75,7 +75,11 @@ describe("save and load", () => {
     expect(p.layout.margins).toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
     const r = restore(p.layout, () => ({ docId: 3, numPages: 1 }));
     const it = r.layout.sheets[0].items[0];
-    expect(it).toMatchObject({ rotation: 90, border: false, label: true, crop: null });
+    expect(it).toMatchObject({ rotation: 90, border: false, showName: null, showPage: true, showScale: true, crop: null });
+    // An older file's single label tick, off: no part of the label.
+    const old = parseLayout(text.replace('"rotation":45', '"rotation":45,"label":false'));
+    if (!old.ok) throw new Error("parse");
+    expect(restore(old.layout, () => ({ docId: 3, numPages: 1 })).layout.sheets[0].items[0]).toMatchObject({ showName: false, showPage: false, showScale: false });
     expect(it.ref).toMatchObject({ kind: "pdf", drawingScale: null });
     expect(r.layout.sheets[1].items).toEqual([]);
   });

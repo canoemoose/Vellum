@@ -24,6 +24,7 @@ export const OPTS: AutoOptions = {
   sizing: "fit",
   fitTo: "printable",
   scaleRatio: 100,
+  scalePercent: 100,
   nUp: 1,
   order: "across",
   marginMode: "printer",
