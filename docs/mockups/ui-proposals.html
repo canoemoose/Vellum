@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI Proposals</title>
+<!-- Updated 12 November 2026 for the fixed Deep teal accent. -->
+
+<style>
+  /* Page chrome (not Vellum). */
+  :root { --page: #0e0f11; --page-tx: #e6e7ea; --page-tx3: #9a9da5; --page-bd: #2a2c31; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--page-tx); font: 13px "Inter", system-ui, "Segoe UI", sans-serif; padding: 24px 16px 64px; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .intro { color: var(--page-tx3); max-width: 900px; line-height: 1.55; margin: 0 0 14px; }
+  .picker { display: flex; gap: 8px; align-items: center; margin: 0 0 8px; color: var(--page-tx3); flex-wrap: wrap; }
+  .picker button { height: 28px; padding: 0 10px 0 6px; border-radius: 6px; border: 1px solid #34363c; background: #232428; color: var(--page-tx); display: flex; gap: 6px; align-items: center; font: inherit; }
+  .picker button[aria-pressed="true"] { border-color: #e6e7ea; }
+  .picker i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  .toc { color: var(--page-tx3); margin: 0 0 8px; line-height: 1.8; }
+  .toc a { color: var(--page-tx); margin-right: 14px; }
+  h2 { font-size: 16px; margin: 44px 0 4px; padding-top: 14px; border-top: 1px solid var(--page-bd); }
+  h3 { font-size: 14px; margin: 26px 0 4px; }
+  .why { color: var(--page-tx3); margin: 0 0 12px; max-width: 920px; line-height: 1.55; }
+  .why b { color: #c9cbd1; font-weight: 600; }
+  .rec { color: #7ee2b8; font-weight: 600; }
+  .variant { display: grid; grid-template-columns: 130px 1fr 1fr; gap: 10px; margin: 0 0 10px; align-items: stretch; }
+  .variant > .name { color: var(--page-tx2, #c9cbd1); font-weight: 600; padding-top: 6px; line-height: 1.4; }
+  .variant > .name small { display: block; color: var(--page-tx3); font-weight: 400; margin-top: 4px; }
+  .heads { display: grid; grid-template-columns: 130px 1fr 1fr; gap: 10px; color: var(--page-tx3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 4px; }
+  @media (max-width: 900px) {
+    .variant, .heads { grid-template-columns: 1fr; }
+    .heads { display: none; }
+  }
+  .cell { min-width: 0; overflow-x: auto; }
+
+  /* ---------------------------------------------------------------- Vellum tokens (src/app.css) */
+  .t-dark {
+    --chrome: #141517; --app: #1b1c1f; --ctl: #232428; --bd: #2a2c31; --bd-ctl: #2f3136; --bd-strong: #34363c;
+    --bd-input: #3a3d44; --tx: #e6e7ea; --tx2: #c9cbd1; --tx3: #9a9da5; --canvas: #2b2d31; --tab-on: #2a2c31;
+    --shadow: rgba(0, 0, 0, 0.45); --map: #e9e9e6; --hover: rgba(255, 255, 255, 0.06); --danger: #e5484d;
+    /* Proposed */
+    --press: #1e1f22; --press-soft: rgba(0, 0, 0, 0.22); --map-new: #e9e9e6;
+    color-scheme: dark;
+  }
+  .t-light {
+    --chrome: #ebebe8; --app: #f6f6f4; --ctl: #ffffff; --bd: #dcdcd7; --bd-ctl: #d6d6d0; --bd-strong: #cfcfc8;
+    --bd-input: #c4c4bd; --tx: #1d1e21; --tx2: #3d3f45; --tx3: #5f6269; --canvas: #d9d9d4; --tab-on: #e3e3de;
+    --shadow: rgba(0, 0, 0, 0.18); --map: #ffffff; --hover: rgba(0, 0, 0, 0.05); --danger: #c9353a;
+    --press: #d6d6d0; --press-soft: rgba(0, 0, 0, 0.1); --map-new: #e2e2dd;
+    color-scheme: light;
+  }
+  .t-dark, .t-light {
+    --font-ui: "Inter", system-ui, "Segoe UI", sans-serif;
+    --font-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    --scrim: rgba(0, 0, 0, 0.4); --shadow-pop: 0 12px 32px var(--shadow); --shadow-modal: 0 20px 48px var(--shadow);
+    --paper: #ffffff; --print-margin: #6f8bb0;
+    background: var(--app); color: var(--tx); font-family: var(--font-ui); font-size: 13px;
+    border: 1px solid #2a2c31; border-radius: 8px; padding: 16px; height: 100%;
+  }
+  .t-light { border-color: #3a3d44; }
+  .t-dark button, .t-light button, .t-dark input, .t-light input, .t-dark select, .t-light select { font: inherit; color: inherit; }
+  .t-dark button, .t-light button { cursor: default; }
+  .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .lab { color: var(--tx3); font-size: 11px; }
+  .stack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .cap { color: var(--tx3); font-size: 11px; margin-top: 8px; line-height: 1.4; }
+  svg { display: block; }
+
+  /* ---------------------------------------------------------------- BEFORE: current styles */
+  .b-btn { height: 32px; padding: 0 14px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px; white-space: nowrap; }
+  .b-btn:hover, .b-btn.h { background: var(--tab-on); }
+  .b-btn.primary { background: var(--accent); border-color: var(--accent-bd); color: #fff; font-weight: 600; padding: 0 18px; }
+  .b-btn.primary:hover, .b-btn.primary.h { background: var(--accent); filter: brightness(1.08); }
+  .b-btn.ghost { border-color: transparent; background: transparent; color: var(--tx2); }
+  .b-btn.ghost:hover, .b-btn.ghost.h { background: var(--hover); }
+  .b-btn:disabled { opacity: 0.45; filter: none; }
+  /* Print and manual layout's own buttons */
+  .b-pbtn { height: 34px; padding: 0 14px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px; white-space: nowrap; }
+  .b-pbtn:hover, .b-pbtn.h { filter: brightness(1.08); }
+  .b-pbtn.small { height: 30px; padding: 0 10px; border-color: var(--bd-input); }
+  .b-pbtn.plain { border-color: transparent; background: transparent; color: var(--tx2); }
+  .b-pbtn.plain:hover, .b-pbtn.plain.h { filter: none; }
+  .b-pbtn.primary { padding: 0 20px; border-color: var(--accent-bd); background: var(--accent); color: #fff; font-weight: 600; }
+  .b-field { height: 32px; padding: 0 8px; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px; color: var(--tx); }
+  .b-field:disabled { opacity: 1; }
+  .b-group { display: flex; align-items: center; gap: 2px; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px; }
+  .b-icon { width: 30px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .b-icon:hover:not(:disabled), .b-icon.h { background: var(--hover); color: var(--tx); }
+  .b-icon:disabled { opacity: 0.45; }
+  .b-icon.mode { width: 34px; }
+  .b-icon.mode.on { background: var(--tab-on); color: var(--tx); }
+  .b-pagebox { height: 24px; border: 1px solid var(--bd-input); background: var(--app); color: var(--tx); border-radius: 4px; text-align: center; padding: 0; width: 34px; font-family: var(--font-ui); }
+  .b-of { color: var(--tx3); padding: 0 6px 0 4px; white-space: nowrap; }
+  .b-zoom { width: 64px; height: 30px; padding: 0 4px; border: 1px solid transparent; background: transparent; color: var(--tx); border-radius: 6px; font-size: 12px; text-align: center; font-family: var(--font-num); }
+  .b-zoom:hover, .b-zoom.h { background: var(--hover); }
+  .b-zoom.f { border-color: var(--bd-input); background: var(--app); outline: none; }
+  .b-pseg { display: flex; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px; }
+  .b-pseg button { height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; padding: 0 12px; }
+  .b-pseg button:hover { background: var(--hover); }
+  .b-pseg button.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+  .b-stabs { display: flex; gap: 2px; }
+  .b-stabs button { height: 28px; padding: 0 12px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; font-size: 12px; }
+  .b-stabs button:hover { color: var(--tx2); }
+  .b-stabs button.on { background: var(--tab-on); color: var(--tx); }
+  .b-mtabs { display: flex; gap: 4px; }
+  .b-mtabs button { height: 28px; padding: 0 12px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+  .b-mtabs button.on { background: var(--tab-on); color: var(--tx); font-weight: 600; }
+  .b-mtabs .x { color: var(--tx3); font-weight: 400; }
+  .b-chip { height: 28px; padding: 0 12px; border: 1px solid var(--bd-input); background: var(--ctl); border-radius: 14px; font-family: var(--font-num); font-size: 12px; }
+  .b-chip.on { border-color: var(--accent); background: var(--accent-soft); }
+  .b-sec { height: 42px; padding: 0 14px; border: none; border-bottom: 1px solid var(--bd); background: transparent; color: var(--tx); display: flex; align-items: center; gap: 8px; width: 260px; text-align: left; }
+  .b-sec .name { font-weight: 600; }
+  .b-sec .sum { color: var(--tx3); margin-left: auto; }
+  .b-link { border: none; background: none; padding: 0; color: var(--accent-text); }
+  .b-tw { width: 18px; height: 18px; border: none; background: none; padding: 0; color: var(--tx3); display: flex; align-items: center; justify-content: center; }
+  .b-ttab { height: 32px; padding: 0 10px 0 14px; color: var(--tx3); border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 8px; background: transparent; }
+  .b-ttab:hover, .b-ttab.h { color: var(--tx2); }
+  .b-ttab.on { background: var(--app); border-color: var(--bd); color: var(--tx); }
+  .b-tclose { width: 20px; height: 20px; border: none; background: transparent; color: var(--tx3); border-radius: 4px; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .b-tclose:hover, .b-tclose.h { background: var(--hover); color: var(--tx); }
+  .b-dx { width: 32px; height: 32px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .b-dx:hover, .b-dx.h { background: var(--hover); color: var(--tx); }
+  .b-px { width: 32px; height: 32px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .b-px:hover, .b-px.h { background: var(--hover); }
+  .b-menu { width: 230px; padding: 6px; background: var(--ctl); border: 1px solid var(--bd-strong); border-radius: 8px; box-shadow: 0 12px 32px var(--shadow); display: flex; flex-direction: column; }
+  .b-menu .it { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 5px; color: var(--tx); }
+  .b-menu .it.on { background: var(--accent-soft); }
+  .b-menu .it.dis { opacity: 0.45; }
+  .b-menu .mk { width: 16px; display: flex; justify-content: center; }
+  .b-menu .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .b-menu .hint { margin-left: auto; color: var(--tx3); font-size: 12px; }
+  .b-menu .sep { height: 1px; background: var(--bd); margin: 5px 4px; }
+  .b-presets { width: 180px; padding: 6px; background: var(--ctl); border: 1px solid var(--bd-strong); border-radius: 8px; box-shadow: 0 12px 32px var(--shadow); display: flex; flex-direction: column; }
+  .b-presets .it { height: 28px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-radius: 5px; color: var(--tx); font-family: var(--font-num); font-size: 12px; }
+  .b-presets .it.cur { color: var(--accent-text); }
+  .b-presets .it .k { color: var(--tx3); font-family: var(--font-ui); }
+
+  /* ---------------------------------------------------------------- AFTER: proposed shared styles */
+  .n-btn { height: 32px; padding: 0 14px; border: 1px solid var(--bd-strong); background: var(--ctl); color: var(--tx); border-radius: 6px; white-space: nowrap; }
+  .n-btn:hover:not(:disabled), .n-btn.h { background: var(--tab-on); }
+  .n-btn:active:not(:disabled), .n-btn.a { background: var(--press); }
+  .n-btn.primary { background: var(--accent); border-color: var(--accent-bd); color: var(--accent-fg); font-weight: 600; padding: 0 18px; }
+  .n-btn.primary:hover:not(:disabled), .n-btn.primary.h { background: var(--accent); filter: brightness(1.08); }
+  .n-btn.primary:active:not(:disabled), .n-btn.primary.a { background: var(--accent); filter: brightness(0.9); }
+  .n-btn.ghost { border-color: transparent; background: transparent; color: var(--tx2); }
+  .n-btn.ghost:hover:not(:disabled), .n-btn.ghost.h { background: var(--hover); color: var(--tx); }
+  .n-btn.ghost:active:not(:disabled), .n-btn.ghost.a { background: var(--press-soft); }
+  .n-btn.small { height: 28px; padding: 0 10px; }
+  .n-btn:disabled { opacity: 0.45; }
+  .n-field { height: 32px; padding: 0 8px; background: var(--ctl); border: 1px solid var(--bd-input); border-radius: 6px; color: var(--tx); }
+  .n-field.sm { height: 28px; }
+  .n-field:focus-visible, .n-field.f { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .n-field:disabled { opacity: 0.45; }
+  .n-group { display: flex; align-items: center; gap: 2px; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px; }
+  .n-icon { width: 30px; height: 30px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .n-icon:hover:not(:disabled), .n-icon.h { background: var(--hover); color: var(--tx); }
+  .n-icon:active:not(:disabled), .n-icon.a { background: var(--press-soft); }
+  .n-icon:disabled { opacity: 0.45; }
+  .n-icon.mode { width: 34px; }
+  .n-pagebox { height: 28px; width: 38px; border: 1px solid var(--bd-input); background: var(--app); color: var(--tx); border-radius: 6px; text-align: center; padding: 0; font-family: var(--font-num); font-size: 12px; }
+  .n-zoom { width: 64px; height: 28px; border: 1px solid var(--bd-input); background: var(--app); color: var(--tx); border-radius: 6px; text-align: center; padding: 0; font-family: var(--font-num); font-size: 12px; }
+  .n-zoom.quiet { border-color: transparent; background: transparent; }
+  .n-zoom.quiet:hover, .n-zoom.quiet.h { background: var(--hover); }
+  .n-pagebox:focus-visible, .n-zoom:focus-visible, .n-pagebox.f, .n-zoom.f { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--bd-input); background: var(--app); }
+  .n-pagebox:disabled, .n-zoom:disabled { opacity: 0.45; }
+  .n-seg { display: flex; gap: 2px; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px; }
+  .n-seg button { height: 30px; min-width: 34px; border: none; background: transparent; color: var(--tx2); border-radius: 6px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .n-seg button.icon { padding: 0; }
+  .n-seg button:hover:not(.on), .n-seg button.h { background: var(--hover); color: var(--tx); }
+  .n-seg button:active, .n-seg button.a { background: var(--press-soft); }
+  .sel-t .n-seg button.on, .sel-t .on-style { background: var(--accent-soft); color: var(--accent-text); }
+  .sel-a .n-seg button.on, .sel-a .on-style { background: var(--accent-soft); color: var(--tx); }
+  .sel-b .n-seg button.on, .sel-b .on-style { background: var(--tab-on); color: var(--tx); box-shadow: inset 0 0 0 1px var(--bd-strong); }
+  .n-tabs { display: flex; gap: 2px; }
+  .n-tabs button { height: 28px; padding: 0 12px; border: none; background: transparent; color: var(--tx3); border-radius: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .n-tabs button:hover:not(.on), .n-tabs button.h { background: var(--hover); color: var(--tx2); }
+  .n-chip { height: 28px; padding: 0 12px; border: 1px solid var(--bd-input); background: var(--ctl); border-radius: 14px; font-family: var(--font-num); font-size: 12px; }
+  .n-chip:hover:not(.on), .n-chip.h { background: var(--tab-on); }
+  .n-chip:active, .n-chip.a { background: var(--press); }
+  .n-chip.on { border-color: var(--accent); background: var(--accent-soft); }
+  .n-sec { height: 42px; padding: 0 14px; border: none; border-bottom: 1px solid var(--bd); background: transparent; color: var(--tx); display: flex; align-items: center; gap: 8px; width: 260px; text-align: left; }
+  .n-sec:hover, .n-sec.h { background: var(--hover); }
+  .n-sec:active, .n-sec.a { background: var(--press-soft); }
+  .n-sec .name { font-weight: 600; }
+  .n-sec .sum { color: var(--tx3); margin-left: auto; }
+  .n-link { border: none; background: none; padding: 0; color: var(--accent-text); text-decoration: underline transparent; text-underline-offset: 2px; }
+  .n-link:hover, .n-link.h { text-decoration-color: currentColor; }
+  .n-tw { width: 18px; height: 18px; border: none; background: none; padding: 0; color: var(--tx3); display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+  .n-tw:hover, .n-tw.h { background: var(--hover); color: var(--tx); }
+  .n-ttab { height: 32px; padding: 0 6px 0 14px; color: var(--tx3); border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 8px; background: transparent; }
+  .n-ttab:hover:not(.on), .n-ttab.h { color: var(--tx2); background: var(--hover); }
+  .n-ttab.on { background: var(--app); border-color: var(--bd); color: var(--tx); }
+  .n-x { border: none; background: transparent; color: var(--tx3); display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
+  .n-x.lg { width: 32px; height: 32px; border-radius: 6px; }
+  .n-x.sm { width: 20px; height: 20px; border-radius: 4px; }
+  .n-x:hover, .n-x.h { background: var(--hover); color: var(--tx); }
+  .n-x:active, .n-x.a { background: var(--press-soft); }
+  .n-menu { width: 230px; padding: 6px; background: var(--ctl); border: 1px solid var(--bd-strong); border-radius: 8px; box-shadow: var(--shadow-pop); display: flex; flex-direction: column; }
+  .n-menu .it { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 5px; color: var(--tx); }
+  .n-menu .it.on { background: var(--accent-soft); }
+  .n-menu .it.dis { opacity: 0.45; }
+  .n-menu .mk { width: 16px; display: flex; justify-content: center; }
+  .n-menu .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .n-menu .hint { margin-left: auto; color: var(--tx3); font-size: 12px; }
+  .n-menu .sep { height: 1px; background: var(--bd); margin: 5px 4px; }
+  .n-menu .num { font-size: 12px; }
+
+  /* ---------------------------------------------------------------- shared scenery */
+  .win { border: 1px solid var(--bd-strong); border-radius: 6px; overflow: hidden; background: var(--canvas); position: relative; }
+  .win .tb { height: 22px; background: var(--chrome); border-bottom: 1px solid var(--bd); }
+  .win .mb { height: 18px; background: var(--app); border-bottom: 1px solid var(--bd); }
+  .win .stage { height: 190px; display: grid; place-items: center; }
+  .win .pg { width: 200px; height: 130px; background: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.35);
+    background-image: linear-gradient(#cfcfcf 1px, transparent 1px), linear-gradient(90deg, #cfcfcf 1px, transparent 1px); background-size: 24px 24px; }
+  .scrim { position: absolute; inset: 0; display: grid; place-items: center; }
+  .dlg { width: 210px; background: var(--app); border: 1px solid var(--bd-strong); border-radius: 10px; overflow: hidden; }
+  .dlg .h { height: 30px; background: var(--chrome); border-bottom: 1px solid var(--bd); display: flex; align-items: center; padding: 0 10px; font-weight: 600; font-size: 12px; }
+  .dlg .b { height: 46px; padding: 10px; color: var(--tx3); font-size: 11px; }
+  .dlg .f { height: 36px; background: var(--chrome); border-top: 1px solid var(--bd); }
+  .tbar { display: flex; gap: 10px; align-items: center; padding: 6px 10px; background: var(--app); border: 1px solid var(--bd); border-radius: 6px; flex-wrap: wrap; }
+  .tbar .div { width: 1px; height: 18px; background: var(--bd-strong); }
+  .sheet { position: relative; width: 150px; height: 106px; background: #fff; box-shadow: 0 4px 14px var(--shadow); }
+  .sheet .drw { position: absolute; inset: 14px; background-image: linear-gradient(#bdbdbd 1px, transparent 1px), linear-gradient(90deg, #bdbdbd 1px, transparent 1px); background-size: 16px 16px; opacity: .7; }
+  .sheet .marg { position: absolute; inset: 8px; }
+  .stagebox { background: var(--canvas); padding: 16px; border-radius: 6px; display: flex; gap: 18px; align-items: center; justify-content: center; }
+  .legend { display: flex; gap: 6px; align-items: center; color: var(--tx3); font-size: 11px; }
+  .legend i { width: 18px; border-top: 1.5px dashed; display: inline-block; }
+  .thumb { width: 40px; height: 54px; border: 1px solid var(--bd-input); border-radius: 2px; position: relative; }
+  .thumb::after { content: ""; position: absolute; inset: 6px; background-image: linear-gradient(#bdbdbd 1px, transparent 1px), linear-gradient(90deg, #bdbdbd 1px, transparent 1px); background-size: 8px 8px; opacity: .6; }
+  .strip { background: var(--app); border: 1px solid var(--bd); border-radius: 6px; padding: 8px 12px; display: flex; gap: 10px; align-items: flex-end; }
+  .strip .t { display: flex; flex-direction: column; gap: 4px; align-items: center; font-size: 11px; color: var(--tx3); }
+  .mapbox { width: 150px; height: 104px; background: var(--app); border: 1px solid var(--bd-strong); border-radius: 6px; padding: 6px; }
+  .mapbox .cv { width: 100%; height: 100%; border-radius: 2px; position: relative; display: grid; place-items: center; }
+  .mapbox .mp { width: 76px; height: 54px; position: relative; }
+  .mapbox .mp::after { content: ""; position: absolute; inset: 5px; background-image: linear-gradient(#c3c3c3 1px, transparent 1px), linear-gradient(90deg, #c3c3c3 1px, transparent 1px); background-size: 7px 7px; }
+  .mapbox .vp { position: absolute; left: 34%; top: 28%; width: 34%; height: 34%; border: 1.5px solid var(--accent); background: var(--accent-soft); }
+  .status { height: 28px; background: var(--chrome); border: 1px solid var(--bd); border-radius: 6px; display: flex; align-items: center; padding: 0 12px; gap: 14px; color: var(--tx3); font-size: 12px; width: 100%; max-width: 520px; }
+  .status .sc { border: none; background: transparent; color: var(--tx3); padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: var(--font-num); }
+  .status .slot { min-width: 64px; display: flex; }
+  .status .r { margin-left: auto; font-family: var(--font-num); }
+  .status .mark { outline: 1px dashed var(--accent); outline-offset: 2px; }
+  .canvasbox { position: relative; height: 130px; background: var(--canvas); border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; width: 100%; max-width: 420px; }
+  .canvasbox .vsb { position: absolute; right: 2px; top: 4px; bottom: 14px; width: 8px; }
+  .canvasbox .vsb i { position: absolute; left: 1px; right: 1px; top: 0; height: 40%; background: var(--bd-input); border-radius: 4px; }
+  .canvasbox .dbg { position: absolute; top: 6px; background: rgba(0,0,0,.72); color: #d6f5d6; font-family: var(--font-num); font-size: 10px; line-height: 1.5; padding: 5px 8px; border-radius: 4px; }
+  .navlab { font-size: 10px; letter-spacing: .04em; color: var(--tx3); }
+  .dot { position: absolute; right: 4px; top: 4px; width: 6px; height: 6px; border-radius: 3px; background: var(--accent); }
+  .rel { position: relative; }
+  .autotag { font-size: 10px; font-weight: 600; letter-spacing: .05em; color: var(--tx3); border: 1px solid var(--bd-strong); border-radius: 4px; padding: 1px 4px; }
+  .ring { box-shadow: inset 0 0 0 1px var(--bd-strong); }
+  .accrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .accrow .c { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .accrow .ratio { font-size: 11px; color: var(--tx3); font-family: var(--font-num); }
+  .accrow .ratio.bad { color: var(--danger); }
+  .tip { position: relative; }
+  .tip .bubble { position: absolute; top: 100%; left: 50%; transform: translate(-50%, 6px); white-space: nowrap; background: var(--ctl); border: 1px solid var(--bd-strong); color: var(--tx2); font-size: 11px; padding: 3px 7px; border-radius: 4px; box-shadow: var(--shadow-pop); z-index: 1; }
+  .spacer-b { height: 26px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>UI proposals, groups A to G</h1>
+<p class="intro">Before and after for every visual change proposed in <code>docs/ui-review.md</code>, each in Vellum's dark
+and light themes side by side. "Before" copies today's CSS. Where there's a real choice the options are stacked, with
+my recommendation marked. Hover and press work on the live controls; where a state is shown frozen, it's labelled.
+Groups H to K are wording and behaviour, so they aren't drawn here; G's two visible items are.</p>
+<p class="intro"><b>Updated 12 November 2026, evening.</b> The accent is now fixed at Deep teal (<code>#0d9488</code>),
+with <code>--accent-text</code> for teal text (<code>#2dd4bf</code> in dark, Deep teal in light); every panel here uses
+them, and "Before" shows the app as it is now. That settles the old A1 and A2 (text on accent fills, accent-coloured
+text) and removes the Accent menu from D2, so those are gone from this page; <code>docs/mockups/accent-and-icon.html</code>
+has that work.</p>
+<div class="toc">
+  <a href="#a">A. Layering and paper</a><a href="#b">B. Buttons and fields</a><a href="#c">C. States</a>
+  <a href="#d">D. Selected state</a><a href="#e">E. Close buttons</a><a href="#f">F. Details</a><a href="#g">G. Toolbar behaviour</a>
+</div>
+
+<!-- ======================================================================= A -->
+<h2 id="a">A. Layering and paper tokens</h2>
+
+<h3>A1. One backdrop and one shadow (item 22)</h3>
+<p class="why">Today the ordinary dialogs dim the window by 0.35 with a 20/48 shadow; the print dialog dims by 0.45 with a
+12/48 shadow. After: one <code>--scrim</code> (0.4) and one <code>--shadow-modal</code>; menus keep their lighter
+<code>--shadow-pop</code>.</p>
+<div class="demo">
+  <template data-name="Before"><div class="row" style="flex-wrap:nowrap">
+    <div class="stack" style="flex:1"><div class="win" style="width:100%"><div class="tb"></div><div class="mb"></div><div class="stage"><div class="pg"></div></div>
+      <div class="scrim" style="background:rgba(0,0,0,.35)"><div class="dlg" style="box-shadow:0 20px 48px var(--shadow)"><div class="h">Properties</div><div class="b">0.35, 20/48</div><div class="f"></div></div></div></div></div>
+    <div class="stack" style="flex:1"><div class="win" style="width:100%"><div class="tb"></div><div class="mb"></div><div class="stage"><div class="pg"></div></div>
+      <div class="scrim" style="background:rgba(0,0,0,.45)"><div class="dlg" style="box-shadow:0 12px 48px var(--shadow)"><div class="h">Print</div><div class="b">0.45, 12/48</div><div class="f"></div></div></div></div></div>
+  </div></template>
+  <template data-name="After"><div class="row" style="flex-wrap:nowrap">
+    <div class="stack" style="flex:1"><div class="win" style="width:100%"><div class="tb"></div><div class="mb"></div><div class="stage"><div class="pg"></div></div>
+      <div class="scrim" style="background:var(--scrim)"><div class="dlg" style="box-shadow:var(--shadow-modal)"><div class="h">Properties</div><div class="b">--scrim, --shadow-modal</div><div class="f"></div></div></div></div></div>
+    <div class="stack" style="flex:1"><div class="win" style="width:100%"><div class="tb"></div><div class="mb"></div><div class="stage"><div class="pg"></div></div>
+      <div class="scrim" style="background:var(--scrim)"><div class="dlg" style="box-shadow:var(--shadow-modal)"><div class="h">Print</div><div class="b">the same</div><div class="f"></div></div></div></div></div>
+  </div></template>
+</div>
+
+<h3>A2. Printable-area outline and paper colour (items 23, 24)</h3>
+<p class="why">The print preview's printable-area line is a third red (<code>#e05555</code>), unrelated to the
+danger red; manual layout thumbnails use off-white paper (<code>#fbfbf9</code>). <b>(a)</b> a neutral
+blue-grey dashed line; <b>(b)</b> the accent at half strength. <span class="rec">Recommend (a):</span> it's a guide,
+not a warning or a selection, and it doesn't change with the accent. Thumbnails become plain white in both.</p>
+<div class="demo">
+  <template data-name="Before"><div class="row">
+    <div class="stagebox"><div class="sheet"><div class="drw"></div><div class="marg" style="border:1.5px dashed #e05555"></div></div></div>
+    <div class="col"><div class="legend"><i style="border-color:#e05555"></i>Printable area</div>
+    <div class="strip"><div class="t"><div class="thumb" style="background:#fbfbf9"></div>p1</div><div class="t"><div class="thumb" style="background:#fbfbf9;border:2px solid var(--accent)"></div>p2</div></div></div>
+  </div></template>
+  <template data-name="(a) Neutral line" data-rec><div class="row">
+    <div class="stagebox"><div class="sheet"><div class="drw"></div><div class="marg" style="border:1.5px dashed var(--print-margin)"></div></div></div>
+    <div class="col"><div class="legend"><i style="border-color:var(--print-margin)"></i>Printable area</div>
+    <div class="strip"><div class="t"><div class="thumb" style="background:var(--paper)"></div>p1</div><div class="t"><div class="thumb" style="background:var(--paper);border:2px solid var(--accent)"></div>p2</div></div></div>
+  </div></template>
+  <template data-name="(b) Accent, half strength"><div class="row">
+    <div class="stagebox"><div class="sheet"><div class="drw"></div><div class="marg" style="border:1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent)"></div></div></div>
+    <div class="col"><div class="legend"><i style="border-color:color-mix(in srgb, var(--accent) 55%, transparent)"></i>Printable area</div>
+    <div class="strip"><div class="t"><div class="thumb" style="background:var(--paper)"></div>p1</div><div class="t"><div class="thumb" style="background:var(--paper);border:2px solid var(--accent)"></div>p2</div></div></div>
+  </div></template>
+</div>
+
+<!-- ======================================================================= B -->
+<h2 id="b">B. One button and field style</h2>
+
+<h3>B1. Dialog footers (items 12, 30)</h3>
+<p class="why">Print and Manual layout restyle buttons themselves: 34 px footers against 32, wider primary padding, a
+brightness filter on hover, and "plain" buttons that don't hover at all. Export's lone "Close" is plain where About,
+Properties and Shortcuts make it primary. After: the global buttons everywhere, so every footer matches.</p>
+<div class="demo">
+  <template data-name="Before"><div class="col">
+    <div class="row"><span class="lab" style="width:76px">Properties</span><button class="b-btn primary">Close</button></div>
+    <div class="row"><span class="lab" style="width:76px">Export, done</span><button class="b-btn">Close</button></div>
+    <div class="row"><span class="lab" style="width:76px">Print</span><button class="b-pbtn plain">Manual layout…</button><button class="b-pbtn">Cancel</button><button class="b-pbtn primary">Print</button></div>
+    <div class="row"><span class="lab" style="width:76px">Scale</span><button class="b-btn ghost">Clear scale</button><button class="b-btn">Cancel</button><button class="b-btn primary">Set scale</button></div>
+  </div></template>
+  <template data-name="After"><div class="col">
+    <div class="row"><span class="lab" style="width:76px">Properties</span><button class="n-btn primary">Close</button></div>
+    <div class="row"><span class="lab" style="width:76px">Export, done</span><button class="n-btn primary">Close</button></div>
+    <div class="row"><span class="lab" style="width:76px">Print</span><button class="n-btn ghost">Manual layout…</button><button class="n-btn">Cancel</button><button class="n-btn primary">Print</button></div>
+    <div class="row"><span class="lab" style="width:76px">Scale</span><button class="n-btn ghost">Clear scale</button><button class="n-btn">Cancel</button><button class="n-btn primary">Set scale</button></div>
+  </div></template>
+</div>
+
+<h3>B2. Field heights (items 19, 29)</h3>
+<p class="why">Fields come in 28, 30, 32 and 34 px across the Export, Print, Manual layout and preset editors, and the
+print fields don't use the shared style. After: two heights, 32 px in dialogs and 28 px for compact rows (the print
+side panel, the toolbar). One radius, 6 px.</p>
+<div class="demo">
+  <template data-name="Before"><div class="row" style="align-items:flex-end">
+    <div class="stack"><span class="lab">28</span><input class="b-field" style="height:28px;width:84px" value="1-3, 7"></div>
+    <div class="stack"><span class="lab">30</span><input class="b-field" style="height:30px;width:84px" value="10 mm"></div>
+    <div class="stack"><span class="lab">32</span><input class="b-field" style="width:84px" value="1:100"></div>
+    <div class="stack"><span class="lab">34</span><input class="b-field" style="height:34px;width:84px;border-radius:5px" value="A3 tiled"></div>
+    <div class="stack"><span class="lab">select 30</span><select class="b-field" style="height:30px"><option>A3</option></select></div>
+  </div></template>
+  <template data-name="After"><div class="row" style="align-items:flex-end">
+    <div class="stack"><span class="lab">compact 28</span><input class="n-field sm" style="width:84px" value="1-3, 7"></div>
+    <div class="stack"><span class="lab">compact 28</span><input class="n-field sm" style="width:84px" value="10 mm"></div>
+    <div class="stack"><span class="lab">dialog 32</span><input class="n-field" style="width:84px" value="1:100"></div>
+    <div class="stack"><span class="lab">dialog 32</span><input class="n-field" style="width:84px" value="A3 tiled"></div>
+    <div class="stack"><span class="lab">compact 28</span><select class="n-field sm"><option>A3</option></select></div>
+  </div></template>
+</div>
+
+<h3>B3. Page box and zoom box (items 11, 13)</h3>
+<p class="why">They sit side by side but differ: 24 px Inter with radius 4 against 30 px mono with radius 6, and the zoom
+box drops the accent focus ring. With no document, both look live next to dimmed buttons. <b>(a)</b> both are boxed
+fields, 28 px, mono, radius 6; <b>(b)</b> both are quiet (no border until hover or focus, as the zoom box is now).
+<span class="rec">Recommend (a):</span> it says "you can type here" without hovering. Both options dim when disabled and
+get the focus ring (shown frozen on the zoom box).</p>
+<div class="demo">
+  <template data-name="Before"><div class="col">
+    <div class="tbar"><div class="b-group"><button class="b-icon">${chevL}</button><input class="b-pagebox" value="3"><span class="b-of">of 12</span><button class="b-icon">${chevR}</button></div>
+      <div class="b-group"><button class="b-icon">${minus}</button><input class="b-zoom f" value="150%"><button class="b-icon">${plus}</button></div><span class="lab">zoom focused</span></div>
+    <div class="tbar"><div class="b-group"><button class="b-icon" disabled>${chevL}</button><input class="b-pagebox" value="" disabled><span class="b-of">of –</span><button class="b-icon" disabled>${chevR}</button></div>
+      <div class="b-group"><button class="b-icon" disabled>${minus}</button><input class="b-zoom" value="100%" disabled><button class="b-icon" disabled>${plus}</button></div><span class="lab">no document</span></div>
+  </div></template>
+  <template data-name="(a) Both boxed" data-rec><div class="col">
+    <div class="tbar"><div class="n-group"><button class="n-icon">${chevL}</button><input class="n-pagebox" value="3"><span class="b-of">of 12</span><button class="n-icon">${chevR}</button></div>
+      <div class="n-group"><button class="n-icon">${minus}</button><input class="n-zoom f" value="150%"><button class="n-icon">${plus}</button></div><span class="lab">zoom focused</span></div>
+    <div class="tbar"><div class="n-group"><button class="n-icon" disabled>${chevL}</button><input class="n-pagebox" value="" disabled><span class="b-of">of –</span><button class="n-icon" disabled>${chevR}</button></div>
+      <div class="n-group"><button class="n-icon" disabled>${minus}</button><input class="n-zoom" value="100%" disabled><button class="n-icon" disabled>${plus}</button></div><span class="lab">no document</span></div>
+  </div></template>
+  <template data-name="(b) Both quiet"><div class="col">
+    <div class="tbar"><div class="n-group"><button class="n-icon">${chevL}</button><input class="n-pagebox n-zoom quiet" style="width:38px" value="3"><span class="b-of">of 12</span><button class="n-icon">${chevR}</button></div>
+      <div class="n-group"><button class="n-icon">${minus}</button><input class="n-zoom quiet f" value="150%"><button class="n-icon">${plus}</button></div><span class="lab">zoom focused</span></div>
+    <div class="tbar"><div class="n-group"><button class="n-icon" disabled>${chevL}</button><input class="n-pagebox n-zoom quiet" style="width:38px" value="" disabled><span class="b-of">of –</span><button class="n-icon" disabled>${chevR}</button></div>
+      <div class="n-group"><button class="n-icon" disabled>${minus}</button><input class="n-zoom quiet" value="100%" disabled><button class="n-icon" disabled>${plus}</button></div><span class="lab">no document</span></div>
+  </div></template>
+</div>
+
+<!-- ======================================================================= C -->
+<h2 id="c">C. Hover, pressed and disabled states</h2>
+<p class="why">Nothing has a pressed state, and a dozen controls don't hover where their neighbours do (item 16). Each
+row shows the same control at rest, hovered and pressed, frozen. After: hover is <code>--hover</code> (or the button's
+own hover), pressed is one step darker (<code>--press</code>), disabled is 0.45 for buttons and fields alike.</p>
+<div class="demo">
+  <template data-name="Before"><div class="col" style="gap:8px">
+    <div class="row"><span class="lab" style="width:96px">Button</span><button class="b-btn">Rest</button><button class="b-btn h">Hover</button><button class="b-btn h">Pressed</button></div>
+    <div class="row"><span class="lab" style="width:96px">Primary</span><button class="b-btn primary">Rest</button><button class="b-btn primary h">Hover</button><button class="b-btn primary h">Pressed</button></div>
+    <div class="row"><span class="lab" style="width:96px">Print "plain"</span><button class="b-pbtn small plain">Rest</button><button class="b-pbtn small plain h">Hover</button><button class="b-pbtn small plain h">Pressed</button></div>
+    <div class="row"><span class="lab" style="width:96px">Scale chip</span><button class="b-chip">1:50</button><button class="b-chip">1:50</button><button class="b-chip">1:50</button></div>
+    <div class="row"><span class="lab" style="width:96px">Outline arrow</span><button class="b-tw">${tri}</button><button class="b-tw">${tri}</button><button class="b-tw">${tri}</button></div>
+    <div class="row"><span class="lab" style="width:96px">Inactive tab</span><button class="b-ttab">Site plan.pdf</button><button class="b-ttab h">Site plan.pdf</button></div>
+    <div class="row"><span class="lab" style="width:96px">Print section</span><div class="col" style="gap:0"><button class="b-sec">${tri}<span class="name">Layout</span><span class="sum">Fit page</span></button><button class="b-sec">${tri}<span class="name">Layout</span><span class="sum">hovered</span></button></div></div>
+    <div class="row"><span class="lab" style="width:96px">Disabled</span><button class="b-btn" disabled>Button</button><input class="b-field" value="1-3" disabled style="width:70px"><select class="b-field" disabled><option>A3</option></select></div>
+  </div></template>
+  <template data-name="After"><div class="col" style="gap:8px">
+    <div class="row"><span class="lab" style="width:96px">Button</span><button class="n-btn">Rest</button><button class="n-btn h">Hover</button><button class="n-btn a">Pressed</button></div>
+    <div class="row"><span class="lab" style="width:96px">Primary</span><button class="n-btn primary">Rest</button><button class="n-btn primary h">Hover</button><button class="n-btn primary a">Pressed</button></div>
+    <div class="row"><span class="lab" style="width:96px">Ghost</span><button class="n-btn small ghost">Rest</button><button class="n-btn small ghost h">Hover</button><button class="n-btn small ghost a">Pressed</button></div>
+    <div class="row"><span class="lab" style="width:96px">Scale chip</span><button class="n-chip">1:50</button><button class="n-chip h">1:50</button><button class="n-chip a">1:50</button></div>
+    <div class="row"><span class="lab" style="width:96px">Outline arrow</span><button class="n-tw">${tri}</button><button class="n-tw h">${tri}</button><button class="n-tw h" style="background:var(--press-soft)">${tri}</button></div>
+    <div class="row"><span class="lab" style="width:96px">Inactive tab</span><button class="n-ttab">Site plan.pdf</button><button class="n-ttab h">Site plan.pdf</button></div>
+    <div class="row"><span class="lab" style="width:96px">Print section</span><div class="col" style="gap:0"><button class="n-sec">${tri}<span class="name">Layout</span><span class="sum">Fit page</span></button><button class="n-sec h">${tri}<span class="name">Layout</span><span class="sum">hovered</span></button></div></div>
+    <div class="row"><span class="lab" style="width:96px">Disabled</span><button class="n-btn" disabled>Button</button><input class="n-field" value="1-3" disabled style="width:70px"><select class="n-field" disabled><option>A3</option></select></div>
+  </div></template>
+</div>
+
+<!-- ======================================================================= D -->
+<h2 id="d">D. One selected-state treatment</h2>
+<p class="why">Four looks for "this one is chosen": grey in the toolbar and sidebar, pale accent with bold accent text in
+print, grey and bold on manual sheet tabs, and nothing at all on the sidebar toggle (item 9). <b>(a)</b> pale accent
+background with teal text (<code>--accent-text</code>), normal weight; <b>(b)</b> pale accent background, normal text;
+<b>(c)</b> grey with a hairline. Bold goes in all three, since it shifts the label's width.
+<span class="rec">Recommend (a):</span> you're happy with teal text where it helps, and it marks the choice most clearly
+in both themes; icons in the toolbar segments turn teal the same way.</p>
+<div class="demo">
+  <template data-name="Before"><div class="col">
+    <div class="row"><span class="lab" style="width:86px">Toolbar</span><button class="b-icon"><span>${sidebar18}</span></button><span class="lab">sidebar open</span><div class="b-group"><button class="b-icon mode on">${single}</button><button class="b-icon mode">${cont}</button><button class="b-icon mode">${colsI}</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Sidebar</span><div class="b-stabs"><button class="on">Pages</button><button>Outline</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Print</span><div class="b-pseg"><button class="on">Fit page</button><button>Actual size</button><button>Custom</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Manual sheets</span><div class="b-mtabs"><button class="on">Sheet 1 <span class="x">×</span></button><button>Sheet 2 <span class="x">×</span></button></div></div>
+  </div></template>
+  <template data-name="(a) Pale accent, teal text" data-rec><div class="col sel-t">
+    <div class="row"><span class="lab" style="width:86px">Toolbar</span><button class="n-icon on-style" style="width:36px;height:36px">${sidebar16}</button><span class="lab">sidebar open</span><div class="n-seg"><button class="icon on">${single}</button><button class="icon">${cont}</button><button class="icon">${colsI}</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Sidebar</span><div class="n-seg"><button class="on" style="height:26px;font-size:12px">Pages</button><button style="height:26px;font-size:12px">Outline</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Print</span><div class="n-seg"><button class="on">Fit page</button><button>Actual size</button><button>Custom</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Manual sheets</span><div class="n-seg"><button class="on">Sheet 1 <span class="n-x sm" style="width:16px;height:16px">${x10}</span></button><button>Sheet 2 <span class="n-x sm" style="width:16px;height:16px">${x10}</span></button></div></div>
+  </div></template>
+  <template data-name="(b) Pale accent, normal text"><div class="col sel-a">
+    <div class="row"><span class="lab" style="width:86px">Toolbar</span><button class="n-icon on-style" style="width:36px;height:36px">${sidebar16}</button><span class="lab">sidebar open</span><div class="n-seg"><button class="icon on">${single}</button><button class="icon">${cont}</button><button class="icon">${colsI}</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Sidebar</span><div class="n-seg"><button class="on" style="height:26px;font-size:12px">Pages</button><button style="height:26px;font-size:12px">Outline</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Print</span><div class="n-seg"><button class="on">Fit page</button><button>Actual size</button><button>Custom</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Manual sheets</span><div class="n-seg"><button class="on">Sheet 1 <span class="n-x sm" style="width:16px;height:16px">${x10}</span></button><button>Sheet 2 <span class="n-x sm" style="width:16px;height:16px">${x10}</span></button></div></div>
+  </div></template>
+  <template data-name="(c) Grey"><div class="col sel-b">
+    <div class="row"><span class="lab" style="width:86px">Toolbar</span><button class="n-icon on-style" style="width:36px;height:36px">${sidebar16}</button><span class="lab">sidebar open</span><div class="n-seg"><button class="icon on">${single}</button><button class="icon">${cont}</button><button class="icon">${colsI}</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Sidebar</span><div class="n-seg"><button class="on" style="height:26px;font-size:12px">Pages</button><button style="height:26px;font-size:12px">Outline</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Print</span><div class="n-seg"><button class="on">Fit page</button><button>Actual size</button><button>Custom</button></div></div>
+    <div class="row"><span class="lab" style="width:86px">Manual sheets</span><div class="n-seg"><button class="on">Sheet 1 <span class="n-x sm" style="width:16px;height:16px">${x10}</span></button><button>Sheet 2 <span class="n-x sm" style="width:16px;height:16px">${x10}</span></button></div></div>
+  </div></template>
+</div>
+
+<h3>D2. Current zoom preset (item 28)</h3>
+<p class="why">The zoom preset list uses 28 px rows and teal text for the current one, where menus use 30 px rows and a
+tick. After: it's a menu like the others, with a tick on the current value; its teal text can stay.</p>
+<div class="demo">
+  <template data-name="Before"><div class="row" style="align-items:flex-start">
+    <div class="b-presets"><div class="it">50%</div><div class="it">100%</div><div class="it cur">150%</div><div class="it">200%</div><div class="b-menu" style="all:unset"><div class="sep" style="height:1px;background:var(--bd);margin:5px 4px"></div></div><div class="it" style="font-family:var(--font-ui)">Fit page <span class="k">Ctrl+0</span></div></div>
+  </div><div class="cap">The current zoom is 150%.</div></template>
+  <template data-name="After"><div class="row" style="align-items:flex-start">
+    <div class="n-menu" style="width:180px"><div class="it num"><span class="mk"></span>50%</div><div class="it num"><span class="mk"></span>100%</div><div class="it num" style="color:var(--accent-text)"><span class="mk">${tick}</span>150%</div><div class="it num"><span class="mk"></span>200%</div><div class="sep"></div><div class="it"><span class="mk"></span>Fit page <span class="hint">Ctrl+0</span></div></div>
+  </div><div class="cap">The highlighted row is the pointer, as in every menu; the tick is the current value.</div></template>
+</div>
+
+<!-- ======================================================================= E -->
+<h2 id="e">E. One close button (items 17, 43)</h2>
+<p class="why">Four close buttons today: the document tab's (20 px, no tooltip), the dialog X (32 px), the print X (32 px,
+the X doesn't brighten on hover) and the manual sheet tab's plain-text "×" with no hover at all. After: one component
+in two sizes, the same hover and press, and a tooltip that matches its accessible name. Each row: rest, then hover.</p>
+<div class="demo">
+  <template data-name="Before"><div class="col" style="gap:8px">
+    <div class="row"><span class="lab" style="width:96px">Document tab</span><div class="b-ttab on" style="border-bottom:1px solid var(--bd);border-radius:6px">Site plan.pdf <button class="b-tclose">${x10}</button></div><button class="b-tclose h">${x10}</button><span class="lab">no tooltip</span></div>
+    <div class="row"><span class="lab" style="width:96px">Dialog</span><button class="b-dx">${x12}</button><button class="b-dx h">${x12}</button></div>
+    <div class="row"><span class="lab" style="width:96px">Print</span><button class="b-px">${x12}</button><button class="b-px h">${x12}</button><span class="lab">X stays dim</span></div>
+    <div class="row"><span class="lab" style="width:96px">Manual sheet</span><div class="b-mtabs"><button class="on">Sheet 1 <span class="x">×</span></button></div><span class="lab">text, no hover</span></div>
+  </div></template>
+  <template data-name="After"><div class="col" style="gap:8px">
+    <div class="row"><span class="lab" style="width:96px">Document tab</span><div class="n-ttab on" style="border-bottom:1px solid var(--bd);border-radius:6px">Site plan.pdf <button class="n-x sm" title="Close tab">${x10}</button></div><span class="tip"><button class="n-x sm h">${x10}</button><span class="bubble">Close tab</span></span></div>
+    <div class="row"><span class="lab" style="width:96px">Dialog</span><button class="n-x lg" title="Close">${x12}</button><button class="n-x lg h">${x12}</button></div>
+    <div class="row"><span class="lab" style="width:96px">Print</span><button class="n-x lg" title="Close">${x12}</button><button class="n-x lg h">${x12}</button></div>
+    <div class="row"><span class="lab" style="width:96px">Manual sheet</span><div class="n-tabs"><button class="on" style="background:var(--accent-soft);color:var(--tx)">Sheet 1 <span class="n-x sm">${x10}</span></button></div><span class="n-x sm h">${x10}</span></div>
+    <div class="spacer-b"></div>
+  </div></template>
+</div>
+
+<!-- ======================================================================= F -->
+<h2 id="f">F. Toolbar, canvas and cursor details</h2>
+
+<h3>F1. Toolbar sizes and icons (item 20)</h3>
+<p class="why">The sidebar toggle is 34 px next to 36 px groups, and the icons mix 18 px at a 1.4 stroke with 14 px at
+1.5. After: the toggle is 36 px, and every toolbar icon is 16 px at a 1.5 stroke.</p>
+<div class="demo">
+  <template data-name="Before"><div class="tbar" style="align-items:flex-start">
+    <button class="b-icon" style="width:34px;height:34px;outline:1px dashed var(--tx3);outline-offset:0">${sidebar18}</button>
+    <div class="b-group" style="outline:1px dashed var(--tx3);outline-offset:0"><button class="b-icon">${chevL}</button><input class="b-pagebox" value="3"><span class="b-of">of 12</span><button class="b-icon">${chevR}</button></div>
+    <div class="b-group"><button class="b-icon mode on">${single}</button><button class="b-icon mode">${cont}</button><button class="b-icon mode">${colsI}</button></div>
+  </div><div class="cap">Dashed outlines show the 34 px toggle against the 36 px group.</div></template>
+  <template data-name="After"><div class="tbar sel-a" style="align-items:flex-start">
+    <button class="n-icon on-style" style="width:36px;height:36px;outline:1px dashed var(--tx3);outline-offset:0">${sidebar16}</button>
+    <div class="n-group" style="outline:1px dashed var(--tx3);outline-offset:0"><button class="n-icon">${chevL16}</button><input class="n-pagebox" value="3"><span class="b-of">of 12</span><button class="n-icon">${chevR16}</button></div>
+    <div class="n-seg"><button class="icon on">${single}</button><button class="icon">${cont}</button><button class="icon">${colsI}</button></div>
+  </div><div class="cap">Same tops and bottoms; one icon size and weight.</div></template>
+</div>
+
+<h3>F2. Mini map in the light theme (item 21)</h3>
+<p class="why">In light, the mini map's background and the page are both white, so the page's edge disappears (dark is
+fine: a pale grey map behind white pages). <b>(a)</b> keep the map white, outline each page; <b>(b)</b> give the light map
+a pale grey background like dark's, so the page reads the same way in both. <span class="rec">Recommend (b):</span> it
+copies the relationship that already works, with no extra line. Dark doesn't change in either.</p>
+<div class="demo">
+  <template data-name="Before"><div class="row"><div class="mapbox"><div class="cv" style="background:var(--map)"><div class="mp" style="background:#fff"></div><div class="vp"></div></div></div></div></template>
+  <template data-name="(a) Outline the page"><div class="row"><div class="mapbox"><div class="cv" style="background:var(--map)"><div class="mp" style="background:#fff;box-shadow:0 0 0 1px var(--bd-strong)"></div><div class="vp"></div></div></div></div></template>
+  <template data-name="(b) Grey map" data-rec><div class="row"><div class="mapbox"><div class="cv" style="background:var(--map-new)"><div class="mp" style="background:#fff"></div><div class="vp"></div></div></div></div></template>
+</div>
+
+<h3>F3. Cursors (item 25)</h3>
+<p class="why">Hover these. The manual strip thumbnails show a grab hand at rest, against the house rule of an arrow on
+controls; and while Space is held for panning, the open hand leaks onto the mini map and scrollbars. After: an arrow
+at rest, the grabbing hand only while dragging; the map and scrollbars set their own cursor.</p>
+<div class="demo">
+  <template data-name="Before"><div class="row">
+    <div class="strip"><div class="t" style="cursor:grab"><div class="thumb" style="background:#fbfbf9"></div>p1</div><div class="t" style="cursor:grab"><div class="thumb" style="background:#fbfbf9"></div>p2</div></div>
+    <div class="mapbox" style="cursor:grab"><div class="cv" style="background:var(--map)"><div class="mp" style="background:#fff"></div><div class="vp"></div></div></div><span class="lab">map with Space held</span>
+  </div></template>
+  <template data-name="After"><div class="row">
+    <div class="strip"><div class="t" style="cursor:default"><div class="thumb" style="background:#fff"></div>p1</div><div class="t" style="cursor:default"><div class="thumb" style="background:#fff"></div>p2</div></div>
+    <div class="mapbox" style="cursor:default"><div class="cv" style="background:var(--map-new)"><div class="mp" style="background:#fff"></div><div class="vp" style="cursor:move"></div></div></div><span class="lab">map with Space held</span>
+  </div></template>
+</div>
+
+<h3>F4. Debug overlay and scrollbar (item 26)</h3>
+<p class="why">The debug overlay sits over the top of the vertical canvas scrollbar. After: it moves in by the
+scrollbar's width.</p>
+<div class="demo">
+  <template data-name="Before"><div class="canvasbox"><div class="vsb"><i></i></div><div class="dbg" style="right:4px">fps 60<br>tiles 42<br>cache 118 MB</div></div></template>
+  <template data-name="After"><div class="canvasbox"><div class="vsb"><i></i></div><div class="dbg" style="right:16px">fps 60<br>tiles 42<br>cache 118 MB</div></div></template>
+</div>
+
+<h3>F5. Status-bar hint position (item 27)</h3>
+<p class="why">The scale button appears and changes width with the document, pushing the hint sideways. After: the
+button keeps a fixed slot, so the hint stays put. Dashed outline marks the hint. (Item 27 was runtime, not checked;
+this is how it would look if it does shift.)</p>
+<div class="demo">
+  <template data-name="Before"><div class="col">
+    <div class="status"><span class="mark">Scroll zoom · Middle-drag pan</span><span class="r">x 120.4 y 88.0</span></div>
+    <div class="status"><button class="sc">1:100</button><span class="mark">Scroll zoom · Middle-drag pan</span><span class="r">x 120.4 y 88.0</span></div>
+    <div class="status"><button class="sc">1:1250 (A1)</button><span class="mark">Scroll zoom · Middle-drag pan</span><span class="r">x 120.4 y 88.0</span></div>
+  </div></template>
+  <template data-name="After"><div class="col">
+    <div class="status"><span class="slot" style="min-width:96px"></span><span class="mark">Scroll zoom · Middle-drag pan</span><span class="r">x 120.4 y 88.0</span></div>
+    <div class="status"><span class="slot" style="min-width:96px"><button class="sc">1:100</button></span><span class="mark">Scroll zoom · Middle-drag pan</span><span class="r">x 120.4 y 88.0</span></div>
+    <div class="status"><span class="slot" style="min-width:96px"><button class="sc">1:1250 (A1)</button></span><span class="mark">Scroll zoom · Middle-drag pan</span><span class="r">x 120.4 y 88.0</span></div>
+  </div><div class="cap">Hint wording is group K's job; unchanged here.</div></template>
+</div>
+
+<h3>F6. Fit page and Fit width (item 63)</h3>
+<p class="why">They're the only text buttons on a toolbar of icons, and both are also in the zoom box's dropdown.
+<b>(a)</b> icons with tooltips, like everything else on the toolbar: a page inside corner brackets for fit page, a page
+between two arrows for fit width. <b>(b)</b> keep the words, as now. <b>(c)</b> drop both buttons: they stay in the
+zoom dropdown, and as Ctrl+0 and the new Ctrl+2. <span class="rec">Recommend (a):</span> it matches the rest of the
+toolbar and saves about 110 px; they're used often enough to keep one click away. Hover for the tooltips.</p>
+<div class="demo">
+  <template data-name="Before"><div class="tbar">
+    <div class="b-group"><button class="b-icon">${minus}</button><input class="b-zoom" value="150%"><button class="b-icon">${plus}</button></div>
+    <span class="div"></span>
+    <button class="n-btn ghost small" title="Fit page (Ctrl+0)">Fit page</button><button class="n-btn ghost small" title="Fit width">Fit width</button>
+  </div></template>
+  <template data-name="(a) Icons" data-rec><div class="tbar">
+    <div class="n-group"><button class="n-icon">${minus}</button><input class="n-pagebox" style="width:56px" value="150%"><button class="n-icon">${plus}</button></div>
+    <div class="n-group"><button class="n-icon" title="Fit page (Ctrl+0)">${fitPage}</button><button class="n-icon" title="Fit width (Ctrl+2)">${fitWidth}</button></div>
+  </div></template>
+  <template data-name="(b) Words, as now"><div class="tbar">
+    <div class="n-group"><button class="n-icon">${minus}</button><input class="n-pagebox" style="width:56px" value="150%"><button class="n-icon">${plus}</button></div>
+    <span class="div"></span>
+    <button class="n-btn ghost small" title="Fit page (Ctrl+0)">Fit page</button><button class="n-btn ghost small" title="Fit width (Ctrl+2)">Fit width</button>
+  </div></template>
+  <template data-name="(c) Dropdown only"><div class="tbar">
+    <div class="n-group"><button class="n-icon">${minus}</button><input class="n-pagebox" style="width:56px" value="150%"><button class="n-icon">${plus}</button></div>
+    <span class="lab">Fit page and Fit width in the zoom box's list</span>
+  </div></template>
+</div>
+
+<!-- ======================================================================= G -->
+<h2 id="g">G. Toolbar behaviour you can see</h2>
+
+<h3>G1. Automatic navigation on the toolbar (item 34)</h3>
+<p class="why">With automatic navigation on, the toolbar shows CAD (or Document) pressed exactly as if you'd chosen it,
+and clicking the pressed one silently turns automatic off. <b>(a)</b> a small accent dot on the pressed button means
+"picked for you"; going back to automatic still needs the menu. <b>(b)</b> a third "Auto" segment: pressed when
+automatic, with the resolved mode shown in a hairline; one click from anywhere back to automatic.
+<span class="rec">Recommend (b):</span> it shows the state and gives the way back in the same place, so the "View menu
+to change" tooltip goes. Costs one more button (about 34 px).</p>
+<div class="demo">
+  <template data-name="Before"><div class="row"><div class="b-group"><button class="b-icon mode on" title="CAD navigation (Picked from the page size; View menu to change)">${cad}</button><button class="b-icon mode" title="Document navigation">${doc}</button></div><span class="lab">automatic, resolved to CAD: looks the same as choosing CAD</span></div></template>
+  <template data-name="(a) Dot marker"><div class="row sel-a"><div class="n-seg"><button class="icon on rel" title="CAD navigation (picked automatically from the page size)">${cad}<span class="dot"></span></button><button class="icon" title="Document navigation">${doc}</button></div><span class="lab">automatic</span>
+    <div class="n-seg"><button class="icon on" title="CAD navigation">${cad}</button><button class="icon" title="Document navigation">${doc}</button></div><span class="lab">fixed to CAD</span></div></template>
+  <template data-name="(b) Auto segment" data-rec><div class="row sel-a"><div class="n-seg"><button class="on" title="Automatic navigation (from page size): CAD for this file">Auto</button><button class="icon ring" title="CAD navigation">${cad}</button><button class="icon" title="Document navigation">${doc}</button></div><span class="lab">automatic, resolved to CAD</span>
+    <div class="n-seg"><button>Auto</button><button class="icon on" title="CAD navigation">${cad}</button><button class="icon" title="Document navigation">${doc}</button></div><span class="lab">fixed to CAD</span></div></template>
+</div>
+
+<h3>G2. Layout order and the no-document state (item 35)</h3>
+<p class="why">The View menu lists Continuous, Single page, Columns; the toolbar shows Single, Continuous, Columns. With no
+document the menu items stay enabled while the toolbar dims them. After: Single page, Continuous, Columns in both, and
+both disabled without a document. Shown with no document open.</p>
+<div class="demo">
+  <template data-name="Before"><div class="row" style="align-items:flex-start">
+    <div class="b-menu"><div class="it"><span class="mk">${dotI}</span>Continuous</div><div class="it"><span class="mk"></span>Single page</div><div class="it"><span class="mk"></span>Columns</div><div class="it"><span class="mk"></span>Columns across<span class="hint">›</span></div></div>
+    <div class="b-group"><button class="b-icon mode" disabled>${single}</button><button class="b-icon mode" disabled>${cont}</button><button class="b-icon mode" disabled>${colsI}</button></div>
+  </div></template>
+  <template data-name="After"><div class="row sel-a" style="align-items:flex-start">
+    <div class="n-menu"><div class="it dis"><span class="mk"></span>Single page</div><div class="it dis"><span class="mk">${dotI}</span>Continuous</div><div class="it dis"><span class="mk"></span>Columns</div><div class="it dis"><span class="mk"></span>Columns across<span class="hint">›</span></div></div>
+    <div class="n-seg"><button class="icon" disabled style="opacity:.45">${single}</button><button class="icon" disabled style="opacity:.45">${cont}</button><button class="icon" disabled style="opacity:.45">${colsI}</button></div>
+  </div></template>
+</div>
+
+<p class="why" style="margin-top:40px">Not drawn: H (names), I (error messages), J (page ranges) and K (help and README)
+are wording and behaviour, written up in <code>docs/ui-review.md</code>.</p>
+</div>
+
+<script>
+  // Icons, substituted into the templates as ${name}.
+  const s = (w, d, sw = 1.5, extra = "") => `<svg width="${w}" height="${w}" viewBox="0 0 ${w} ${w}" aria-hidden="true"${extra}>${d.replaceAll("SW", sw)}</svg>`;
+  const P = (d) => `<path d="${d}" fill="none" stroke="currentColor" stroke-width="SW" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const ICONS = {
+    chevL: s(14, P("M8.5 3L4.5 7l4 4")), chevR: s(14, P("M5.5 3l4 4-4 4")),
+    chevL16: s(16, P("M9.5 3.5L5 8l4.5 4.5")), chevR16: s(16, P("M6.5 3.5L11 8l-4.5 4.5")),
+    minus: s(14, P("M3 7h8")), plus: s(14, P("M3 7h8M7 3v8")),
+    tri: s(12, P("M4 2.5L7.5 6 4 9.5")),
+    x10: s(10, P("M2 2l6 6M8 2L2 8")), x12: s(12, P("M2 2l8 8M10 2L2 10")),
+    tick: s(12, P("M2.5 6.2l2.3 2.3 4.7-5")),
+    dotI: `<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3" fill="currentColor"/></svg>`,
+    sidebar18: s(18, `<rect x="2" y="3" width="14" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M7 3v12" stroke="currentColor" stroke-width="1.4"/>`),
+    sidebar16: s(16, `<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.25 2.75v10.5" stroke="currentColor" stroke-width="1.5"/>`),
+    single: s(16, `<rect x="4" y="2" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    cont: s(16, `<rect x="4.5" y="1.5" width="7" height="5.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4.5" y="9" width="7" height="5.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    colsI: s(16, `<rect x="1.5" y="3" width="5.5" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="3" width="5.5" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    cad: s(16, P("M8 1.5v4M8 10.5v4M1.5 8h4M10.5 8h4") + `<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    doc: s(16, P("M4 1.75h5.5l2.5 2.5v10H4z M6 7h4M6 9.5h4M6 12h2.5")),
+    fitPage: s(16, P("M1.75 5V1.75H5M11 1.75h3.25V5M14.25 11v3.25H11M5 14.25H1.75V11") + `<rect x="5" y="4.5" width="6" height="7" rx="0.75" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    fitWidth: s(16, P("M1.75 3v10M14.25 3v10M4.5 8h7M6.5 6l-2 2 2 2M9.5 6l2 2-2 2")),
+  };
+
+  // The fixed accent (app.css): Deep teal, its soft and border shades, white text on fills, and the
+  // per-theme text shade.
+  function applyAccent(cell) {
+    const dark = cell.classList.contains("t-dark");
+    cell.style.setProperty("--accent", "#0d9488");
+    cell.style.setProperty("--accent-soft", "#0d94882e");
+    cell.style.setProperty("--accent-bd", "#0a6f66");
+    cell.style.setProperty("--accent-fg", "#ffffff");
+    cell.style.setProperty("--accent-text", dark ? "#2dd4bf" : "#0d9488");
+  }
+
+  // Each .demo: one row per template (Before, After, options), dark and light side by side.
+  document.querySelectorAll(".demo").forEach((demo) => {
+    const heads = document.createElement("div");
+    heads.className = "heads";
+    heads.innerHTML = "<span></span><span>Dark</span><span>Light</span>";
+    demo.before(heads);
+    for (const t of demo.querySelectorAll("template")) {
+      const html = t.innerHTML.replace(/\$\{(\w+)\}/g, (_, k) => ICONS[k] ?? "");
+      const v = document.createElement("div");
+      v.className = "variant";
+      const rec = t.hasAttribute("data-rec") ? '<small class="rec">Recommended</small>' : "";
+      v.innerHTML = `<div class="name">${t.dataset.name}${rec}</div><div class="cell t-dark">${html}</div><div class="cell t-light">${html}</div>`;
+      demo.append(v);
+    }
+  });
+  document.querySelectorAll(".t-dark, .t-light").forEach(applyAccent);
+</script>
+</body>
+</html>

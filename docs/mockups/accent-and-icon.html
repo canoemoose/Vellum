@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accent and Icon</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0e0f11; color: #e6e7ea; font: 13px "Inter", system-ui, "Segoe UI", sans-serif; padding: 24px 16px 64px; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 44px 0 4px; padding-top: 14px; border-top: 1px solid #2a2c31; }
+  .intro, .why { color: #9a9da5; max-width: 920px; line-height: 1.55; margin: 0 0 12px; }
+  .why b, .intro b { color: #c9cbd1; font-weight: 600; }
+  code { color: #c9cbd1; }
+  .heads, .variant { display: grid; grid-template-columns: 150px 1fr 1fr; gap: 10px; }
+  .heads { color: #9a9da5; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 4px; }
+  .variant { margin: 0 0 10px; }
+  .variant > .name { font-weight: 600; color: #c9cbd1; padding-top: 4px; line-height: 1.45; }
+  .variant > .name small { display: block; font-weight: 400; color: #9a9da5; font-family: "JetBrains Mono", Consolas, monospace; font-size: 11px; }
+  @media (max-width: 900px) { .heads { display: none; } .variant { grid-template-columns: 1fr; } }
+  .cell { min-width: 0; overflow-x: auto; }
+
+  /* Vellum's tokens (src/app.css) */
+  .t-dark { --chrome:#141517; --app:#1b1c1f; --ctl:#232428; --bd:#2a2c31; --bd-ctl:#2f3136; --bd-strong:#34363c; --bd-input:#3a3d44;
+    --tx:#e6e7ea; --tx2:#c9cbd1; --tx3:#9a9da5; --canvas:#2b2d31; --tab-on:#2a2c31; --shadow:rgba(0,0,0,.45); --map:#e9e9e6; --hover:rgba(255,255,255,.06); --danger:#e5484d; }
+  .t-light { --chrome:#ebebe8; --app:#f6f6f4; --ctl:#fff; --bd:#dcdcd7; --bd-ctl:#d6d6d0; --bd-strong:#cfcfc8; --bd-input:#c4c4bd;
+    --tx:#1d1e21; --tx2:#3d3f45; --tx3:#5f6269; --canvas:#d9d9d4; --tab-on:#e3e3de; --shadow:rgba(0,0,0,.18); --map:#fff; --hover:rgba(0,0,0,.05); --danger:#c9353a; }
+  .t-dark, .t-light { background: var(--app); color: var(--tx); border: 1px solid #2a2c31; border-radius: 8px; overflow: hidden; height: 100%; }
+  .t-light { border-color: #3a3d44; }
+  .num { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; }
+
+  /* A slice of the app */
+  .tb { height: 34px; background: var(--chrome); border-bottom: 1px solid var(--bd); display: flex; align-items: flex-end; gap: 10px; padding: 0 10px; }
+  .brand { height: 33px; display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 12px; }
+  .ttab { height: 27px; padding: 0 12px; background: var(--app); border: 1px solid var(--bd); border-bottom: none; border-radius: 6px 6px 0 0; display: flex; align-items: center; font-size: 12px; margin-bottom: -1px; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--bd); flex-wrap: wrap; }
+  .grp { display: flex; gap: 2px; padding: 2px; background: var(--ctl); border: 1px solid var(--bd-ctl); border-radius: 8px; }
+  .grp span { height: 26px; min-width: 30px; padding: 0 9px; display: grid; place-items: center; border-radius: 6px; color: var(--tx2); font-size: 12px; }
+  .grp span.on { background: var(--acc-soft); color: var(--tx); }
+  .field { height: 28px; width: 64px; border: 1px solid var(--bd-input); background: var(--app); border-radius: 6px; display: grid; place-items: center; outline: 2px solid var(--acc); outline-offset: 1px; }
+  .btn { height: 30px; padding: 0 14px; border-radius: 6px; font-weight: 600; display: grid; place-items: center; background: var(--acc); border: 1px solid var(--acc-bd); white-space: nowrap; }
+  .lnk { color: var(--acc); }
+  .main { display: flex; gap: 0; height: 168px; }
+  .side { width: 92px; background: var(--app); border-right: 1px solid var(--bd); display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 10px; }
+  .th { width: 56px; height: 40px; background: #fff; border-radius: 2px; }
+  .th.on { outline: 2px solid var(--acc); outline-offset: 2px; }
+  .th.vis { outline: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); outline-offset: 2px; }
+  .stage { flex: 1; background: var(--canvas); position: relative; display: grid; place-items: center; min-width: 0; }
+  .pg { width: 220px; height: 136px; background: #fff; position: relative; box-shadow: 0 3px 10px rgba(0,0,0,.3);
+    background-image: linear-gradient(#d0d0d0 1px, transparent 1px), linear-gradient(90deg, #d0d0d0 1px, transparent 1px); background-size: 20px 20px; }
+  .sel { position: absolute; left: 30px; top: 26px; width: 74px; height: 50px; border: 2px dashed var(--acc); background: var(--acc-soft); }
+  .redline { position: absolute; left: 122px; top: 62px; width: 70px; height: 46px; border: 2px solid #e5484d; border-radius: 22px; }
+  .redlab { position: absolute; left: 124px; top: 110px; font-size: 9px; color: #e5484d; font-weight: 600; }
+  .map { position: absolute; right: 8px; bottom: 8px; width: 74px; height: 52px; background: var(--app); border: 1px solid var(--bd-strong); border-radius: 5px; padding: 4px; }
+  .map div { width: 100%; height: 100%; background: var(--map); border-radius: 2px; position: relative; }
+  .map i { position: absolute; left: 30%; top: 25%; width: 38%; height: 40%; border: 1.5px solid var(--acc); }
+  .nums { padding: 6px 10px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--tx3); border-top: 1px solid var(--bd); }
+  .nums b { font-weight: 600; font-family: "JetBrains Mono", Consolas, monospace; }
+  .bad { color: var(--danger); }
+
+  /* Icons */
+  .picker { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; color: #9a9da5; }
+  .picker button { height: 28px; padding: 0 10px 0 6px; border-radius: 6px; border: 1px solid #34363c; background: #232428; color: #e6e7ea; display: flex; gap: 6px; align-items: center; font: inherit; cursor: default; }
+  .picker button[aria-pressed="true"] { border-color: #e6e7ea; }
+  .picker i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  .iconrow { display: grid; grid-template-columns: 150px 180px 1fr; gap: 16px; align-items: center; margin: 0 0 18px; padding: 0 0 18px; border-bottom: 1px solid #1f2024; }
+  @media (max-width: 900px) { .iconrow { grid-template-columns: 1fr; } }
+  .iconrow .name { font-weight: 600; color: #c9cbd1; line-height: 1.45; }
+  .iconrow .name small { display: block; color: #9a9da5; font-weight: 400; margin-top: 4px; }
+  .big { width: 160px; height: 160px; }
+  .trays { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .tray { display: flex; gap: 18px; align-items: flex-end; padding: 12px 16px; border-radius: 8px; overflow-x: auto; }
+  .tray.dk { background: #202020; color: #c9c9c9; }
+  .tray.lt { background: #f3f3f3; color: #333; border: 1px solid #3a3d44; }
+  .tray figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 10px; }
+  .tray .bar16 { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+  .tray.dk .bar16 { background: #2b2b2b; } .tray.lt .bar16 { background: #fff; border: 1px solid #ddd; }
+  .all { display: flex; gap: 14px; flex-wrap: wrap; }
+  .txt { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .txt p { margin: 0; color: var(--tx2); line-height: 1.5; }
+  .txt .k { color: var(--tx3); font-size: 11px; display: block; margin-bottom: 2px; }
+  .txt a { cursor: default; }
+  .txt a.shade { color: var(--acc-text); text-decoration: none; }
+  .txt a.shade:hover { text-decoration: underline; }
+  .txt a.plain { color: var(--tx); text-decoration: underline; text-decoration-color: var(--tx3); text-underline-offset: 2px; }
+  .txt a.plain:hover { text-decoration-color: currentColor; }
+  .txt .row2 { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .txt .menu { width: 150px; padding: 6px; background: var(--ctl); border: 1px solid var(--bd-strong); border-radius: 8px; box-shadow: 0 12px 32px var(--shadow); }
+  .txt .menu div { height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 5px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; }
+  .txt .menu span { width: 14px; display: flex; justify-content: center; color: var(--tx); }
+  .txt .footer { display: flex; gap: 8px; }
+  .txt .btn2 { height: 30px; padding: 0 14px; border-radius: 6px; display: grid; place-items: center; background: var(--ctl); border: 1px solid var(--bd-strong); }
+  .all figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #9a9da5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Accent and icon</h1>
+<p class="intro">One fixed accent, teal or cyan, and an icon that uses it. <b>Part 1</b> shows each candidate across the
+parts of the app the accent touches: logo, selected segment, focus ring, primary button, link text, page selection,
+thumbnail outlines and the mini map's view box. Each also sits beside a red markup, since drawings often carry red
+redlines. The numbers underneath are contrast ratios. <b>Part 2</b> shows eleven icon ideas at Windows sizes, in
+Deep teal.</p>
+
+<h2>Part 1. Which teal or cyan</h2>
+<p class="why">Text contrast is APCA (the WCAG 3 draft), shown as Lc: higher is easier to read, and about Lc 60 is
+the floor for short UI text like a button label. WCAG 2's older ratio, which this page used first, overrates dark text
+on mid-tone colours like these and was pointing the wrong way. Outlines, rings and the logo still use WCAG 2's 3:1 for
+non-text, since APCA has no settled rule for them yet. <b>Each primary button shows both text colours</b> so you can
+judge by eye. The last row, <b>Split</b>, uses one hue in two shades: bright in dark, deep in light.</p>
+<div class="heads"><span></span><span>Dark</span><span>Light</span></div>
+<div id="cands"></div>
+
+<h2>Part 1b. Accent-coloured text, on Deep teal</h2>
+<p class="why">Deep teal (<code>#0d9488</code>) is the accent. As text it only reaches Lc 36 on the dark theme's panels.
+<b>(a)</b> a text-only shade per theme: a lighter teal (<code>#2dd4bf</code>) in dark, a deeper one (<code>#0f766e</code>)
+in light, used for links only, as Windows 11 does. <b>(b)</b> no accent text at all: links in normal text, underlined.
+In both, the current zoom preset gets a tick (proposal D2) and the Properties path becomes normal text, since it isn't
+clickable. Buttons keep white text on Deep teal.</p>
+<div class="heads"><span></span><span>Dark</span><span>Light</span></div>
+<div id="textopts"></div>
+
+<h3 style="font-size:14px;margin:26px 0 4px">Light theme: which text shade</h3>
+<p class="why"><code>#0f766e</code> scores well but reads as near-black at text size. Lighter shades, darkest first.
+The last is Deep teal itself, which would mean one teal for everything in the light theme. About Lc 60 is the usual
+floor for short text like these links.</p>
+<div id="lightshades" style="max-width:640px"></div>
+
+<h2>Part 2. Icon ideas</h2>
+<p class="why">Eleven ideas in Deep teal: the first four from before, then seven more (5 to 11). Each is shown at 256 px
+(Start menu, Explorer large icons), then 48, 32, 24 and 16 px (title bar, taskbar, Explorer details), on Windows' dark
+and light taskbars. The 16 px one is the hard test, and the title bar would use the same mark. These are concepts for
+picking a direction; the chosen one gets redrawn by hand at the small sizes. Tile or no tile is itself a choice:
+Windows 11's own icons mostly have no tile (ideas 2, 7 and 10 here), while a tile holds its shape better at 16 px.</p>
+
+<h3 style="font-size:14px;margin:18px 0 8px">All eleven side by side, 48 and 16 px</h3>
+<div class="tray dk" id="all48" style="flex-wrap:wrap"></div>
+<div class="tray lt" id="all16" style="flex-wrap:wrap;margin-top:8px"></div>
+
+<div id="icons" style="margin-top:24px"></div>
+</div>
+
+<script>
+  const CANDS = [
+    { name: "Teal", note: "the current Teal option", dark: "#14b8a6", light: "#14b8a6" },
+    { name: "Deep teal", note: "", dark: "#0d9488", light: "#0d9488" },
+    { name: "Cyan", note: "", dark: "#06b6d4", light: "#06b6d4" },
+    { name: "Deep cyan", note: "", dark: "#0891b2", light: "#0891b2" },
+    { name: "Split teal", note: "bright in dark, deep in light", dark: "#2dd4bf", light: "#0d9488" },
+  ];
+  const INK = "#0f1112";
+  const rgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const hex = (c) => "#" + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+  const lum = (h) => { const [r, g, b] = rgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const darken = (h, t) => hex(rgb(h).map((v) => v * (1 - t)));
+  // APCA (WCAG 3 draft, 0.0.98G): perceptual lightness contrast, Lc. Text numbers use this; WCAG 2's
+  // ratio overrates dark text on mid-tone colours like these.
+  const apcaY = (h) => { const [r, g, b] = rgb(h).map((v) => (v / 255) ** 2.4); const y = 0.2126729 * r + 0.7151522 * g + 0.072175 * b; return y < 0.022 ? y + (0.022 - y) ** 1.414 : y; };
+  const apca = (txt, bg) => {
+    const t = apcaY(txt), b = apcaY(bg);
+    if (Math.abs(b - t) < 0.0005) return 0;
+    if (b > t) { const s = (b ** 0.56 - t ** 0.57) * 1.14; return s < 0.1 ? 0 : (s - 0.027) * 100; }
+    const s = (b ** 0.65 - t ** 0.62) * 1.14; return s > -0.1 ? 0 : -(s + 0.027) * 100;
+  };
+  const BG = { dark: "#1b1c1f", light: "#f6f6f4" };
+  const fmt = (r, min) => `<b class="${r < min ? "bad" : ""}">${r.toFixed(1)}:1</b>`;
+  const lc = (v, min) => `<b class="${v < min ? "bad" : ""}">Lc ${Math.round(v)}</b>`;
+
+  const logo = (c) => `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="1.5" width="11" height="13" rx="1.5" fill="none" stroke="${c}" stroke-width="1.5"/><path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+
+  function slice(acc, theme) {
+    const bg = BG[theme];
+    return `<div class="t-${theme}" style="--acc:${acc};--acc-soft:${acc}2e;--acc-bd:${darken(acc, 0.25)}">
+      <div class="tb"><div class="brand">${logo(acc)}Vellum</div><div class="ttab">Bayou Towers.pdf</div></div>
+      <div class="bar">
+        <div class="grp"><span class="on">Single</span><span>Continuous</span></div>
+        <div class="field num">150%</div>
+        <div class="btn" style="color:#fff">Print</div>
+        <div class="btn" style="color:${INK}">Print</div>
+        <span class="lnk">Change</span>
+      </div>
+      <div class="main">
+        <div class="side"><div class="th on"></div><div class="th vis"></div><div class="th"></div></div>
+        <div class="stage"><div class="pg"><div class="sel"></div><div class="redline"></div><div class="redlab">REDLINE</div></div>
+          <div class="map"><div><i></i></div></div></div>
+      </div>
+      <div class="nums">
+        <span>Outline on panel ${fmt(ratio(acc, bg), 3)}</span>
+        <span>As text ${lc(apca(acc, bg), 60)}</span>
+        <span>White on fill ${lc(apca("#ffffff", acc), 60)}</span>
+        <span>Dark on fill ${lc(apca(INK, acc), 60)}</span>
+      </div>
+    </div>`;
+  }
+
+  document.getElementById("cands").innerHTML = CANDS.map((c) => `<div class="variant">
+    <div class="name">${c.name}<small>${c.dark === c.light ? c.dark : c.dark + " / " + c.light}</small>${c.note ? `<small style="font-family:inherit">${c.note}</small>` : ""}</div>
+    <div class="cell">${slice(c.dark, "dark")}</div><div class="cell">${slice(c.light, "light")}</div></div>`).join("");
+
+  // Part 1b: accent-coloured text on Deep teal.
+  const DEEP = "#0d9488";
+  const TEXT_SHADE = { dark: "#2dd4bf", light: "#0f766e" };
+  const tick = `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  function textSlice(theme, mode) {
+    const bg = BG[theme], shade = TEXT_SHADE[theme];
+    const cls = mode === "shade" ? "shade" : "plain";
+    const linkLc = mode === "shade" ? apca(shade, bg) : apca(theme === "dark" ? "#e6e7ea" : "#1d1e21", bg);
+    return `<div class="t-${theme}" style="--acc:${DEEP};--acc-soft:${DEEP}2e;--acc-bd:${darken(DEEP, 0.25)};--acc-text:${shade}">
+      <div class="txt">
+        <p><span class="k">Print, printer row</span>Brother HL-L8360CDW <a class="${cls}" href="#" onclick="return false">Change printer settings</a></p>
+        <p><span class="k">Print, info box</span>Pages are scaled to fit the paper. <a class="${cls}" href="#" onclick="return false">Use actual size</a> instead.</p>
+        <div class="row2">
+          <p style="flex:1;min-width:150px"><span class="k">Properties, path</span><span class="num" style="color:var(--tx2)">C:\\Jobs\\Bayou\\Bayou Towers.pdf</span></p>
+          <div class="menu"><div><span></span>100%</div><div><span>${tick}</span>150%</div><div><span></span>200%</div></div>
+        </div>
+        <div class="footer"><div class="btn2">Cancel</div><div class="btn" style="color:#fff">Print</div></div>
+      </div>
+      <div class="nums"><span>Link text ${lc(linkLc, 60)}</span><span>White on button ${lc(apca("#ffffff", DEEP), 60)}</span></div>
+    </div>`;
+  }
+  document.getElementById("textopts").innerHTML = [
+    ["(a) Text shade, links only", "#2dd4bf dark, #0f766e light", "shade", "Recommended"],
+    ["(b) No accent text", "links in normal text, underlined", "plain", ""],
+  ].map(([name, note, mode, rec]) => `<div class="variant">
+    <div class="name">${name}<small style="font-family:inherit">${note}</small>${rec ? `<small style="font-family:inherit;color:#7ee2b8;font-weight:600">${rec}</small>` : ""}</div>
+    <div class="cell">${textSlice("dark", mode)}</div><div class="cell">${textSlice("light", mode)}</div></div>`).join("");
+
+  const LIGHT_SHADES = [
+    ["#0f766e", "first proposal"],
+    ["#0e7f76", ""],
+    ["#0e8a80", ""],
+    ["#0d9488", "Deep teal itself"],
+  ];
+  document.getElementById("lightshades").innerHTML = `<div class="t-light"><div class="txt">${LIGHT_SHADES.map(([c, note]) => `
+    <p style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+      <span class="num" style="width:68px;color:var(--tx3)">${c}</span>
+      <span>Brother HL-L8360CDW <a class="shade" href="#" onclick="return false" style="color:${c}">Change printer settings</a></span>
+      <span style="margin-left:auto;font-size:11px;color:var(--tx3)">${lc(apca(c, BG.light), 60)}${note ? ", " + note : ""}</span>
+    </p>`).join("")}
+    <p style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap"><span class="num" style="width:68px;color:var(--tx3)">text</span><span>Brother HL-L8360CDW <span style="color:var(--tx)">Change printer settings</span></span><span style="margin-left:auto;font-size:11px;color:var(--tx3)">normal text, for comparison</span></p>
+  </div></div>`;
+
+  // Icon ideas, 256 x 256. A is the accent, D a darker shade of it.
+  const ICONS = [
+    { name: "1. Drawing sheet", note: "A sheet with a folded corner and a title block, on an accent tile. Says \"drawings\" at a glance.",
+      svg: (A, D) => `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <path d="M70 46h88l40 40v122a10 10 0 0 1-10 10H70a10 10 0 0 1-10-10V56a10 10 0 0 1 10-10z" fill="#fff"/>
+        <path d="M158 46v30a10 10 0 0 0 10 10h30" fill="${D}" opacity=".35"/>
+        <path d="M82 104h56M82 130h86" stroke="${D}" stroke-width="12" stroke-linecap="round"/>
+        <rect x="128" y="160" width="58" height="40" rx="3" fill="none" stroke="${D}" stroke-width="10"/>
+        <path d="M128 180h58" stroke="${D}" stroke-width="8"/>` },
+    { name: "2. Vellum sheets", note: "Two overlapping drafting sheets, the top one translucent so the drawing shows through: the material the name comes from. No tile.",
+      svg: (A, D) => `<g transform="rotate(-9 128 128)"><rect x="38" y="34" width="150" height="190" rx="14" fill="${A}"/></g>
+        <rect x="70" y="40" width="150" height="190" rx="14" fill="#ffffff" opacity=".82"/>
+        <rect x="70" y="40" width="150" height="190" rx="14" fill="none" stroke="${D}" stroke-width="8"/>
+        <path d="M100 96h90M100 126h90M100 156h52" stroke="${D}" stroke-width="12" stroke-linecap="round"/>` },
+    { name: "3. V and a dimension", note: "A V drawn as two strokes, with a drafting dimension line above it. Most distinctive in the taskbar, least literal.",
+      svg: (A, D) => `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <path d="M74 92l54 112 54-112" fill="none" stroke="#fff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M74 58h108" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".85"/>
+        <path d="M74 44v28M182 44v28" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".85"/>` },
+    { name: "4. Today's logo, grown up", note: "The title-bar glyph you have now (a page with lines), in white on an accent tile. The least change.",
+      svg: (A, D) => `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <rect x="70" y="44" width="116" height="168" rx="14" fill="none" stroke="#fff" stroke-width="16"/>
+        <path d="M98 96h60M98 128h60M98 160h34" stroke="#fff" stroke-width="16" stroke-linecap="round"/>` },
+    { name: "5. Loupe", note: "A magnifier over a drawing: says \"viewer\" first, \"drawings\" second.",
+      svg: (A, D) => { const id = "lp" + Math.random().toString(36).slice(2, 8); return `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <clipPath id="${id}"><circle cx="112" cy="112" r="58"/></clipPath>
+        <circle cx="112" cy="112" r="58" fill="#fff"/>
+        <g clip-path="url(#${id})" stroke="${D}" fill="none">
+          <path d="M40 92h150M40 132h150M92 40v150M132 40v150" stroke-width="4" opacity=".35"/>
+          <path d="M70 150V84h60v38h28" stroke-width="12" stroke-linejoin="round"/>
+        </g>
+        <circle cx="112" cy="112" r="64" fill="none" stroke="#fff" stroke-width="16"/>
+        <path d="M160 160l42 42" stroke="#fff" stroke-width="28" stroke-linecap="round"/>`; } },
+    { name: "6. Crosshair and pickbox", note: "AutoCAD's cursor: four arms and the little pick square. Instantly CAD to anyone who uses it; the boldest at 16 px.",
+      svg: (A, D) => `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <path d="M128 42v62M128 152v62M42 128h62M152 128h62" stroke="#fff" stroke-width="16" stroke-linecap="round"/>
+        <rect x="106" y="106" width="44" height="44" rx="3" fill="none" stroke="#fff" stroke-width="14"/>` },
+    { name: "7. Page curl", note: "A sheet with its corner lifting to show a teal back, like turning a sheet of vellum. No tile.",
+      svg: (A, D) => `<path d="M72 30h112a14 14 0 0 1 14 14v124l-56 58H72a14 14 0 0 1-14-14V44a14 14 0 0 1 14-14z" fill="#fff" stroke="${D}" stroke-width="8" stroke-linejoin="round"/>
+        <path d="M198 168l-56 58c4-30 20-50 56-58z" fill="${A}" stroke="${D}" stroke-width="8" stroke-linejoin="round"/>
+        <path d="M88 80h80M88 108h80M88 136h48" stroke="${A}" stroke-width="13" stroke-linecap="round"/>` },
+    { name: "8. Set square", note: "The drafting triangle with its round cut-out. Pure drafting heritage; doesn't say \"viewer\".",
+      svg: (A, D) => `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <path d="M66 54v142h142z" fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+        <circle cx="106" cy="154" r="22" fill="${A}"/>
+        <path d="M100 88l10-10M122 110l10-10M144 132l10-10" stroke="${D}" stroke-width="6" stroke-linecap="round" opacity=".6"/>` },
+    { name: "9. Plan on a grid", note: "A room outline drawn on blueprint grid. Reads as architecture more than general CAD.",
+      svg: (A, D) => `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <path d="M44 76h168M44 128h168M44 180h168M76 44v168M128 44v168M180 44v168" stroke="#fff" stroke-width="4" opacity=".28"/>
+        <path d="M70 70h116v64h-52v52H70z" fill="none" stroke="#fff" stroke-width="18" stroke-linejoin="round"/>
+        <path d="M70 116h28" stroke="${A}" stroke-width="22"/>` },
+    { name: "10. Translucent V", note: "A V from two overlapping translucent strokes, darker where they cross: the see-through quality of vellum as a monogram. No tile.",
+      svg: (A, D) => `<path d="M70 52l58 150" stroke="${A}" stroke-width="58" stroke-linecap="round" opacity=".9"/>
+        <path d="M186 52l-58 150" stroke="#2dd4bf" stroke-width="58" stroke-linecap="round" opacity=".75"/>` },
+    { name: "11. Viewfinder", note: "Four corner brackets framing a sheet: \"look at a drawing\". Simple, and holds up at 16 px.",
+      svg: (A, D) => `<rect x="12" y="12" width="232" height="232" rx="52" fill="${A}"/>
+        <path d="M52 92V64a12 12 0 0 1 12-12h28M164 52h28a12 12 0 0 1 12 12v28M204 164v28a12 12 0 0 1-12 12h-28M92 204H64a12 12 0 0 1-12-12v-28" fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round"/>
+        <rect x="96" y="86" width="64" height="84" rx="6" fill="#fff"/>
+        <path d="M110 108h36M110 126h36M110 144h20" stroke="${A}" stroke-width="8" stroke-linecap="round"/>` },
+  ];
+  const icon = (i, A, size) => `<svg width="${size}" height="${size}" viewBox="0 0 256 256" aria-hidden="true">${ICONS[i].svg(A, darken(A, 0.35))}</svg>`;
+
+  const A = DEEP; // Deep teal, chosen 12 Nov
+  document.getElementById("icons").innerHTML = ICONS.map((ic, i) => {
+    const tray = (cls) => `<div class="tray ${cls}">
+      ${[48, 32, 24, 16].map((s) => `<figure>${icon(i, A, s)}<span>${s}</span></figure>`).join("")}
+      <span class="bar16">${icon(i, A, 16)}Bayou Towers.pdf</span></div>`;
+    return `<div class="iconrow"><div class="name">${ic.name}<small>${ic.note}</small></div>
+      <div class="big">${icon(i, A, 160)}</div><div class="trays">${tray("dk")}${tray("lt")}</div></div>`;
+  }).join("");
+  document.getElementById("all48").innerHTML = ICONS.map((_, i) => `<figure>${icon(i, A, 48)}<span>${i + 1}</span></figure>`).join("");
+  document.getElementById("all16").innerHTML = ICONS.map((_, i) => `<figure>${icon(i, A, 16)}<span>${i + 1}</span></figure>`).join("");
+</script>
+</body>
+</html>

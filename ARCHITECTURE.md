@@ -64,6 +64,26 @@ render. A render scale is kept while the display stays within 1.6x below it
 (`RS_MAX_DOWN`): zooming out reuses the sharper tiles, downscaled, until they would be too
 fine.
 
+**Getting about** (all pure maths in `viewMath.ts` and `stickyPan.ts`, tested):
+
+- **Fits and typed zooms ease** over 220 ms (`Viewer.animateTo`, `interpolateView`: the
+  world point at the centre moves in a line and the scale changes geometrically) when they
+  come from the toolbar, menus or keys. Opening a document still jumps.
+- **Fit width keeps your place**: the point at the vertical centre stays put
+  (`fitWidthKeepingY`), unless it's off the page, when it goes to the page's top.
+- **Zoom is sticky at 100%, fit width and fit page**: a wheel notch that would cross one
+  lands on it, the next carries on (`stickyZoomTarget`); a pinch holds there until it has
+  gone 8% further.
+- **Dragging is sticky at page edges**: a page edge reaching the viewport edge, or a page
+  narrower than the view reaching its centre, holds for 24 px of drag, then carries on
+  without a jump (`StickyAxis`, `Viewer.dragPan`). Wheel scrolling isn't sticky.
+- **Resizing the window keeps the drawing in place**: the point at the centre stays at the
+  centre (`keepCentre`), or, if the view was at a fit and hasn't been moved since, it
+  refits.
+- **Navigation mode is per document**: CAD (the wheel zooms) for pages bigger than A4,
+  Document (the wheel scrolls) for A4 and smaller (`view/navMode.ts`), picked on open, kept
+  per tab, overridable from the toolbar or the View menu ("Automatic" goes back).
+
 A zoom clears the queue (it was planned for a view that no longer exists) and aborts
 in-flight renders at the old scale. A pan does neither: its tiles stay valid, so rendering
 carries on throughout a drag, re-planned every frame so the tiles nearest the viewport
@@ -346,8 +366,10 @@ Image files open as one-page documents through the same `doc_*` commands as PDFs
 extensions). `ImageDoc::open` decodes once on Tauri's blocking pool with the `image` crate,
 applies the EXIF orientation, flattens alpha onto white and keeps two levels in memory: full
 size and a quarter-size copy (each side divided by four). The page size is the pixel size at
-the file's embedded DPI (EXIF/JFIF, PNG pHYs, TIFF resolution tags, BMP header, WebP EXIF),
-96 DPI if none, so actual size and 100% printing are right. A region render picks the smaller
+the file's embedded DPI (EXIF/JFIF, PNG pHYs, TIFF resolution tags, BMP header, WebP EXIF)
+when that's 150 or more, so a scanned drawing measures and prints at its true size, and at
+96 DPI otherwise (`geom::effective_dpi`): cameras and phones write 72, which would open a
+photo far too big, so photos show one image pixel per CSS pixel at 100%. A region render picks the smaller
 level when it still has a source pixel per device pixel, maps the device-pixel region to a
 fractional source rectangle (`imagedoc::geom::map_region`, which clips the parts off the page
 and the half-pixel past the page's exact extent) and resamples just that with
@@ -389,6 +411,18 @@ JPEGs are swapped for 1/8 decodes, below a per-page scale threshold. It's off un
 `VELLUM_IMAGE_LOD=1` because it measured slower and used twice the memory on the aerial
 drawing (see `docs/v0.1-handoff/lod.md`).
 
+## Snap layouts on the custom title bar (`snap.rs`)
+
+Windows 11 offers snap layouts when the window under the cursor answers WM_NCHITTEST with
+HTMAXBUTTON, but the WebView2 child covering the client area is what gets asked. So a small
+native child window of our own sits exactly over the HTML maximise button (the title bar
+reports its rectangle in physical pixels through `snap_max_button` whenever it moves). It
+answers HTMAXBUTTON, maximises or restores on click, and emits `snap://hover` so the HTML
+button can still show its hover. It's layered at alpha 1 (invisible but hit-tested), and a
+layered child window needs the app manifest to declare Windows 8 or later:
+`src-tauri/app.manifest` (Tauri's Common Controls dependency plus a Windows 10/11
+`supportedOS`), linked through `build.rs`.
+
 ## Shell (v0.1)
 
 `src/App.svelte` wires the shell; components live in `src/lib/components/` and everything
@@ -411,8 +445,9 @@ formatting, shortcuts, theme maths, export size limits).
   second launch's file to the running window (`vellum://open-files` event); files that
   arrive before the front end listens are queued and collected with `shell_take_pending`.
   `--bench`, `--new-instance` and `VELLUM_MULTI_INSTANCE` bypass it.
-- **Themes.** Two token sets on `:root[data-theme]` in `src/app.css`; the accent is set as
-  `--accent`, `--accent-soft` and `--accent-bd` on the root. Components use tokens only.
+- **Themes.** Two token sets on `:root[data-theme]` in `src/app.css`. The accent is fixed (Deep
+  teal, `#0d9488`): `--accent`, `--accent-soft` and `--accent-bd` on the root, plus a per-theme
+  `--accent-text` for links. Components use tokens only.
 - **Drawing scale.** On open, `findScale(docId, 0)`; the best candidate is adopted only from
   a title-block position (`shell/scale.ts`). Hand-set scales are remembered per file. The
   tab's scale feeds the status bar and `PrintContext`.
