@@ -97,7 +97,7 @@ pub fn detect_kind(path: &Path) -> Result<DocKind, String> {
     let mut head = [0u8; 1024];
     let n = std::fs::File::open(path)
         .and_then(|mut f| f.read(&mut head))
-        .map_err(|e| format!("Could not read the file: {e}"))?;
+        .map_err(|e| crate::errcode::io(&e, format!("Couldn't read the file: {e}")))?;
     sniff_kind(&head[..n]).ok_or_else(|| pdfium::ERR_NOT_SUPPORTED.to_string())
 }
 
@@ -123,7 +123,7 @@ impl Docs {
     /// Open a PDF or image file. Blocking: call from a worker thread.
     pub fn open(&self, pdf: &PdfiumState, path: &Path, password: Option<&str>) -> Result<DocInfo, String> {
         let file_size = std::fs::metadata(path)
-            .map_err(|e| format!("Could not read the file: {e}"))?
+            .map_err(|e| crate::errcode::io(&e, format!("Couldn't read the file: {e}")))?
             .len();
         let doc_id = self.alloc_id();
         let cache_key = crate::previewcache::content_key(path);

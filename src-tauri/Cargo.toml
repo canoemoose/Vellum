@@ -40,6 +40,11 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_ProcessStatus",
   "Win32_System_Threading",
+  # snap.rs: the native overlay over the maximise button (Windows 11 snap layouts).
+  "Win32_Graphics_Gdi",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 # WP-Print: printer enumeration, capabilities and GDI output (StartDoc / StretchDIBits), and

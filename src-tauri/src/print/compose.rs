@@ -38,7 +38,7 @@ pub enum ImageData {
 /// Read or decode an image item's file. Blocking; call off the PDFium workers.
 pub fn prepare_image(path: &str) -> Result<ImageData, String> {
     use image::{ImageDecoder, ImageReader};
-    let bytes = std::fs::read(path).map_err(|e| format!("Could not read {path}: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| crate::errcode::io(&e, format!("Couldn't read {path}: {e}")))?;
     let is_jpeg = bytes.starts_with(b"\xFF\xD8\xFF");
     if is_jpeg {
         // Only embed the file as is when no EXIF rotation applies and it decodes as 8-bit
@@ -141,13 +141,13 @@ fn compose_on_worker(ctx: &mut WorkerCtx, job: &Job, images: &HashMap<String, Im
     let b = ctx.bindings();
     let dest = unsafe { b.FPDF_CreateNewDocument() };
     if dest.is_null() {
-        return Err("Could not create the print document".into());
+        return Err("Couldn't create the print document".into());
     }
     let mut c = Composer { b, dest, sources: HashMap::new(), xobjects: HashMap::new() };
     for (si, sheet) in job.sheets.iter().enumerate() {
         let page = unsafe { b.FPDFPage_New(dest, si as c_int, sheet.w, sheet.h) };
         if page.is_null() {
-            return Err("Could not add a sheet to the print document".into());
+            return Err("Couldn't add a sheet to the print document".into());
         }
         let r = (|| -> Result<(), String> {
             for item in &sheet.items {
@@ -159,7 +159,7 @@ fn compose_on_worker(ctx: &mut WorkerCtx, job: &Job, images: &HashMap<String, Im
                 unsafe {
                     let obj = b.FPDF_NewFormObjectFromXObject(xo);
                     if obj.is_null() {
-                        return Err("Could not place a page on the sheet".into());
+                        return Err("Couldn't place a page on the sheet".into());
                     }
                     b.FPDFPageObj_Transform(obj, m[0], m[1], m[2], m[3], m[4], m[5]);
                     b.FPDFPage_InsertObject(page, obj);
@@ -168,7 +168,7 @@ fn compose_on_worker(ctx: &mut WorkerCtx, job: &Job, images: &HashMap<String, Im
             if let Some(clip) = sheet.clip {
                 unsafe {
                     if b.FPDFPage_GenerateContent(page) == 0 {
-                        return Err("Could not write the sheet".into());
+                        return Err("Couldn't write the sheet".into());
                     }
                     let (l, bo, r, t) = job::sheet_rect_to_pdf(&clip, sheet.h);
                     let id = FS_MATRIX { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 };
@@ -202,7 +202,7 @@ fn compose_on_worker(ctx: &mut WorkerCtx, job: &Job, images: &HashMap<String, Im
                 }
             }
             if unsafe { b.FPDFPage_GenerateContent(page) } == 0 {
-                return Err("Could not write the sheet".into());
+                return Err("Couldn't write the sheet".into());
             }
             Ok(())
         })();
@@ -258,7 +258,7 @@ impl Composer<'_> {
                 None => (ctx.page(item.doc_id, item.page)?, false),
             };
             if page.is_null() {
-                return Err(format!("Could not read page {}", item.page + 1));
+                return Err(format!("Couldn't read page {}", item.page + 1));
             }
             if private && owned && b.FPDFPage_GetAnnotCount(page) > 0 {
                 // Annotations aren't part of an XObject made from a page; bake them in so the
@@ -267,7 +267,7 @@ impl Composer<'_> {
                 b.FPDF_ClosePage(page);
                 let p2 = b.FPDF_LoadPage(doc, idx);
                 if p2.is_null() {
-                    return Err(format!("Could not read page {}", item.page + 1));
+                    return Err(format!("Couldn't read page {}", item.page + 1));
                 }
                 let x = make_xobject(b, self.dest, doc, idx, p2, item.crop.as_ref());
                 b.FPDF_ClosePage(p2);
@@ -300,7 +300,7 @@ unsafe fn make_xobject(
         if let Some(crop) = crop {
             let mut r = FS_RECTF { left: 0.0, top: 0.0, right: 0.0, bottom: 0.0 };
             if b.FPDF_GetPageBoundingBox(page, &mut r) == 0 {
-                return Err("Could not read the page size".into());
+                return Err("Couldn't read the page size".into());
             }
             let bbox = (r.left as f64, r.bottom as f64, r.right as f64, r.top as f64);
             let rot = b.FPDFPage_GetRotation(page);
@@ -312,7 +312,7 @@ unsafe fn make_xobject(
         if let Some(r) = restore {
             b.FPDFPage_SetCropBox(page, r.left, r.bottom, r.right, r.top);
         }
-        if xo.is_null() { Err("Could not copy a page into the print document".into()) } else { Ok(xo) }
+        if xo.is_null() { Err("Couldn't copy a page into the print document".into()) } else { Ok(xo) }
     }
 }
 
@@ -321,7 +321,7 @@ fn image_source(b: &dyn PdfiumLibraryBindings, img: &ImageData, w: f64, h: f64) 
     unsafe {
         let doc = b.FPDF_CreateNewDocument();
         if doc.is_null() {
-            return Err("Could not create the print document".into());
+            return Err("Couldn't create the print document".into());
         }
         let fail = |msg: &str| -> Result<Source, String> {
             b.FPDF_CloseDocument(doc);
@@ -329,7 +329,7 @@ fn image_source(b: &dyn PdfiumLibraryBindings, img: &ImageData, w: f64, h: f64) 
         };
         let page = b.FPDFPage_New(doc, 0, w, h);
         if page.is_null() {
-            return fail("Could not add an image");
+            return fail("Couldn't add an image");
         }
         let obj = b.FPDFPageObj_NewImageObj(doc);
         let ok = match img {
@@ -359,20 +359,20 @@ fn image_source(b: &dyn PdfiumLibraryBindings, img: &ImageData, w: f64, h: f64) 
         if !ok {
             b.FPDFPageObj_Destroy(obj);
             b.FPDF_ClosePage(page);
-            return fail("Could not embed an image");
+            return fail("Couldn't embed an image");
         }
         let m = FS_MATRIX { a: w as f32, b: 0.0, c: 0.0, d: h as f32, e: 0.0, f: 0.0 };
         b.FPDFPageObj_SetMatrix(obj, &m);
         b.FPDFPage_InsertObject(page, obj);
         if b.FPDFPage_GenerateContent(page) == 0 {
             b.FPDF_ClosePage(page);
-            return fail("Could not embed an image");
+            return fail("Couldn't embed an image");
         }
         Ok(Source { doc, private: true, page: Some(page) })
     }
 }
 
-unsafe extern "C" fn get_block(param: *mut c_void, pos: c_ulong, buf: *mut c_uchar, size: c_ulong) -> c_int {
+pub(crate) unsafe extern "C" fn get_block(param: *mut c_void, pos: c_ulong, buf: *mut c_uchar, size: c_ulong) -> c_int {
     unsafe {
         let bytes = &*(param as *const Vec<u8>);
         let (pos, size) = (pos as usize, size as usize);
@@ -403,7 +403,7 @@ pub fn save(b: &dyn PdfiumLibraryBindings, doc: FPDF_DOCUMENT) -> Result<Vec<u8>
     let mut w = Writer { base: FPDF_FILEWRITE { version: 1, WriteBlock: Some(write_block) }, out: Vec::new() };
     let ok = unsafe { b.FPDF_SaveAsCopy(doc, &mut w as *mut Writer as *mut FPDF_FILEWRITE, 0) };
     if ok == 0 {
-        return Err("Could not write the print document".into());
+        return Err("Couldn't write the print document".into());
     }
     Ok(w.out)
 }

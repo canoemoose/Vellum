@@ -55,7 +55,7 @@ pub fn printers() -> Result<Vec<PrinterInfo>, String> {
         // u64 storage keeps the PRINTER_INFO_4W records aligned.
         let mut buf = vec![0u64; (needed as usize).div_ceil(8)];
         let bytes = std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u8, needed as usize);
-        EnumPrintersW(flags, PCWSTR::null(), 4, Some(bytes), &mut needed, &mut count).map_err(|e| format!("Could not list printers: {e}"))?;
+        EnumPrintersW(flags, PCWSTR::null(), 4, Some(bytes), &mut needed, &mut count).map_err(|e| format!("Couldn't list printers: {e}"))?;
         let infos = std::slice::from_raw_parts(buf.as_ptr() as *const PRINTER_INFO_4W, count as usize);
         let mut v: Vec<PrinterInfo> = infos
             .iter()
@@ -134,7 +134,7 @@ pub fn capabilities(printer: &str) -> Result<Capabilities, String> {
     let dm = DevMode::default_for(printer)?;
     let n = caps_count(&name, DC_PAPERS, Some(&dm));
     if n < 0 {
-        return Err(format!("Could not read the capabilities of {printer}"));
+        return Err(format!("Couldn't read the capabilities of {printer}"));
     }
     let n = n as usize;
     let ids: Vec<u16> = caps_fill(&name, DC_PAPERS, 1, n, Some(&dm));
@@ -175,7 +175,7 @@ pub fn margins(printer: &str, paper: Option<i16>, landscape: bool) -> Result<Mar
     unsafe {
         let ic = CreateICW(PCWSTR::null(), PCWSTR(name.as_ptr()), PCWSTR::null(), Some(dm.ptr()));
         if ic.is_invalid() {
-            return Err(format!("Could not query {printer}"));
+            return Err(format!("Couldn't query {printer}"));
         }
         let g = Geometry::of(ic);
         let _ = DeleteDC(ic);
@@ -201,17 +201,17 @@ impl DevMode {
         let name = wide(printer);
         unsafe {
             let mut h = PRINTER_HANDLE::default();
-            OpenPrinterW(PCWSTR(name.as_ptr()), &mut h, None).map_err(|e| format!("Could not open {printer}: {e}"))?;
+            OpenPrinterW(PCWSTR(name.as_ptr()), &mut h, None).map_err(|e| format!("Couldn't open {printer}: {e}"))?;
             let size = DocumentPropertiesW(None, h, PCWSTR(name.as_ptr()), None, None, 0);
             if size <= 0 {
                 let _ = ClosePrinter(h);
-                return Err(format!("Could not read the settings of {printer}"));
+                return Err(format!("Couldn't read the settings of {printer}"));
             }
             let mut dm = DevMode { buf: vec![0u64; (size as usize).div_ceil(8)] };
             let r = DocumentPropertiesW(None, h, PCWSTR(name.as_ptr()), Some(dm.ptr_mut()), None, DM_OUT_BUFFER.0);
             let _ = ClosePrinter(h);
             if r != IDOK {
-                return Err(format!("Could not read the settings of {printer}"));
+                return Err(format!("Couldn't read the settings of {printer}"));
             }
             Ok(dm)
         }
@@ -281,7 +281,7 @@ pub fn properties_dialog(hwnd: isize, printer: &str) -> Result<bool, String> {
     let name = wide(printer);
     unsafe {
         let mut h = PRINTER_HANDLE::default();
-        OpenPrinterW(PCWSTR(name.as_ptr()), &mut h, None).map_err(|e| format!("Could not open {printer}: {e}"))?;
+        OpenPrinterW(PCWSTR(name.as_ptr()), &mut h, None).map_err(|e| format!("Couldn't open {printer}: {e}"))?;
         let mut out = DevMode { buf: dm.buf.clone() };
         let r = DocumentPropertiesW(
             Some(HWND(hwnd as *mut _)),
@@ -360,6 +360,10 @@ pub enum Quality {
     Vector,
 }
 
+fn black_sensitivity() -> u8 {
+    job::BLACK_LINES_SENSITIVITY
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SendOptions {
@@ -372,6 +376,9 @@ pub struct SendOptions {
     pub duplex: Duplex,
     #[serde(default)]
     pub colour: ColourMode,
+    /// Black lines: how faint a line still prints, 0-100 (job::BlackLines).
+    #[serde(default = "black_sensitivity")]
+    pub black_sensitivity: u8,
     #[serde(default)]
     pub quality: Quality,
     /// Paper for sheets whose size no printer paper matches.
@@ -415,7 +422,14 @@ pub fn cancel() {
 
 /// Send a composed job (its PDF bytes and sheet sizes in points) to a printer. Blocking.
 /// `progress(done, total)` is called after each sheet.
-pub fn send(pdf: &PdfiumState, bytes: Arc<Vec<u8>>, sheets: &[(f64, f64)], o: &SendOptions, mut progress: impl FnMut(usize, usize)) -> Result<(), String> {
+pub fn send(
+    pdf: &PdfiumState,
+    bytes: Arc<Vec<u8>>,
+    sheets: &[(f64, f64)],
+    regions: &[Vec<Rect>],
+    o: &SendOptions,
+    mut progress: impl FnMut(usize, usize),
+) -> Result<(), String> {
     // One job at a time: Microsoft Print to PDF silently lost one of three jobs sent from
     // this process at once (it wrote an empty file), and nobody needs two prints interleaved.
     static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -482,7 +496,7 @@ pub fn send(pdf: &PdfiumState, bytes: Arc<Vec<u8>>, sheets: &[(f64, f64)], o: &S
     dm.set_paper(first_paper, first_land);
     let dc = unsafe { CreateDCW(PCWSTR::null(), PCWSTR(name.as_ptr()), PCWSTR::null(), Some(dm.ptr())) };
     if dc.is_invalid() {
-        return Err(format!("Could not start printing on {}", o.printer));
+        return Err(format!("Couldn't start printing on {}", o.printer));
     }
     struct Dc(HDC);
     impl Drop for Dc {
@@ -508,7 +522,7 @@ pub fn send(pdf: &PdfiumState, bytes: Arc<Vec<u8>>, sheets: &[(f64, f64)], o: &S
         // ERROR_CANCELLED when that box is cancelled.
         const ERROR_CANCELLED: u32 = 1223;
         let err = std::io::Error::last_os_error().raw_os_error().unwrap_or(0) as u32;
-        return Err(if err == ERROR_CANCELLED { "Printing cancelled".into() } else { format!("{} refused the print job", o.printer) });
+        return Err(if err == ERROR_CANCELLED { crate::errcode::coded("cancelled", "Printing cancelled") } else { format!("{} refused the print job", o.printer) });
     }
     if let Some(p) = &out_path {
         eprintln!("[print] writing to {p}");
@@ -529,7 +543,7 @@ pub fn send(pdf: &PdfiumState, bytes: Arc<Vec<u8>>, sheets: &[(f64, f64)], o: &S
                 return Err("The printer refused a page".into());
             }
             let g = unsafe { Geometry::of(dc.0) };
-            let res = print_sheet(&renderer, si, sw, sh, dc.0, &g, o);
+            let res = print_sheet(&renderer, si, sw, sh, regions.get(si).map(|v| v.as_slice()).unwrap_or(&[]), dc.0, &g, o);
             renderer.release();
             res?;
             if unsafe { EndPage(dc.0) } <= 0 {
@@ -553,7 +567,8 @@ pub fn send(pdf: &PdfiumState, bytes: Arc<Vec<u8>>, sheets: &[(f64, f64)], o: &S
     }
 }
 
-fn print_sheet(r: &SheetRenderer, si: usize, sw: f64, sh: f64, dc: HDC, g: &Geometry, o: &SendOptions) -> Result<(), String> {
+#[allow(clippy::too_many_arguments)]
+fn print_sheet(r: &SheetRenderer, si: usize, sw: f64, sh: f64, pages: &[Rect], dc: HDC, g: &Geometry, o: &SendOptions) -> Result<(), String> {
     // Sheet points to device pixels. The sheet is the paper, so a sheet that doesn't match
     // the paper exactly is centred on it (it shouldn't happen: the layout uses the paper).
     let sx = g.dpi_x / 72.0;
@@ -562,7 +577,8 @@ fn print_sheet(r: &SheetRenderer, si: usize, sw: f64, sh: f64, dc: HDC, g: &Geom
     let dev_h = (sh * sy).round() as i32;
     let ox = (g.phys_w - dev_w) / 2 - g.off_x;
     let oy = (g.phys_h - dev_h) / 2 - g.off_y;
-    if o.quality == Quality::Vector {
+    // Black lines works dot by dot, so it always prints as an image.
+    if o.quality == Quality::Vector && o.colour != ColourMode::BlackLines {
         let mut flags = FPDF_PRINTING;
         if o.colour != ColourMode::Colour {
             flags |= FPDF_GRAYSCALE;
@@ -583,12 +599,25 @@ fn print_sheet(r: &SheetRenderer, si: usize, sw: f64, sh: f64, dc: HDC, g: &Geom
     unsafe { SetStretchBltMode(dc, HALFTONE) };
     let to_dev_x = |px: i32| ox + (px as f64 * dev_w as f64 / rw as f64).round() as i32;
     let to_dev_y = |py: i32| oy + (py as f64 * dev_h as f64 / rh as f64).round() as i32;
+    // Black lines works page by page: each placed page is judged against its own paper (so the
+    // sheet's white margins don't count), and a small render of the sheet says which pages are
+    // blueprints. Bands are rendered with `radius` extra rows either side for the neighbourhood.
+    let black = o.colour == ColourMode::BlackLines;
+    let page_lines = if black { super::bands::page_filters(r, si, sw, sh, rw, rh, pages, o.black_sensitivity, dpi)? } else { Vec::new() };
+    let no_lines = job::BlackLines { sensitivity: 0, radius: 1, invert: false };
+    let pad = if black { job::black_lines_radius(dpi) as i32 } else { 0 };
     for (y, h) in job::bands(y0, y1, BAND_ROWS) {
         if CANCEL.load(Ordering::SeqCst) {
-            return Err("Printing cancelled".into());
+            return Err(crate::errcode::coded("cancelled", "Printing cancelled"));
         }
-        let mut px = r.render_band(si, rw, rh, x0, y, bw, h, FPDF_PRINTING)?;
-        job::apply_colour(&mut px, o.colour);
+        let (ya, yb) = ((y - pad).max(0), (y + h + pad).min(rh));
+        let mut px = r.render_band(si, rw, rh, x0, ya, bw, yb - ya, FPDF_PRINTING)?;
+        if black {
+            super::bands::filter_band(&mut px, bw, x0, ya, yb, &page_lines);
+        } else {
+            job::apply_colour(&mut px, bw as usize, o.colour, &no_lines);
+        }
+        let px = super::bands::crop_rows(px, bw, ya, y, h);
         let bmi = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
                 biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,

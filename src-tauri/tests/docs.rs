@@ -40,6 +40,6 @@ fn unknown_extension_is_sniffed() {
     assert_eq!(detect_kind(&pdf), Ok(DocKind::Pdf));
     let txt = dir.join("notes.txt");
     std::fs::write(&txt, b"just text").unwrap();
-    assert_eq!(detect_kind(&txt), Err("Not a PDF or supported image".to_string()));
+    assert_eq!(detect_kind(&txt), Err("[not_supported] Not a PDF or supported image".to_string()));
     let _ = std::fs::remove_dir_all(&dir);
 }

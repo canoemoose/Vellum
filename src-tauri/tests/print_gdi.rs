@@ -84,6 +84,7 @@ fn print_to_pdf(quality: Quality, colour: ColourMode, tag: &str) -> Option<Arc<V
         collate: true,
         duplex: Default::default(),
         colour,
+        black_sensitivity: vellum_lib::print::job::BLACK_LINES_SENSITIVITY,
         quality,
         paper: None,
         tray_by_size: false,

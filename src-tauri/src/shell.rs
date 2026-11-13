@@ -93,7 +93,7 @@ pub fn shell_take_pending(pending: tauri::State<PendingOpens>) -> Vec<String> {
 #[tauri::command]
 pub fn reveal_in_explorer(path: String) -> Result<(), String> {
     if !Path::new(&path).exists() {
-        return Err(format!("{path} no longer exists"));
+        return Err(crate::errcode::coded("not_found", format!("{path} no longer exists")));
     }
     #[cfg(windows)]
     {
@@ -103,12 +103,12 @@ pub fn reveal_in_explorer(path: String) -> Result<(), String> {
         std::process::Command::new("explorer.exe")
             .raw_arg(format!("/select,\"{}\"", path.replace('/', "\\")))
             .spawn()
-            .map_err(|e| format!("Couldn't start Explorer: {e}"))?;
+            .map_err(|e| crate::errcode::coded("explorer_failed", format!("Couldn't start Explorer: {e}")))?;
         Ok(())
     }
     #[cfg(not(windows))]
     {
-        Err("Reveal in Explorer only works on Windows".into())
+        Err("Show in Explorer only works on Windows".into())
     }
 }
 

@@ -300,15 +300,158 @@ pub enum ColourMode {
     #[default]
     Colour,
     Greyscale,
-    /// Every mark that isn't (near) white prints solid black.
+    /// Linework prints solid black and the paper white (black_lines).
     BlackLines,
 }
 
-/// Anything darker than this (on the darkest channel) counts as a mark in Black lines mode.
-pub const BLACK_LINES_THRESHOLD: u8 = 245;
+/// Black lines: each dot is judged against the paper around it (adaptive thresholding), so
+/// a scan's paper texture, stains and uneven tone drop out while its lines, however faint,
+/// print black; on a CAD export, pale fills go white and coloured lines black.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlackLines {
+    /// 0-100: how faint a line still counts. Higher keeps fainter lines (and more grain).
+    pub sensitivity: u8,
+    /// Half the side of the neighbourhood a dot is compared with, px.
+    pub radius: usize,
+    /// Light lines on dark paper (a blueprint): read the other way round.
+    pub invert: bool,
+}
 
-/// Apply a colour mode to 4-byte pixels (B, G, R, x). Alpha is left alone.
-pub fn apply_colour(px: &mut [u8], mode: ColourMode) {
+pub const BLACK_LINES_SENSITIVITY: u8 = 60;
+/// Half the neighbourhood's side, mm on the sheet.
+pub const BLACK_LINES_RADIUS_MM: f64 = 1.5;
+/// Never a mark, whatever its surroundings: the paper at its palest.
+const PAPER_WHITE: u32 = 235;
+/// Always a mark from half sensitivity up: solid black areas would otherwise match their own
+/// surroundings and go white. Below half it fades out, so the slider's far end drops everything.
+const SOLID_DARK: u32 = 60;
+
+/// How much darker than its surroundings a dot must be to count as a line, percent: 100% at
+/// sensitivity 0 (nothing counts), 20% at the default 60, 5% at 100. Squared, so the useful
+/// middle of the slider has the most room.
+pub fn black_lines_margin(sensitivity: u8) -> u32 {
+    let off = 100 - sensitivity.min(100) as u32;
+    5 + 95 * off * off / 10_000
+}
+
+/// Darker than this always counts as a mark (see SOLID_DARK).
+pub fn black_lines_solid(sensitivity: u8) -> u32 {
+    SOLID_DARK * sensitivity.min(50) as u32 / 50
+}
+
+/// The neighbourhood radius at a resolution, px.
+pub fn black_lines_radius(dpi: f64) -> usize {
+    ((BLACK_LINES_RADIUS_MM / 25.4) * dpi).round().max(1.0) as usize
+}
+
+/// A dot's darkness for Black lines: its darkest channel, so a yellow, cyan or red line counts
+/// as dark as a black one.
+#[inline]
+fn mark_value(p: &[u8]) -> u32 {
+    p[0].min(p[1]).min(p[2]) as u32
+}
+
+/// Whether most of the picture is dark paper (a blueprint), so Black lines reads it inverted.
+pub fn is_dark_sheet(px: &[u8]) -> bool {
+    let n = px.len() / 4;
+    let dark = px.chunks_exact(4).filter(|p| mark_value(p) < 128).count();
+    n > 0 && dark * 2 > n
+}
+
+/// Black lines over a `w`-wide picture of 4-byte pixels (B, G, R, x), in place. Every row is
+/// judged with the rows around it, so a caller printing in bands renders each band with
+/// `radius` extra rows above and below and keeps only the middle.
+pub fn black_lines(px: &mut [u8], w: usize, o: &BlackLines) {
+    if w == 0 {
+        return;
+    }
+    let h = px.len() / 4 / w;
+    let r = o.radius.max(1);
+    let margin = black_lines_margin(o.sensitivity);
+    let solid = black_lines_solid(o.sensitivity);
+    let v: Vec<u32> = px
+        .chunks_exact(4)
+        .map(|p| if o.invert { 255 - mark_value(p) } else { mark_value(p) })
+        .collect();
+    // Column sums over the rows in the window, updated as the window slides down; then a
+    // running sum along the row gives each dot's neighbourhood total. Memory O(width).
+    let mut cols = vec![0u64; w];
+    let mut prefix = vec![0u64; w + 1];
+    let (mut top, mut bottom) = (0usize, 0usize); // rows [top, bottom) are in `cols`
+    for y in 0..h {
+        let want_top = y.saturating_sub(r);
+        let want_bottom = (y + r + 1).min(h);
+        while bottom < want_bottom {
+            for (c, &val) in cols.iter_mut().zip(&v[bottom * w..(bottom + 1) * w]) {
+                *c += val as u64;
+            }
+            bottom += 1;
+        }
+        while top < want_top {
+            for (c, &val) in cols.iter_mut().zip(&v[top * w..(top + 1) * w]) {
+                *c -= val as u64;
+            }
+            top += 1;
+        }
+        for x in 0..w {
+            prefix[x + 1] = prefix[x] + cols[x];
+        }
+        let rows = (bottom - top) as u64;
+        for x in 0..w {
+            let x0 = x.saturating_sub(r);
+            let x1 = (x + r + 1).min(w);
+            let mean100 = (prefix[x1] - prefix[x0]) * 100 / (rows * (x1 - x0) as u64);
+            let val = v[y * w + x];
+            let line = val < solid || (val < PAPER_WHITE && (val as u64) * 100 * 100 < mean100 * (100 - margin as u64));
+            let out = if line { 0 } else { 255 };
+            let p = &mut px[(y * w + x) * 4..(y * w + x) * 4 + 3];
+            p[0] = out;
+            p[1] = out;
+            p[2] = out;
+        }
+    }
+}
+
+/// Pixel bounds (x0, y0, x1, y1), end-exclusive, within a `w` x `h` picture.
+pub type PxRect = (usize, usize, usize, usize);
+
+fn take_rect(px: &[u8], w: usize, r: PxRect) -> Vec<u8> {
+    let (x0, y0, x1, y1) = r;
+    let mut out = Vec::with_capacity((x1 - x0) * (y1 - y0) * 4);
+    for y in y0..y1 {
+        out.extend_from_slice(&px[(y * w + x0) * 4..(y * w + x1) * 4]);
+    }
+    out
+}
+
+fn put_rect(px: &mut [u8], w: usize, r: PxRect, from: &[u8]) {
+    let (x0, y0, x1, _) = r;
+    let rw = (x1 - x0) * 4;
+    for (i, row) in from.chunks_exact(rw).enumerate() {
+        let y = y0 + i;
+        px[(y * w + x0) * 4..(y * w + x1) * 4].copy_from_slice(row);
+    }
+}
+
+/// Whether part of a picture is mostly dark paper (a blueprint).
+pub fn is_dark_region(px: &[u8], w: usize, r: PxRect) -> bool {
+    r.2 > r.0 && r.3 > r.1 && is_dark_sheet(&take_rect(px, w, r))
+}
+
+/// Black lines over one part of a `w`-wide picture: a placed page, judged on its own, so the
+/// paper round it (the sheet's margins, other pages) doesn't count as its surroundings.
+pub fn black_lines_in(px: &mut [u8], w: usize, r: PxRect, o: &BlackLines) {
+    let (x0, y0, x1, y1) = r;
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    let mut part = take_rect(px, w, r);
+    black_lines(&mut part, x1 - x0, o);
+    put_rect(px, w, r, &part);
+}
+
+/// Apply a colour mode to 4-byte pixels (B, G, R, x) `w` wide. Alpha is left alone.
+pub fn apply_colour(px: &mut [u8], w: usize, mode: ColourMode, bl: &BlackLines) {
     match mode {
         ColourMode::Colour => {}
         ColourMode::Greyscale => {
@@ -320,13 +463,6 @@ pub fn apply_colour(px: &mut [u8], mode: ColourMode) {
                 p[2] = y;
             }
         }
-        ColourMode::BlackLines => {
-            for p in px.chunks_exact_mut(4) {
-                let v = if p[0].min(p[1]).min(p[2]) < BLACK_LINES_THRESHOLD { 0 } else { 255 };
-                p[0] = v;
-                p[1] = v;
-                p[2] = v;
-            }
-        }
+        ColourMode::BlackLines => black_lines(px, w, bl),
     }
 }

@@ -30,8 +30,28 @@ struct Private {
     page: Option<(usize, FPDF_PAGE)>,
 }
 
+/// A PDF being written on the same worker (Save as PDF in Greyscale or Black lines).
+struct Out {
+    doc: FPDF_DOCUMENT,
+    page: Option<(FPDF_PAGE, f64)>,
+    pages: c_int,
+}
+
 thread_local! {
     static OPEN: RefCell<HashMap<u64, Private>> = RefCell::new(HashMap::new());
+    static OUT: RefCell<HashMap<u64, Out>> = RefCell::new(HashMap::new());
+}
+
+/// Finish the page being written: generate its content and close it.
+fn end_out_page(b: &dyn PdfiumLibraryBindings, o: &mut Out) -> Result<(), String> {
+    if let Some((page, _)) = o.page.take() {
+        let ok = unsafe { b.FPDFPage_GenerateContent(page) } != 0;
+        unsafe { b.FPDF_ClosePage(page) };
+        if !ok {
+            return Err("Couldn't write a sheet".into());
+        }
+    }
+    Ok(())
 }
 
 static NEXT_KEY: AtomicU64 = AtomicU64::new(1);
@@ -53,7 +73,7 @@ impl SheetRenderer {
             let b = ctx.bindings();
             let doc = unsafe { b.FPDF_LoadMemDocument64(&bytes, None) };
             if doc.is_null() {
-                return Err("Could not read the composed print document".to_string());
+                return Err("Couldn't read the composed print document".to_string());
             }
             let count = unsafe { b.FPDF_GetPageCount(doc) }.max(0) as usize;
             OPEN.with(|m| m.borrow_mut().insert(key, Private { _bytes: bytes, doc, page: None }));
@@ -83,7 +103,7 @@ impl SheetRenderer {
                         }
                         let page = unsafe { b.FPDF_LoadPage(p.doc, index as c_int) };
                         if page.is_null() {
-                            return Err(format!("Could not read sheet {}", index + 1));
+                            return Err(format!("Couldn't read sheet {}", index + 1));
                         }
                         p.page = Some((index, page));
                         page
@@ -127,6 +147,84 @@ impl SheetRenderer {
         })
     }
 
+    /// Start writing a new PDF on this renderer's worker (out_page, out_image, out_finish).
+    pub fn out_begin(&self) -> Result<(), String> {
+        let key = self.key;
+        self.pdf.run_on_worker_index(self.worker, move |ctx| {
+            let b = ctx.bindings();
+            let doc = unsafe { b.FPDF_CreateNewDocument() };
+            if doc.is_null() {
+                return Err("Couldn't create the PDF".to_string());
+            }
+            OUT.with(|m| m.borrow_mut().insert(key, Out { doc, page: None, pages: 0 }));
+            Ok(())
+        })?
+    }
+
+    /// Start a new page of `w` x `h` points in the PDF being written.
+    pub fn out_page(&self, w: f64, h: f64) -> Result<(), String> {
+        let key = self.key;
+        self.pdf.run_on_worker_index(self.worker, move |ctx| {
+            let b = ctx.bindings();
+            OUT.with(|m| {
+                let mut m = m.borrow_mut();
+                let o = m.get_mut(&key).ok_or("PDF closed")?;
+                end_out_page(b, o)?;
+                let page = unsafe { b.FPDFPage_New(o.doc, o.pages, w, h) };
+                if page.is_null() {
+                    return Err("Couldn't add a sheet".to_string());
+                }
+                o.pages += 1;
+                o.page = Some((page, h));
+                Ok(())
+            })
+        })?
+    }
+
+    /// Place a JPEG on the current page at (x, y) w x h points, y down from the top.
+    pub fn out_image(&self, jpeg: Vec<u8>, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+        let key = self.key;
+        self.pdf.run_on_worker_index(self.worker, move |ctx| {
+            let b = ctx.bindings();
+            OUT.with(|m| {
+                let mut m = m.borrow_mut();
+                let o = m.get_mut(&key).ok_or("PDF closed")?;
+                let (page, page_h) = o.page.ok_or("No sheet started")?;
+                unsafe {
+                    let obj = b.FPDFPageObj_NewImageObj(o.doc);
+                    let mut acc = FPDF_FILEACCESS {
+                        m_FileLen: jpeg.len() as std::ffi::c_ulong,
+                        m_GetBlock: Some(super::compose::get_block),
+                        m_Param: &jpeg as *const Vec<u8> as *mut std::ffi::c_void,
+                    };
+                    let mut pages = [page];
+                    if b.FPDFImageObj_LoadJpegFileInline(pages.as_mut_ptr(), 1, obj, &mut acc) == 0 {
+                        b.FPDFPageObj_Destroy(obj);
+                        return Err("Couldn't write a sheet".to_string());
+                    }
+                    let mtx = FS_MATRIX { a: w as f32, b: 0.0, c: 0.0, d: h as f32, e: x as f32, f: (page_h - y - h) as f32 };
+                    b.FPDFPageObj_SetMatrix(obj, &mtx);
+                    b.FPDFPage_InsertObject(page, obj);
+                }
+                Ok(())
+            })
+        })?
+    }
+
+    /// Finish the PDF being written and return its bytes.
+    pub fn out_finish(&self) -> Result<Vec<u8>, String> {
+        let key = self.key;
+        self.pdf.run_on_worker_index(self.worker, move |ctx| {
+            let b = ctx.bindings();
+            OUT.with(|m| {
+                let mut o = m.borrow_mut().remove(&key).ok_or("PDF closed")?;
+                let done = end_out_page(b, &mut o).and_then(|_| super::compose::save(b, o.doc));
+                unsafe { b.FPDF_CloseDocument(o.doc) };
+                done
+            })
+        })?
+    }
+
     /// Free the loaded sheet and its decoded images.
     pub fn release(&self) {
         let key = self.key;
@@ -155,6 +253,17 @@ impl Drop for SheetRenderer {
                             b.FPDF_ClosePage(page);
                         }
                         b.FPDF_CloseDocument(p.doc);
+                    }
+                }
+            });
+            // A PDF left unfinished (an error part way): close it.
+            OUT.with(|m| {
+                if let Some(o) = m.borrow_mut().remove(&key) {
+                    unsafe {
+                        if let Some((page, _)) = o.page {
+                            b.FPDF_ClosePage(page);
+                        }
+                        b.FPDF_CloseDocument(o.doc);
                     }
                 }
             })

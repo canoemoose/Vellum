@@ -10,11 +10,13 @@
 //! `print_properties(printer)`, `print_send(jobId, options, onProgress)`, `print_cancel()`,
 //! `print_save_pdf(jobId, path)`, `print_release(jobId)`, `print_features()`.
 
+pub mod bands;
 pub mod compose;
 #[cfg(windows)]
 pub mod gdi;
 pub mod job;
 pub mod raster;
+pub mod rasterpdf;
 
 use crate::pdfium::PdfiumState;
 use serde::Serialize;
@@ -29,6 +31,8 @@ pub const VECTOR_WORKS: bool = true;
 struct Composed {
     bytes: Arc<Vec<u8>>,
     sheets: Vec<(f64, f64)>,
+    /// Each sheet's placed pages (sheet points, clipped): Black lines works page by page.
+    regions: Vec<Vec<job::Rect>>,
 }
 
 /// Composed jobs waiting to be printed or saved, by job id.
@@ -61,24 +65,48 @@ impl PrintJobs {
             }
         }
         let sheets: Vec<(f64, f64)> = job.sheets.iter().map(|s| (s.w, s.h)).collect();
+        let regions: Vec<Vec<job::Rect>> = job
+            .sheets
+            .iter()
+            .map(|s| {
+                s.items
+                    .iter()
+                    .filter_map(|it| {
+                        let b = job::item_bounds(it);
+                        match &s.clip {
+                            Some(c) => b.intersect(c),
+                            None => Some(b),
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
         let bytes = compose::compose(pdf, job, images)?;
         let job_id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let info = ComposedInfo { job_id, sheets: sheets.len(), bytes: bytes.len() };
-        self.map.lock().unwrap().insert(job_id, Composed { bytes: Arc::new(bytes), sheets });
+        self.map.lock().unwrap().insert(job_id, Composed { bytes: Arc::new(bytes), sheets, regions });
         Ok(info)
     }
 
-    fn get(&self, job_id: u64) -> Result<(Arc<Vec<u8>>, Vec<(f64, f64)>), String> {
+    #[allow(clippy::type_complexity)]
+    fn get(&self, job_id: u64) -> Result<(Arc<Vec<u8>>, Vec<(f64, f64)>, Vec<Vec<job::Rect>>), String> {
         self.map
             .lock()
             .unwrap()
             .get(&job_id)
-            .map(|c| (c.bytes.clone(), c.sheets.clone()))
+            .map(|c| (c.bytes.clone(), c.sheets.clone(), c.regions.clone()))
             .ok_or_else(|| "The print job has expired; try again".to_string())
     }
 
     pub fn bytes(&self, job_id: u64) -> Result<Arc<Vec<u8>>, String> {
         self.get(job_id).map(|g| g.0)
+    }
+
+    /// The job as a raster PDF in Greyscale or Black lines (Save as PDF). Blocking.
+    pub fn raster_pdf(&self, pdf: &PdfiumState, job_id: u64, o: &SaveOptions) -> Result<Vec<u8>, String> {
+        let (bytes, sheets, regions) = self.get(job_id)?;
+        let dpi = o.dpi.clamp(72.0, 1200.0);
+        rasterpdf::save(pdf, bytes, &sheets, &regions, &rasterpdf::RasterOptions { colour: o.colour, black_sensitivity: o.black_sensitivity, dpi })
     }
 
     pub fn release(&self, job_id: u64) {
@@ -87,8 +115,8 @@ impl PrintJobs {
 
     #[cfg(windows)]
     pub fn send(&self, pdf: &PdfiumState, job_id: u64, o: &gdi::SendOptions, progress: impl FnMut(usize, usize)) -> Result<(), String> {
-        let (bytes, sheets) = self.get(job_id)?;
-        gdi::send(pdf, bytes, &sheets, o, progress)
+        let (bytes, sheets, regions) = self.get(job_id)?;
+        gdi::send(pdf, bytes, &sheets, &regions, o, progress)
     }
 }
 
@@ -131,12 +159,41 @@ pub async fn print_compose(
     blocking(move || jobs.compose(&pdf, job)).await
 }
 
+/// How Save as PDF treats colour: Colour saves the composed (vector) PDF; Greyscale and Black
+/// lines save a raster one at `dpi` (rasterpdf.rs).
+#[derive(serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveOptions {
+    #[serde(default)]
+    pub colour: job::ColourMode,
+    #[serde(default = "default_sensitivity")]
+    pub black_sensitivity: u8,
+    #[serde(default = "default_dpi")]
+    pub dpi: f64,
+}
+
+fn default_sensitivity() -> u8 {
+    job::BLACK_LINES_SENSITIVITY
+}
+
+fn default_dpi() -> f64 {
+    600.0
+}
+
 #[tauri::command]
-pub async fn print_save_pdf(job_id: u64, path: String) -> Result<(), String> {
-    let jobs = jobs();
+pub async fn print_save_pdf(
+    pdf: tauri::State<'_, PdfiumState>,
+    job_id: u64,
+    path: String,
+    options: Option<SaveOptions>,
+) -> Result<(), String> {
+    let (pdf, jobs) = (pdf.inner().clone(), jobs());
     blocking(move || {
-        let bytes = jobs.bytes(job_id)?;
-        std::fs::write(&path, bytes.as_slice()).map_err(|e| format!("Could not save {path}: {e}"))
+        let bytes = match options {
+            Some(o) if o.colour != job::ColourMode::Colour => jobs.raster_pdf(&pdf, job_id, &o)?,
+            _ => jobs.bytes(job_id)?.as_ref().clone(),
+        };
+        std::fs::write(&path, &bytes).map_err(|e| crate::errcode::io(&e, format!("Couldn't save {path}: {e}")))
     })
     .await
 }

@@ -57,7 +57,7 @@ pub struct ImageDoc {
 impl ImageDoc {
     /// Decode the file once. Blocking; call from a worker thread (never a PDFium worker).
     pub fn open(path: &Path) -> Result<ImageDoc, String> {
-        let bytes = std::fs::read(path).map_err(|e| format!("Could not read the file: {e}"))?;
+        let bytes = std::fs::read(path).map_err(|e| crate::errcode::io(&e, format!("Couldn't read the file: {e}")))?;
         Self::from_bytes(&bytes)
     }
 
@@ -65,7 +65,7 @@ impl ImageDoc {
     pub fn from_bytes(bytes: &[u8]) -> Result<ImageDoc, String> {
         let mut reader = ImageReader::new(std::io::Cursor::new(bytes))
             .with_guessed_format()
-            .map_err(|e| format!("Could not read the file: {e}"))?;
+            .map_err(|e| crate::errcode::io(&e, format!("Couldn't read the file: {e}")))?;
         if reader.format().is_none() {
             return Err(ERR_NOT_SUPPORTED.into());
         }
@@ -80,7 +80,7 @@ impl ImageDoc {
         let rgba = img.into_rgba8();
         let (w, h) = rgba.dimensions();
         if w == 0 || h == 0 {
-            return Err("This image is empty".into());
+            return Err(crate::errcode::coded("image_empty", "This image is empty"));
         }
         let mut px = rgba.into_raw();
         if has_alpha {
@@ -88,7 +88,7 @@ impl ImageDoc {
         }
 
         // Page size from the original pixel dimensions, before any memory-ceiling downscale.
-        let mut dpi = dpi::detect(bytes).unwrap_or((geom::DEFAULT_DPI, geom::DEFAULT_DPI));
+        let mut dpi = geom::effective_dpi(dpi::detect(bytes));
         if geom::swaps_axes(orientation) {
             dpi = (dpi.1, dpi.0);
         }
@@ -177,10 +177,10 @@ impl ImageDoc {
 fn decode_error(e: image::ImageError) -> String {
     match e {
         image::ImageError::Unsupported(u) => {
-            format!("This image uses a format Vellum can't read yet ({u})")
+            crate::errcode::coded("image_unsupported", format!("This image uses a format Vellum can't read yet ({u})"))
         }
-        image::ImageError::Limits(_) | image::ImageError::IoError(_) => format!("Could not open this image: {e}"),
-        other => format!("This image looks damaged and couldn't be decoded ({other})"),
+        image::ImageError::Limits(_) | image::ImageError::IoError(_) => crate::errcode::coded("image_failed", format!("Couldn't open this image: {e}")),
+        other => crate::errcode::coded("image_damaged", format!("This image looks damaged and couldn't be decoded ({other})")),
     }
 }
 
@@ -211,6 +211,21 @@ pub mod geom {
     pub const DEFAULT_DPI: f64 = 96.0;
     /// Images with more pixels than this are kept at half resolution.
     pub const MAX_PIXELS: u64 = 120_000_000;
+
+    /// Below this an embedded resolution is a default, not a measurement: cameras and phones
+    /// write 72, screenshots 96. Such images use DEFAULT_DPI, so at 100% one image pixel is
+    /// one CSS pixel. Scans (150 and up) keep theirs, so a scanned drawing measures and prints
+    /// at its true size.
+    pub const MIN_TRUSTED_DPI: f64 = 150.0;
+
+    /// The resolution to size the page by: the embedded one if it's a real scan resolution
+    /// (either axis at MIN_TRUSTED_DPI or more), else DEFAULT_DPI on both axes.
+    pub fn effective_dpi(detected: Option<(f64, f64)>) -> (f64, f64) {
+        match detected {
+            Some((x, y)) if x.max(y) >= MIN_TRUSTED_DPI => (x, y),
+            _ => (DEFAULT_DPI, DEFAULT_DPI),
+        }
+    }
 
     /// Page size in points for an image of `w` x `h` pixels at `dpi` (x, y).
     pub fn page_size_pt(w: u32, h: u32, dpi: (f64, f64)) -> (f64, f64) {

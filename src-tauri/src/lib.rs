@@ -1,4 +1,5 @@
 pub mod docs;
+pub mod errcode;
 pub mod imagedoc;
 mod memory;
 pub mod pdfium;
@@ -10,6 +11,7 @@ pub mod print;
 // End WP-Print
 pub mod scale;
 pub mod shell; // WP-Shell
+pub mod snap;
 
 use docs::{DocInfo, Docs};
 use memory::{MemState, MemStats};
@@ -100,7 +102,7 @@ fn launch_args(state: tauri::State<Launch>) -> LaunchArgs {
 async fn read_file(path: String) -> Result<tauri::ipc::Response, String> {
     std::fs::read(&path)
         .map(tauri::ipc::Response::new)
-        .map_err(|e| format!("{path}: {e}"))
+        .map_err(|e| errcode::io(&e, format!("{path}: {e}")))
 }
 
 fn perf_log_path() -> PathBuf {
@@ -137,7 +139,7 @@ fn write_text_file(path: String, contents: String) -> Result<(), String> {
     if let Some(dir) = PathBuf::from(&path).parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    std::fs::write(&path, contents).map_err(|e| format!("{path}: {e}"))
+    std::fs::write(&path, contents).map_err(|e| errcode::io(&e, format!("{path}: {e}")))
 }
 
 /// Raw-body command: the target path travels in the `path` header, bytes in the body.
@@ -155,7 +157,7 @@ fn write_binary_file(request: tauri::ipc::Request) -> Result<(), String> {
     if let Some(dir) = PathBuf::from(&path).parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    std::fs::write(&path, bytes).map_err(|e| format!("{path}: {e}"))
+    std::fs::write(&path, bytes).map_err(|e| errcode::io(&e, format!("{path}: {e}")))
 }
 
 #[tauri::command]
@@ -417,6 +419,7 @@ pub fn run() {
             // WP-Shell
             shell::shell_take_pending,
             shell::reveal_in_explorer,
+            snap::snap_max_button,
             // WP-Shell end
             // WP-Print
             print::print_features,

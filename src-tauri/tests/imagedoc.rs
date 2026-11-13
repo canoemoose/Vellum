@@ -137,6 +137,19 @@ fn page_size_converts_pixels_at_dpi_to_points() {
 }
 
 #[test]
+fn photo_resolutions_are_ignored_scan_resolutions_kept() {
+    // Phone photos say 72, screenshots 96: pixel for pixel at 100%.
+    assert_eq!(geom::effective_dpi(Some((72.0, 72.0))), (96.0, 96.0));
+    assert_eq!(geom::effective_dpi(Some((96.0, 96.0))), (96.0, 96.0));
+    assert_eq!(geom::effective_dpi(Some((149.0, 149.0))), (96.0, 96.0));
+    assert_eq!(geom::effective_dpi(None), (96.0, 96.0));
+    // Scans keep their resolution, so they measure and print at true size.
+    assert_eq!(geom::effective_dpi(Some((150.0, 150.0))), (150.0, 150.0));
+    assert_eq!(geom::effective_dpi(Some((300.0, 300.0))), (300.0, 300.0));
+    assert_eq!(geom::effective_dpi(Some((200.0, 100.0))), (200.0, 100.0));
+}
+
+#[test]
 fn sane_dpi_rejects_junk() {
     assert!(geom::sane_dpi(72.0));
     assert!(geom::sane_dpi(2400.0));
@@ -407,7 +420,7 @@ fn gif_and_tiff_and_bmp_and_webp_open() {
 #[test]
 fn not_an_image_is_refused_clearly() {
     let e = ImageDoc::from_bytes(b"hello, this is not an image at all").err().unwrap();
-    assert_eq!(e, "Not a PDF or supported image");
+    assert_eq!(e, "[not_supported] Not a PDF or supported image");
     let mut png = encode_png_rgba(64, 64, |x, y| [x as u8, y as u8, 0, 255]);
     png.truncate(png.len() / 2);
     let e = ImageDoc::from_bytes(&png).err().unwrap();

@@ -155,23 +155,121 @@ fn validates_jobs() {
     assert!(validate(&bad).is_err());
 }
 
+const BL: BlackLines = BlackLines { sensitivity: BLACK_LINES_SENSITIVITY, radius: 3, invert: false };
+
 #[test]
 fn colour_modes() {
     let px = vec![
         255, 255, 255, 0, // white
-        250, 250, 250, 0, // near white (kept white)
-        200, 220, 255, 0, // pale colour -> a mark
-        0, 0, 255, 0,     // red (BGR order) -> a mark
+        250, 250, 250, 0, // near white
+        200, 220, 255, 0, // pale colour
+        0, 0, 255, 0,     // red (BGR order)
     ];
     let mut g = px.clone();
-    apply_colour(&mut g, ColourMode::Greyscale);
+    apply_colour(&mut g, 4, ColourMode::Greyscale, &BL);
     assert_eq!(&g[0..4], &[255, 255, 255, 0]);
     // Red: 0.299 * 255 = 76.
     assert_eq!(&g[12..16], &[76, 76, 76, 0]);
-    let mut b = px.clone();
-    apply_colour(&mut b, ColourMode::BlackLines);
-    assert_eq!(b, vec![255, 255, 255, 0, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     let mut c = px.clone();
-    apply_colour(&mut c, ColourMode::Colour);
+    apply_colour(&mut c, 4, ColourMode::Colour, &BL);
     assert_eq!(c, px);
+}
+
+/// A `w` x `h` grey picture (B = G = R) from a function of x, y.
+fn picture(w: usize, h: usize, f: impl Fn(usize, usize) -> u8) -> Vec<u8> {
+    let mut px = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        for x in 0..w {
+            let v = f(x, y);
+            px.extend_from_slice(&[v, v, v, 0]);
+        }
+    }
+    px
+}
+
+fn is_black(px: &[u8], w: usize, x: usize, y: usize) -> bool {
+    px[(y * w + x) * 4] == 0
+}
+
+#[test]
+fn black_lines_drops_paper_texture_and_keeps_lines() {
+    // Grainy, unevenly toned paper (darker to the right) with a faint line down column 20.
+    let (w, h) = (40, 20);
+    let mut px = picture(w, h, |x, y| {
+        let paper = 220 - (x as i32 * 2) + if (x + y) % 3 == 0 { 6 } else { 0 };
+        if x == 20 { (paper - 50) as u8 } else { paper as u8 }
+    });
+    black_lines(&mut px, w, &BL);
+    for y in 0..h {
+        assert!(is_black(&px, w, 20, y), "the faint line is kept at row {y}");
+        for x in [2, 10, 30, 38] {
+            assert!(!is_black(&px, w, x, y), "paper at {x},{y} goes white");
+        }
+    }
+}
+
+#[test]
+fn black_lines_sensitivity_decides_how_faint_a_line_counts() {
+    let (w, h) = (30, 10);
+    let make = || picture(w, h, |x, _| if x == 15 { 190 } else { 230 }); // ~17% darker than the paper
+    let mut strict = make();
+    black_lines(&mut strict, w, &BlackLines { sensitivity: 0, ..BL });
+    assert!(!is_black(&strict, w, 15, 5));
+    let mut keen = make();
+    black_lines(&mut keen, w, &BlackLines { sensitivity: 100, ..BL });
+    assert!(is_black(&keen, w, 15, 5));
+}
+
+#[test]
+fn black_lines_margin_runs_from_nothing_to_faint() {
+    assert_eq!(black_lines_margin(0), 100);
+    assert_eq!(black_lines_margin(60), 20);
+    assert_eq!(black_lines_margin(100), 5);
+    // At the far end nothing prints, solid black included.
+    let (w, h) = (30, 30);
+    let mut px = picture(w, h, |x, y| if x == 15 { 0 } else if y > 20 { 5 } else { 255 });
+    black_lines(&mut px, w, &BlackLines { sensitivity: 0, ..BL });
+    assert!(px.chunks_exact(4).all(|p| p[0] == 255));
+}
+
+#[test]
+fn black_lines_keeps_solid_black_and_drops_pale_fills() {
+    let (w, h) = (40, 40);
+    // A pale grey fill on the left, a solid black block on the right, white elsewhere.
+    let mut px = picture(w, h, |x, y| if (5..18).contains(&x) && (5..35).contains(&y) { 215 } else if x >= 25 && (5..35).contains(&y) { 10 } else { 255 });
+    black_lines(&mut px, w, &BL);
+    assert!(!is_black(&px, w, 11, 20), "the middle of a pale fill goes white");
+    assert!(is_black(&px, w, 32, 20), "the middle of a solid black block stays black");
+}
+
+#[test]
+fn black_lines_works_page_by_page() {
+    // Grey scanned paper (150) from x 10 to 29 on a white sheet: judged on its own, its edges
+    // stay paper; judged with the white margin, they'd turn black.
+    let (w, h) = (40, 20);
+    let px0 = picture(w, h, |x, _| if (10..30).contains(&x) { 150 } else { 255 });
+    let mut whole = px0.clone();
+    black_lines(&mut whole, w, &BL);
+    assert!(is_black(&whole, w, 10, 10), "whole-sheet: the page edge goes black");
+    let mut paged = px0.clone();
+    black_lines_in(&mut paged, w, (10, 0, 30, h), &BL);
+    assert!((10..30).all(|x| !is_black(&paged, w, x, 10)), "page by page: the paper stays white");
+    assert!(!is_dark_region(&px0, w, (10, 0, 30, h)));
+}
+
+#[test]
+fn black_lines_reads_a_blueprint_inverted() {
+    // Dark blue paper (B high, R low) with a white line.
+    let (w, h) = (30, 10);
+    let mut px = Vec::new();
+    for _y in 0..h {
+        for x in 0..w {
+            px.extend_from_slice(if x == 12 { &[250, 250, 250, 0] } else { &[160, 70, 30, 0] });
+        }
+    }
+    assert!(is_dark_sheet(&px));
+    black_lines(&mut px, w, &BlackLines { invert: true, ..BL });
+    assert!(is_black(&px, w, 12, 5));
+    assert!(!is_black(&px, w, 3, 5));
+    assert!(!is_dark_sheet(&picture(10, 10, |x, _| if x < 2 { 0 } else { 240 })));
 }

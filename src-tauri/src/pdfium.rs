@@ -50,10 +50,11 @@ fn page_worker(page: usize, workers: usize) -> usize {
     page % workers.max(1)
 }
 
-pub const ERR_DLL_MISSING: &str = "pdfium.dll not found: run `node tools/fetch-pdfium.mjs`";
-pub const ERR_PASSWORD_REQUIRED: &str = "Password required";
-pub const ERR_WRONG_PASSWORD: &str = "Wrong password";
-pub const ERR_NOT_SUPPORTED: &str = "Not a PDF or supported image";
+// Errors the user may see carry a code (errcode.rs); the front end words the message.
+pub const ERR_DLL_MISSING: &str = "[pdfium_missing] pdfium.dll not found: run `node tools/fetch-pdfium.mjs`";
+pub const ERR_PASSWORD_REQUIRED: &str = "[password_required] Password required";
+pub const ERR_WRONG_PASSWORD: &str = "[wrong_password] Wrong password";
+pub const ERR_NOT_SUPPORTED: &str = "[not_supported] Not a PDF or supported image";
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct PageSize {
@@ -991,7 +992,7 @@ fn worker(index: usize, lib: PathBuf, rx: Receiver<WorkerReq>, ready: Sender<Res
         Ok(b) => b,
         Err(e) => {
             eprintln!("[pdfium] could not load {}: {e:?}", lib.display());
-            let _ = ready.send(Err(format!("Could not load PDFium ({}): {e:?}", lib.display())));
+            let _ = ready.send(Err(crate::errcode::coded("pdfium_load", format!("Couldn't load PDFium ({}): {e:?}", lib.display()))));
             return;
         }
     };
@@ -1080,9 +1081,9 @@ fn open_doc(
             FPDF_ERR_PASSWORD if password.is_none_or(str::is_empty) => ERR_PASSWORD_REQUIRED.into(),
             FPDF_ERR_PASSWORD => ERR_WRONG_PASSWORD.into(),
             FPDF_ERR_FORMAT => ERR_NOT_SUPPORTED.into(),
-            FPDF_ERR_FILE => "Could not read the file (missing, or open in another program?)".into(),
-            FPDF_ERR_SECURITY => "This PDF uses an unsupported security handler".into(),
-            c => format!("PDFium could not open the file (error {c})"),
+            FPDF_ERR_FILE => crate::errcode::coded("read_failed", "PDFium couldn't read the file"),
+            FPDF_ERR_SECURITY => crate::errcode::coded("unsupported_security", "unsupported security handler"),
+            c => crate::errcode::coded("open_failed", format!("PDFium couldn't open the file (error {c})")),
         });
     }
     crate::pdfium_lod::on_open(handle, lod_path); // WP-LOD
