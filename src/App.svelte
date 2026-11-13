@@ -12,6 +12,9 @@
   import Toolbar from "./lib/components/Toolbar.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import MiniMap from "./lib/components/MiniMap.svelte";
+  import { type MapMode, rememberDoc } from "./lib/shell/docMemory";
+  import { hasCode, userMessage } from "./lib/shell/messages";
+  import CanvasScrollbars from "./lib/components/CanvasScrollbars.svelte";
   import StatusBar from "./lib/components/StatusBar.svelte";
   import DebugOverlay from "./lib/components/DebugOverlay.svelte";
   import MarqueeOverlay from "./lib/components/MarqueeOverlay.svelte";
@@ -22,12 +25,14 @@
   import ShortcutsDialog from "./lib/components/dialogs/ShortcutsDialog.svelte";
   import ExportDialog, { type ExportRequest } from "./lib/components/dialogs/ExportDialog.svelte";
   import PrintDialog from "./lib/components/print/PrintDialog.svelte";
+  import appIcon from "../src-tauri/icons/source/vellum.svg";
   import { Viewer, initialUiState, refreshCanvasColour, type DocView, type UiState, type NavMode } from "./lib/engine/viewer";
   import { attachInput } from "./lib/engine/input";
+  import { blockedWhileTyping, isWebViewAccelerator } from "./lib/engine/keys";
   import { rendererFor, pdfRenderer } from "./lib/render/createRenderer";
   import type { DocInfo, ScaleCandidate } from "./lib/render/types";
   import type { LayoutMode } from "./lib/view/layout";
-  import { screenToWorld, ZOOM_PRESETS } from "./lib/view/viewMath";
+  import { PT_TO_CSS, screenToWorld, ZOOM_PRESETS, mapUseful } from "./lib/view/viewMath";
   import { unrotatePoint } from "./lib/view/rotation";
   import type { PageRect, PrintContext } from "./lib/print/context";
   import { loadSettings, saveSettings, type Settings } from "./lib/settings";
@@ -45,7 +50,7 @@
   import { pickDetectedScale, rememberScale, scaleStatusText, type DocScale } from "./lib/shell/scale";
   import { addRecent, formatZoom } from "./lib/shell/format";
   import { navHint } from "./lib/shell/shortcuts";
-  import { ACCENTS, accentVars, resolveTheme, type ThemePref } from "./lib/shell/theme";
+  import { resolveTheme, type ThemePref } from "./lib/shell/theme";
   import { placeOnScreen } from "./lib/shell/windowPlacement";
   import { exportPages } from "./lib/shell/exportPages";
 
@@ -68,9 +73,16 @@
     candidates: ScaleCandidate[] | null;
     password: string | null;
     token: number;
+    /** The mini map's mode, its size now, and the size to remember (up to the guards). */
+    map?: MapMode;
+    mapSize?: number;
+    mapKeep?: number;
   }
 
   let host: HTMLDivElement;
+  let stageW = $state(1000);
+
+  let stageH = $state(700);
   let canvas: HTMLCanvasElement;
   let viewer = $state.raw<Viewer | null>(null);
   let ui = $state<UiState>(initialUiState());
@@ -111,7 +123,6 @@
   $effect(() => {
     const root = document.documentElement;
     root.dataset.theme = theme;
-    for (const [k, v] of Object.entries(accentVars(settings.accent))) root.style.setProperty(k, v);
     refreshCanvasColour();
     viewer?.requestFrame();
   });
@@ -120,19 +131,20 @@
     settings.theme = t;
     save();
   }
-  function setAccent(hex: string) {
-    settings.accent = hex;
-    save();
-  }
   function setLayout(m: LayoutMode) {
     viewer?.setLayoutMode(m);
     settings.layoutMode = m;
     save();
   }
-  function setNav(m: NavMode) {
+  function setColumns(n: number) {
+    viewer?.setColumns(n);
+    settings.columns = n;
+    if (ui.layoutMode !== "columns") setLayout("columns");
+    else save();
+  }
+  /** Navigation mode for the current document; "auto" follows its page size. */
+  function setNav(m: NavMode | "auto") {
     viewer?.setNavMode(m);
-    settings.navMode = m;
-    save();
   }
   function toggleSidebar() {
     settings.sidebarOpen = !settings.sidebarOpen;
@@ -192,10 +204,14 @@
     const cur = active;
     if (cur && cur.id === id && cur.status !== "pending") return;
     if (cur && cur.id !== id) {
-      if (cur.status === "open") updateTab(cur.id, { view: v.detach() });
+      if (cur.status === "open") {
+        rememberActive();
+        updateTab(cur.id, { view: v.detach() });
+      }
       else if (cur.status === "loading") updateTab(cur.id, { status: "pending", token: ++loadSeq }); // its open is abandoned
     }
     tabs = { ...tabs, activeId: id };
+    mapHeld = false; // the map may have gone with the old tab before the pointer left it
     const t = tabById(id)!;
     if (t.status === "open" && t.view) {
       v.attach(t.view);
@@ -216,23 +232,40 @@
     const token = ++loadSeq;
     updateTab(id, { status: "loading", error: null, token });
     setTitle(t.title);
+    const mem = settings.docs[pathKey(t.path)];
+    v.layoutMode = mem?.layout ?? "continuous"; // a file seen before opens as it was left
+    v.columns = mem?.columns ?? settings.columns;
     try {
       await v.open(t.path, password);
     } catch (e) {
       if (tabById(id)?.token !== token) return;
-      const msg = String((e as Error)?.message ?? e);
-      if (msg === "Password required" || msg === "Wrong password") {
-        updateTab(id, { status: "password", error: "This PDF is password protected." });
-        passwordFor = { tabId: id, error: msg === "Wrong password" ? msg : null, busy: false };
+      // By code, never by wording (shell/messages.ts).
+      if (hasCode(e, "password_required") || hasCode(e, "wrong_password")) {
+        updateTab(id, { status: "password", error: userMessage("[password_required]", "open this file") });
+        passwordFor = { tabId: id, error: hasCode(e, "wrong_password") ? userMessage(e, "open this file") : null, busy: false };
       } else {
-        updateTab(id, { status: "error", error: msg });
+        console.warn("open failed:", String((e as Error)?.message ?? e));
+        updateTab(id, { status: "error", error: userMessage(e, "open this file") });
       }
       return;
     }
     const now = tabById(id);
     if (now?.token !== token || !v.doc || v.currentPath !== t.path) return; // superseded by a tab switch
     const info = v.doc;
-    updateTab(id, { status: "open", info, kind: info.kind, password: password ?? null });
+    // Back where you were: rotation, navigation mode, zoom and position, mini map. A file
+    // opened for the first time keeps the open's own fit and the default mini map.
+    if (mem) {
+      if (mem.rotation) v.setRotation(mem.rotation);
+      if (mem.nav) v.setNavMode(mem.nav);
+      if (mem.page < info.numPages) {
+        v.setZoom(mem.zoom);
+        v.centreOn(mem.page, mem.x, mem.y);
+      }
+    }
+    updateTab(id, {
+      status: "open", info, kind: info.kind, password: password ?? null,
+      map: mem?.map ?? "auto", mapSize: mem?.mapSize ?? 1, mapKeep: mem?.mapSize ?? 1,
+    });
     if (passwordFor?.tabId === id) passwordFor = null;
     settings.recent = addRecent(settings.recent, t.path);
     save();
@@ -245,6 +278,7 @@
     if (!v || !t) return;
     if (passwordFor?.tabId === id) passwordFor = null;
     const wasActive = id === tabs.activeId;
+    if (wasActive && t.status === "open") rememberActive();
     if (wasActive) v.close(); // also abandons an open in progress
     else if (t.view) v.closeDetached(t.view);
     const after = closeTabModel(tabs, id);
@@ -261,6 +295,51 @@
     for (const t of [...tabs.tabs]) if (t.id !== id) await closeTab(t.id);
     await activate(id);
   }
+
+  // ------------------------------------------------------------------ per-file memory
+
+  /** Remember where the active document is and how it's shown (shell/docMemory.ts). */
+  function rememberActive() {
+    const v = viewer;
+    const t = active;
+    if (!v || !t || t.status !== "open" || !v.doc) return;
+    const c = v.pagePointAt(v.vw / 2, v.vh / 2);
+    const page = c?.page ?? ui.page;
+    const size = v.doc.sizes[page];
+    settings.docs = rememberDoc(settings.docs, pathKey(t.path), {
+      page,
+      zoom: ui.zoom,
+      x: c?.x ?? (size ? size.w / 2 : 0),
+      y: c?.y ?? (size ? size.h / 2 : 0),
+      rotation: ui.rotation,
+      layout: ui.layoutMode,
+      columns: ui.columns,
+      nav: ui.navAuto ? null : ui.navMode,
+      map: t.map ?? "auto",
+      mapSize: t.mapKeep ?? 1,
+      t: Date.now(),
+    });
+    save();
+  }
+
+  /** Remember a second after things settle, so a long look round costs one save. */
+  let rememberTimer: ReturnType<typeof setTimeout> | undefined;
+  function rememberSoon() {
+    clearTimeout(rememberTimer);
+    rememberTimer = setTimeout(rememberActive, 1000);
+  }
+  $effect(() => {
+    // Any change to the view, page, rotation, layout or navigation of the open document.
+    // Numbers, not the view object: that's replaced on every pointer move.
+    void [ui.page, ui.zoom, ui.viewWorld.x, ui.viewWorld.y, ui.rotation, ui.layoutMode, ui.columns, ui.navMode, ui.navAuto];
+    if (hasDoc) rememberSoon();
+  });
+  $effect(() => {
+    // Closing the window inside the second's wait would lose the last move.
+    const flush = () => rememberActive();
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  });
 
   function setTitle(name: string | null) {
     getCurrentWindow()
@@ -367,12 +446,13 @@
       });
       const n = r.written.length;
       let msg = ac.signal.aborted
-        ? `Stopped after ${n} ${n === 1 ? "page" : "pages"}.`
+        ? `Export cancelled after ${n} ${n === 1 ? "page" : "pages"}.`
         : `Exported ${n} ${n === 1 ? "page" : "pages"} to ${folder}.`;
-      if (r.reduced.length) msg += ` ${r.reduced.length === 1 ? "One page was" : `${r.reduced.length} pages were`} too large and went out at ${Math.min(...r.reduced.map((x) => x[1]))} dpi.`;
+      if (r.reduced.length) msg += ` ${r.reduced.length === 1 ? "One page" : `${r.reduced.length} pages`} ${r.reduced.length === 1 ? "was" : "were"} too large and ${r.reduced.length === 1 ? "was" : "were"} saved at ${Math.min(...r.reduced.map((x) => x[1]))} dpi.`;
       exportState = { progress: null, result: msg, ac: null };
     } catch (e) {
-      exportState = { progress: null, result: `Export failed: ${String((e as Error)?.message ?? e)}`, ac: null };
+      console.warn("export failed:", String((e as Error)?.message ?? e));
+      exportState = { progress: null, result: userMessage(e, "export the pages"), ac: null };
     }
   }
 
@@ -397,7 +477,7 @@
           { label: "Open recent", submenu: recent },
           { separator: true },
           docItem("Export pages as images…", () => { exportState = { progress: null, result: null, ac: null }; dialog = "export"; }),
-          docItem("Reveal in Explorer", () => active && revealInExplorer(active.path).catch((e) => console.warn(String(e)))),
+          docItem("Show in Explorer", () => active && showInExplorer(active.path)),
           { separator: true },
           docItem("Print…", openPrint, "Ctrl+P"),
           docItem("Document properties", () => (dialog = "properties"), "Ctrl+D"),
@@ -410,33 +490,42 @@
         items: [
           docItem("Zoom in", () => v?.zoomStep(1), "+"),
           docItem("Zoom out", () => v?.zoomStep(-1), "-"),
-          docItem("Fit page", () => v?.fit("page"), "Ctrl+0"),
-          docItem("Fit width", () => v?.fit("width")),
-          docItem("Actual size", () => v?.actualSize(), "Ctrl+1"),
+          docItem("Fit page", () => v?.fit("page", false, true), "Ctrl+0"),
+          docItem("Fit width", () => v?.fit("width", false, true), "Ctrl+2"),
+          docItem("Actual size", () => v?.actualSize(true), "Ctrl+1"),
           {
             label: "Zoom",
             disabled: !hasDoc,
-            submenu: ZOOM_PRESETS.filter((z) => z >= 0.1 && z <= 16).map((z) => ({ label: formatZoom(z), action: () => v?.setZoom(z) })),
+            submenu: ZOOM_PRESETS.filter((z) => z >= 0.1 && z <= 16).map((z) => ({ label: formatZoom(z), action: () => v?.setZoom(z, undefined, undefined, true) })),
           },
           { separator: true },
-          { label: "Continuous", radio: true, checked: settings.layoutMode === "continuous", action: () => setLayout("continuous") },
-          { label: "Single page", radio: true, checked: settings.layoutMode === "single", action: () => setLayout("single") },
+          { label: "Single page", shortcut: "Ctrl+Shift+1", radio: true, checked: ui.layoutMode === "single", disabled: !hasDoc, action: () => setLayout("single") },
+          { label: "Continuous", shortcut: "Ctrl+Shift+2", radio: true, checked: ui.layoutMode === "continuous", disabled: !hasDoc, action: () => setLayout("continuous") },
+          { label: "Columns", shortcut: "Ctrl+Shift+3", radio: true, checked: ui.layoutMode === "columns", disabled: !hasDoc, action: () => setLayout("columns") },
+          {
+            label: "Columns across",
+            disabled: !hasDoc,
+            submenu: [2, 3, 4, 5, 6].map((n) => ({ label: String(n), radio: true, checked: ui.columns === n, action: () => setColumns(n) })),
+          },
           { separator: true },
-          { label: "CAD navigation", radio: true, checked: settings.navMode === "cad", action: () => setNav("cad") },
-          { label: "Document navigation", radio: true, checked: settings.navMode === "document", action: () => setNav("document") },
+          { label: "Automatic navigation (from page size)", radio: true, checked: ui.navAuto, disabled: !hasDoc, action: () => setNav("auto") },
+          { label: "CAD navigation", radio: true, checked: !ui.navAuto && ui.navMode === "cad", disabled: !hasDoc, action: () => setNav("cad") },
+          { label: "Document navigation", radio: true, checked: !ui.navAuto && ui.navMode === "document", disabled: !hasDoc, action: () => setNav("document") },
           { separator: true },
           { label: "Sidebar", shortcut: "Ctrl+B", checked: settings.sidebarOpen, action: toggleSidebar },
-          { label: "Mini map", checked: settings.miniMap, action: () => { settings.miniMap = !settings.miniMap; save(); } },
+          {
+            label: "Mini map",
+            disabled: !hasDoc,
+            submenu: ([["auto", "Automatic"], ["show", "Show"], ["hide", "Hide"]] as const).map(([m, label]) => ({
+              label, radio: true, checked: mapMode === m, action: () => setMapMode(m),
+            })),
+          },
           { separator: true },
           {
             label: "Theme",
             submenu: (["dark", "light", "system"] as const).map((t) => ({
               label: t === "system" ? "System" : t === "dark" ? "Dark" : "Light", radio: true, checked: settings.theme === t, action: () => setTheme(t),
             })),
-          },
-          {
-            label: "Accent",
-            submenu: ACCENTS.map((a) => ({ label: a.name, swatch: a.hex, checked: settings.accent === a.hex, action: () => setAccent(a.hex) })),
           },
           {
             label: "Units",
@@ -456,7 +545,6 @@
           docItem("Rotate view anticlockwise", () => v?.rotate(-1), "Shift+R"),
           { separator: true },
           docItem("Drawing scale…", openScale),
-          docItem("Properties", () => (dialog = "properties"), "Ctrl+D"),
         ],
       },
       {
@@ -468,6 +556,24 @@
       },
     ];
   });
+
+  // ------------------------------------------------------------------ notices
+
+  /** Something that didn't work, shown in the status bar for a few seconds. */
+  let notice = $state<string | null>(null);
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  function notify(msg: string) {
+    notice = msg;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => (notice = null), 6000);
+  }
+
+  function showInExplorer(path: string) {
+    revealInExplorer(path).catch((e) => {
+      console.warn("show in explorer failed:", String(e));
+      notify(userMessage(e, "show the file in Explorer"));
+    });
+  }
 
   function openScale() {
     const t = active;
@@ -485,7 +591,7 @@
         { label: "Close tab", shortcut: id === tabs.activeId ? "Ctrl+W" : undefined, action: () => closeTab(id) },
         { label: "Close other tabs", disabled: tabs.tabs.length < 2, action: () => closeOthers(id) },
         { separator: true },
-        { label: "Open containing folder", action: () => revealInExplorer(t.path).catch((e) => console.warn(String(e))) },
+        { label: "Show in Explorer", action: () => showInExplorer(t.path) },
         { label: "Copy path", action: () => navigator.clipboard.writeText(t.path).catch((e) => console.warn(String(e))) },
       ],
     };
@@ -493,17 +599,22 @@
 
   // ------------------------------------------------------------------ keyboard (shell-level; navigation keys live in input.ts)
 
+  /** A modal (a dialog, or the print dialog unless it's hidden for an area pick) owns the keyboard. */
+  const modalOpen = $derived(dialog !== null || (printOpen && !marquee));
+
+  // WebView2's own accelerators (reload, find, save page...) don't belong here. Capture phase,
+  // so it runs before a dialog or menu can stop the key.
+  function guardWebView(e: KeyboardEvent) {
+    if (isWebViewAccelerator(e)) e.preventDefault();
+  }
+
   function onKeyDown(e: KeyboardEvent) {
-    const el = e.target as HTMLElement | null;
-    const typing = !!el && (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA" || el.isContentEditable);
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
-    // WebView2's own accelerators (reload, find, print preview, save page) don't belong here.
-    if (e.key === "F5" || (ctrl && ["r", "f", "g", "s", "u", "j", "h"].includes(k))) {
-      e.preventDefault();
-      return;
-    }
-    if (marquee) return;
+    if (isWebViewAccelerator(e) || marquee || modalOpen || blockedWhileTyping(e)) return;
+    // Holding a key must not close every tab, spin the view or flicker the sidebar. Ctrl+Tab
+    // may repeat to cycle through tabs.
+    if (e.repeat && !(ctrl && e.key === "Tab")) return;
     let handled = true;
     if (ctrl && e.key === "Tab") {
       const t = cycle(tabs, e.shiftKey ? -1 : 1);
@@ -518,8 +629,13 @@
       toggleSidebar();
     } else if (e.key === "F1") {
       dialog = "shortcuts";
-    } else if (!typing && !ctrl && !e.altKey && k === "r") {
-      viewer?.rotate(e.shiftKey ? -1 : 1);
+    } else if (ctrl && e.shiftKey && !e.altKey && /^Digit[123]$/.test(e.code)) {
+      // By the physical key: on a UK keyboard Shift+2 types a quotation mark.
+      if (hasDoc) setLayout(e.code === "Digit1" ? "single" : e.code === "Digit2" ? "continuous" : "columns");
+    } else if (!ctrl && !e.altKey && !e.shiftKey && k === "n") {
+      if (hasDoc) setNav(ui.navMode === "cad" ? "document" : "cad");
+    } else if (!ctrl && !e.altKey && k === "r") {
+      if (hasDoc) viewer?.rotate(e.shiftKey ? -1 : 1);
     } else {
       handled = false;
     }
@@ -597,6 +713,7 @@
     systemDark = mq.matches;
     const onScheme = () => (systemDark = mq.matches);
     mq.addEventListener("change", onScheme);
+    window.addEventListener("keydown", guardWebView, true);
     window.addEventListener("keydown", onKeyDown);
 
     (async () => {
@@ -604,8 +721,8 @@
       bench = args.bench;
       const win = getCurrentWindow();
       const v = new Viewer(canvas);
-      v.navMode = settings.navMode;
       v.layoutMode = settings.layoutMode;
+      v.columns = settings.columns;
       v.onUi = (s) => (ui = s);
       viewer = v;
       ui = v.uiState();
@@ -621,6 +738,8 @@
       detachInput = attachInput(host, v, {
         open: openDialog,
         toggleDebug: () => (debug = !debug),
+        blocked: () => modalOpen,
+        hasDoc: () => hasDoc,
       });
 
       // Log every settle-to-sharp event while the debug overlay is up.
@@ -681,20 +800,63 @@
       cleanups.forEach((f) => f());
       ro?.disconnect();
       mq.removeEventListener("change", onScheme);
+      window.removeEventListener("keydown", guardWebView, true);
       window.removeEventListener("keydown", onKeyDown);
     };
   });
 
   // ------------------------------------------------------------------ derived view data
 
+  /** The hover card's second line: where the tab is (page x of y), or why it didn't open. */
+  function tabDetail(t: Tab): string | null {
+    if (t.status === "error" || t.status === "password") return t.error;
+    if (t.status !== "open" || !t.info || t.info.numPages < 2) return null;
+    const page = t.id === tabs.activeId ? ui.page : (t.view?.page ?? 0);
+    return `Page ${page + 1} of ${t.info.numPages}`;
+  }
   const tabViews = $derived<TabView[]>(
     tabs.tabs.map((t) => ({
       id: t.id, title: t.title, path: t.path, kind: t.kind,
       loading: t.status === "loading", error: t.status === "error" || t.status === "password",
       note: t.info?.meta.note ?? null,
+      detail: tabDetail(t),
+      snapshot: t.view?.snapshot ?? null,
     })),
   );
   const sizes = $derived(hasDoc && active?.info ? active.info.sizes : []);
+  /** The pages the view touches, with their world rects, for the mini map. */
+  const mapPages = $derived.by(() => {
+    void [ui.layoutMode, ui.rotation, ui.numPages];
+    const rects = viewer?.layout.rects ?? [];
+    return ui.visiblePages.flatMap((page) => (rects[page] ? [{ page, rect: rects[page]! }] : []));
+  });
+  /**
+   * The mini map shows when it has something to say (mapUseful: a page cut off at the side,
+   * or at both top and bottom), once that has held for 300 ms so it can't flicker, and hides
+   * as soon as it stops being true.
+   */
+  // Tall pages count in both navigation modes (Matt). To revisit: CAD only, so documents read
+  // at fit width stay clear of the map, would pass ui.navMode === "cad" as the third argument.
+  /** The mini map's mode for this file: automatic (when useful), always, or never. */
+  const mapMode = $derived<MapMode>(active?.map ?? "auto");
+  const mapWanted = $derived(
+    hasDoc && mapMode !== "hide" && (mapMode === "show" ? mapPages.length > 0 : mapUseful(ui.viewWorld, mapPages.map((m) => m.rect))),
+  );
+  function setMapMode(m: MapMode) {
+    if (!active) return;
+    updateTab(active.id, { map: m });
+    rememberSoon();
+  }
+  /** The pointer is over the map or dragging in it: it stays, whatever the view does. */
+  let mapHeld = $state(false);
+  let mapShown = $state(false);
+  let mapTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const want = mapWanted || mapHeld;
+    clearTimeout(mapTimer);
+    if (!want) mapShown = false;
+    else if (!mapShown) mapTimer = setTimeout(() => (mapShown = true), 300);
+  });
   const cursorLabel = $derived.by(() => {
     const c = ui.cursor;
     const s = c ? sizes[c.page] : null;
@@ -728,7 +890,7 @@
     onContext={tabMenu}
   />
   {#if chrome}
-    <MenuBar {menus} />
+    <MenuBar {menus} disabled={modalOpen} />
     <Toolbar
       page={ui.page}
       numPages={hasDoc ? ui.numPages : 0}
@@ -740,9 +902,15 @@
       onPrev={() => viewer?.prevPage()}
       onNext={() => viewer?.nextPage()}
       onZoomStep={(d) => viewer?.zoomStep(d)}
-      onZoom={(z) => viewer?.setZoom(z)}
-      onFit={(m) => viewer?.fit(m)}
-      onActual={() => viewer?.actualSize()}
+      onZoom={(z) => viewer?.setZoom(z, undefined, undefined, true)}
+      onFit={(m) => viewer?.fit(m, false, true)}
+      onActual={() => viewer?.actualSize(true)}
+      navMode={ui.navMode}
+      navAuto={ui.navAuto}
+      onNavMode={setNav}
+      layoutMode={ui.layoutMode}
+      columns={ui.columns}
+      onLayout={setLayout}
     />
   {/if}
 
@@ -754,6 +922,7 @@
         docId={hasDoc ? ui.docId : null}
         {sizes}
         current={ui.page}
+        visible={ui.visiblePages}
         thumbnail={(p, m) => viewer!.thumbnail(p, m)}
         cancelThumbnail={(p, m) => viewer?.cancelThumbnail(p, m)}
         outline={(id) => rendererFor(active?.path ?? ".pdf").outline?.(id) ?? Promise.resolve([])}
@@ -770,20 +939,17 @@
       />
     {/if}
 
-    <div class="stage" bind:this={host}>
+    <div class="stage" bind:this={host} bind:clientWidth={stageW} bind:clientHeight={stageH}>
       <canvas bind:this={canvas}></canvas>
 
       {#if !active && !bench}
         <div class="empty">
-          <svg width="40" height="40" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" fill="none" stroke="var(--accent)" stroke-width="1" />
-            <path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="var(--accent)" stroke-width="1" stroke-linecap="round" />
-          </svg>
+          <img src={appIcon} width="40" height="40" alt="" />
           {#if ui.error}
             <p class="err">{ui.error}</p>
           {/if}
           <button type="button" class="btn primary" onclick={openDialog}>Open a file</button>
-          <p>or drop PDFs and images here <span class="key">Ctrl+O</span></p>
+          <p>or drop PDFs and images here</p>
           {#if settings.recent.length}
             <div class="recent">
               <div class="rh">Recent</div>
@@ -811,15 +977,28 @@
         <div class="loading">Opening {active.title}…</div>
       {/if}
 
-      {#if chrome && settings.miniMap && hasDoc && viewer && sizes[ui.page]}
+      {#if chrome && mapMode !== "hide" && hasDoc && viewer && mapShown && mapPages.length}
         <MiniMap
-          page={ui.page}
-          size={sizes[ui.page]}
+          pages={mapPages}
           rotation={ui.rotation}
-          viewport={ui.pageViewport}
+          view={ui.viewWorld}
           preview={(p) => viewer!.previewFor(p)}
-          onCentre={(p, x, y) => viewer?.centreOn(p, x, y)}
+          docId={ui.docId ?? -1}
+          thumbnail={(p, m) => viewer!.thumbnail(p, m)}
+          onCentre={(x, y) => viewer?.centreOnWorld(x, y)}
+          onHold={(h) => (mapHeld = h)}
+          size={active?.mapSize ?? 1}
+          {stageW}
+          {stageH}
+          onSize={(s, done, keep) => {
+            if (!active) return;
+            updateTab(active.id, done ? { mapSize: s, mapKeep: keep } : { mapSize: s });
+            if (done) rememberSoon();
+          }}
         />
+      {/if}
+      {#if chrome && hasDoc && viewer && ui.navMode === "document"}
+        <CanvasScrollbars view={ui.viewWorld} bounds={ui.bounds} unitsPerPx={1 / (ui.zoom * PT_TO_CSS)} onPan={(dx, dy) => viewer?.panBy(dx, dy)} />
       {/if}
       {#if marquee}
         <MarqueeOverlay pageAt={(x, y) => viewer?.pagePointAt(x, y) ?? null} {pointOn} onDone={marquee} />
@@ -836,7 +1015,8 @@
   {#if chrome}
     <StatusBar
       scaleText={hasDoc ? scaleStatusText(active?.scale ?? null) : null}
-      hint={navHint(settings.navMode)}
+      hint={hasDoc ? navHint(ui.navMode) : ""}
+      {notice}
       cursor={cursorLabel}
       pageSize={pageSizeLabel}
       onScale={openScale}
@@ -881,7 +1061,7 @@
 {:else if dialog === "about"}
   <AboutDialog onClose={() => (dialog = null)} />
 {:else if dialog === "shortcuts"}
-  <ShortcutsDialog navMode={settings.navMode} onClose={() => (dialog = null)} />
+  <ShortcutsDialog navMode={ui.navMode} onClose={() => (dialog = null)} />
 {:else if dialog === "export" && active?.info}
   <ExportDialog
     fileName={active.title}
@@ -959,15 +1139,6 @@
     display: flex;
     gap: 10px;
     margin-top: 6px;
-  }
-  .key {
-    font-family: var(--font-num);
-    font-size: 12px;
-    color: var(--tx2);
-    border: 1px solid var(--bd-strong);
-    border-radius: 4px;
-    padding: 0 4px;
-    margin-left: 4px;
   }
   .recent {
     margin-top: 18px;

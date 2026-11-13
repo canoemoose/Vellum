@@ -20,9 +20,22 @@ describe("filterShortcuts", () => {
 });
 
 describe("navHint", () => {
-  it("matches the mockup in CAD mode", () => {
-    expect(navHint("cad")).toBe("Middle-drag pan · Scroll zoom at cursor · Space-drag pan · Double-middle-click fit");
-    expect(navHint("document")).toContain("Ctrl+scroll zoom");
+  it("uses the shortcuts dialog's words: the wheel zooms in CAD (a touchpad scroll pans)", () => {
+    expect(navHint("cad")).toBe("Middle-drag pan · Wheel zoom at cursor · Space+drag pan · Double middle-click fit");
+    expect(navHint("document")).toContain("Ctrl+wheel zoom");
+  });
+  it("writes key combinations with + throughout", () => {
+    const all = [navHint("cad"), navHint("document"), ...SHORTCUTS.flatMap((g) => g.items.map((i) => i.keys))].join(" ");
+    expect(all).not.toMatch(/ \+ wheel|Space-drag|Shift-click|Ctrl\+scroll/);
+  });
+});
+
+describe("new keyboard routes", () => {
+  it("lists Fit width, the layouts and the navigation switch", () => {
+    const keys = SHORTCUTS.flatMap((g) => g.items.map((i) => i.keys));
+    expect(keys).toContain("Ctrl+2");
+    expect(keys).toContain("Ctrl+Shift+1 / 2 / 3");
+    expect(keys).toContain("N");
   });
 });
 

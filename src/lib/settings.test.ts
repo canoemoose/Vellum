@@ -6,31 +6,34 @@ describe("sanitiseSettings", () => {
     expect(sanitiseSettings(null)).toEqual(DEFAULTS);
     expect(sanitiseSettings("junk")).toEqual(DEFAULTS);
   });
-  it("keeps the phase 0 settings", () => {
+  it("keeps the phase 0 settings, dropping the old global navigation mode (now per document)", () => {
     const s = sanitiseSettings({ navMode: "document", layoutMode: "single" });
-    expect(s.navMode).toBe("document");
+    expect("navMode" in s).toBe(false);
+    // The accent was a setting until 12 November 2026; a saved one is dropped.
+    expect("accent" in sanitiseSettings({ accent: "#3b82f6" })).toBe(false);
     expect(s.layoutMode).toBe("single");
     expect(s.theme).toBe("dark");
   });
   it("keeps valid values", () => {
     const s = sanitiseSettings({
-      theme: "system", accent: "#14b8a6", sidebarOpen: false, sidebarWidth: 250, sidebarTab: "outline",
-      miniMap: false, units: "imperial", recent: ["C:\\a.pdf"], scales: { "c:\\a.pdf": 200 },
+      theme: "system", sidebarOpen: false, sidebarWidth: 250, sidebarTab: "outline",
+      units: "imperial", recent: ["C:\\a.pdf"], scales: { "c:\\a.pdf": 200 },
+      docs: { "c:\\a.pdf": { page: 2, zoom: 1.5, x: 10, y: 20, rotation: 0, layout: "single", columns: 2, nav: null, map: "hide", mapSize: 1, t: 1 } },
       window: { x: -8, y: 10, w: 1200, h: 800, maximised: true },
     });
+    expect(s.docs["c:\\a.pdf"]).toMatchObject({ page: 2, layout: "single", map: "hide" });
     expect(s).toMatchObject({
-      theme: "system", accent: "#14b8a6", sidebarOpen: false, sidebarWidth: 250, sidebarTab: "outline",
-      miniMap: false, units: "imperial", recent: ["C:\\a.pdf"], scales: { "c:\\a.pdf": 200 },
+      theme: "system", sidebarOpen: false, sidebarWidth: 250, sidebarTab: "outline",
+      units: "imperial", recent: ["C:\\a.pdf"], scales: { "c:\\a.pdf": 200 },
       window: { x: -8, y: 10, w: 1200, h: 800, maximised: true },
     });
   });
   it("rejects bad values field by field", () => {
     const s = sanitiseSettings({
-      theme: "purple", accent: "#123456", sidebarWidth: 5000, recent: ["ok", 3], scales: { a: -1, b: "x", c: 50 },
+      theme: "purple", sidebarWidth: 5000, recent: ["ok", 3], scales: { a: -1, b: "x", c: 50 },
       window: { x: 1, y: 2, w: 0, h: 5 },
     });
     expect(s.theme).toBe("dark");
-    expect(s.accent).toBe(DEFAULTS.accent);
     expect(s.sidebarWidth).toBe(SIDEBAR_MAX);
     expect(s.recent).toEqual(["ok"]);
     expect(s.scales).toEqual({ c: 50 });

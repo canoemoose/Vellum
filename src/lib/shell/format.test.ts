@@ -48,12 +48,14 @@ describe("parsePageRange", () => {
     expect(parsePageRange("8-", 10)).toEqual([7, 8, 9]);
     expect(parsePageRange("2–3", 10)).toEqual([1, 2]);
   });
-  it("explains what is wrong", () => {
-    expect(parsePageRange("0", 5)).toBe("Pages run from 1 to 5");
-    expect(parsePageRange("4-9", 5)).toBe("Pages run from 1 to 5");
-    expect(parsePageRange("3-1", 5)).toBe('"3-1" runs backwards');
-    expect(parsePageRange("a", 5)).toBe('"a" isn\'t a page or a range');
-    expect(parsePageRange(",,", 5)).toBe("No pages chosen");
+  it("takes each page once, in order, whichever way it was typed", () => {
+    expect(parsePageRange("3-1", 5)).toEqual([0, 1, 2]);
+    expect(parsePageRange(",,", 5)).toEqual([0, 1, 2, 3, 4]); // nothing typed: every page
+  });
+  it("explains what is wrong, as print does", () => {
+    expect(parsePageRange("0", 5)).toBe("Pages run from 1 to 5.");
+    expect(parsePageRange("4-9", 5)).toBe("Pages run from 1 to 5.");
+    expect(parsePageRange("a", 5)).toBe("Use page numbers and ranges, such as 1-3, 7.");
   });
 });
 

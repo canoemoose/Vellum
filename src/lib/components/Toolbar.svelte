@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Toolbar (48 px, wraps when narrow): sidebar toggle; page group; zoom group. The mockup's
-  // markup tools, Search and Save are v0.2, so the right-hand side stays empty.
+  // Toolbar (48 px, wraps when narrow), agreed layout (docs/mockups/toolbar-options.html, a
+  // variant of B): sidebar toggle, pages and page layout on the left; the centre is kept for
+  // the markup tools; navigation mode, zoom and (later) search on the right.
   import { ZOOM_PRESETS } from "../view/viewMath";
   import { formatZoom, parseZoom } from "../shell/format";
 
@@ -18,6 +19,15 @@
     onZoom: (z: number) => void;
     onFit: (mode: "page" | "width") => void;
     onActual: () => void;
+    navMode: "cad" | "document";
+    /** True while the mode follows the page size rather than a choice. */
+    navAuto: boolean;
+    /** "auto" goes back to following the page size. */
+    onNavMode: (m: "auto" | "cad" | "document") => void;
+    layoutMode: "continuous" | "single" | "columns";
+    /** Columns in the columns layout, for its tooltip. */
+    columns: number;
+    onLayout: (m: "continuous" | "single" | "columns") => void;
   }
   let p: Props = $props();
 
@@ -61,17 +71,17 @@
     type="button"
     class="icon-btn side"
     class:on={p.sidebarOpen}
-    aria-label="Toggle sidebar"
+    aria-label="Show or hide the sidebar"
     aria-pressed={p.sidebarOpen}
     title="Sidebar (Ctrl+B)"
     onclick={p.onToggleSidebar}
   >
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="3" width="14" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M7 3v12" stroke="currentColor" stroke-width="1.4" /></svg>
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M6.25 2.75v10.5" stroke="currentColor" stroke-width="1.5" /></svg>
   </button>
 
   <div class="group">
     <button type="button" class="icon-btn" aria-label="Previous page" title="Previous page (Page Up)" disabled={!p.hasDoc || p.page <= 0} onclick={p.onPrev}>
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M8.5 3L4.5 7l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 3.5L5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
     </button>
     <label for="pagebox" class="sr">Page</label>
     <input
@@ -99,13 +109,91 @@
     />
     <span class="of">of {p.numPages || "–"}</span>
     <button type="button" class="icon-btn" aria-label="Next page" title="Next page (Page Down)" disabled={!p.hasDoc || p.page >= p.numPages - 1} onclick={p.onNext}>
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5.5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 3.5L11 8l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
     </button>
   </div>
 
+  <div class="group seg" role="radiogroup" aria-label="Page layout">
+    {#each ["single", "continuous", "columns"] as const as m (m)}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={p.layoutMode === m}
+        aria-label={m === "single" ? "Single page" : m === "continuous" ? "Continuous" : "Columns"}
+        class="icon-btn mode"
+        class:on={p.layoutMode === m}
+        disabled={!p.hasDoc}
+        title={m === "single"
+          ? "Single page: one page at a time"
+          : m === "continuous"
+            ? "Continuous: pages one after another"
+            : `Columns: pages side by side, ${p.columns} across (View > Columns across)`}
+        onclick={() => p.onLayout(m)}
+      >
+        <!-- Drawn on an 18 px grid, shown at 16 px: strokes of 1.7 come out at 1.5. -->
+        <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
+          {#if m === "single"}
+            <rect x="4.5" y="2.5" width="9" height="13" rx="1" fill="none" stroke="currentColor" stroke-width="1.7" />
+          {:else if m === "continuous"}
+            <rect x="5" y="1" width="8" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <rect x="5" y="10" width="8" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.7" />
+          {:else}
+            <rect x="1.5" y="1" width="6.5" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <rect x="10" y="1" width="6.5" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <rect x="1.5" y="10" width="6.5" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.7" />
+            <rect x="10" y="10" width="6.5" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.7" />
+          {/if}
+        </svg>
+      </button>
+    {/each}
+  </div>
+  <div class="centre"></div>
+  <!-- Automatic, or a fixed choice. While automatic, the mode it picked has a hairline round
+       it; clicking that fixes the choice, and Auto goes back. -->
+  <div class="group seg" role="radiogroup" aria-label="Navigation">
+    <button
+      type="button"
+      role="radio"
+      aria-checked={p.navAuto}
+      class="auto"
+      class:on={p.navAuto}
+      disabled={!p.hasDoc}
+      title={`Automatic navigation: picked from the page size (${p.navMode === "cad" ? "CAD" : "Document"} navigation for this file)`}
+      onclick={() => p.onNavMode("auto")}>Auto</button
+    >
+    {#each ["cad", "document"] as const as m (m)}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={!p.navAuto && p.navMode === m}
+        aria-label={m === "cad" ? "CAD navigation" : "Document navigation"}
+        class="icon-btn mode"
+        class:on={!p.navAuto && p.navMode === m}
+        class:picked={p.navAuto && p.navMode === m}
+        disabled={!p.hasDoc}
+        title={m === "cad" ? "CAD navigation: the wheel zooms at the cursor" : "Document navigation: the wheel scrolls the pages"}
+        onclick={() => p.onNavMode(m)}
+      >
+        <!-- Drawn on a 20 x 18 grid, shown at 18 x 16: strokes of 1.65 come out at 1.5. -->
+        <svg width="18" height="16" viewBox="0 0 20 18" aria-hidden="true">
+          <!-- a mouse with its wheel -->
+          <rect x="2.5" y="2.5" width="8" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="1.65" />
+          <path d="M6.5 5v2.4" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" />
+          {#if m === "cad"}
+            <!-- the wheel zooms: a magnifier -->
+            <circle cx="14.6" cy="8.4" r="2.7" fill="none" stroke="currentColor" stroke-width="1.65" />
+            <path d="M16.6 10.4l2 2" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" />
+          {:else}
+            <!-- the wheel scrolls: up and down -->
+            <path d="M13 6l2.2-2.4L17.4 6M13 12l2.2 2.4L17.4 12M15.2 4v10" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" />
+          {/if}
+        </svg>
+      </button>
+    {/each}
+  </div>
   <div class="group">
     <button type="button" class="icon-btn" aria-label="Zoom out" title="Zoom out (-)" disabled={!p.hasDoc} onclick={() => p.onZoomStep(-1)}>
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
     </button>
     <div class="zoomwrap">
       <input
@@ -132,9 +220,9 @@
       />
       {#if zoomEditing}
         <div class="presets" role="listbox" aria-label="Zoom presets">
-          <button type="button" role="option" aria-selected="false" onpointerdown={(e) => e.preventDefault()} onclick={() => pick(() => p.onFit("page"))}>Fit page<span>Ctrl+0</span></button>
-          <button type="button" role="option" aria-selected="false" onpointerdown={(e) => e.preventDefault()} onclick={() => pick(() => p.onFit("width"))}>Fit width</button>
-          <button type="button" role="option" aria-selected="false" onpointerdown={(e) => e.preventDefault()} onclick={() => pick(p.onActual)}>Actual size<span>Ctrl+1</span></button>
+          <button type="button" role="option" aria-selected="false" onpointerdown={(e) => e.preventDefault()} onclick={() => pick(() => p.onFit("page"))}><i class="mk"></i>Fit page<span>Ctrl+0</span></button>
+          <button type="button" role="option" aria-selected="false" onpointerdown={(e) => e.preventDefault()} onclick={() => pick(() => p.onFit("width"))}><i class="mk"></i>Fit width<span>Ctrl+2</span></button>
+          <button type="button" role="option" aria-selected="false" onpointerdown={(e) => e.preventDefault()} onclick={() => pick(p.onActual)}><i class="mk"></i>Actual size<span>Ctrl+1</span></button>
           <span class="sep"></span>
           {#each presets as z (z)}
             <button
@@ -143,18 +231,35 @@
               aria-selected={Math.abs(z - p.zoom) < 1e-6}
               class="num"
               onpointerdown={(e) => e.preventDefault()}
-              onclick={() => pick(() => p.onZoom(z))}>{formatZoom(z)}</button
+              onclick={() => pick(() => p.onZoom(z))}
+              ><i class="mk"
+                >{#if Math.abs(z - p.zoom) < 1e-6}<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+                    ><path d="M2.5 6.2l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg
+                  >{/if}</i
+              >{formatZoom(z)}</button
             >
           {/each}
         </div>
       {/if}
     </div>
     <button type="button" class="icon-btn" aria-label="Zoom in" title="Zoom in (+)" disabled={!p.hasDoc} onclick={() => p.onZoomStep(1)}>
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7h8M7 3v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
     </button>
-    <span class="div"></span>
-    <button type="button" class="text-btn" title="Fit page (Ctrl+0)" disabled={!p.hasDoc} onclick={() => p.onFit("page")}>Fit page</button>
-    <button type="button" class="text-btn" title="Fit width" disabled={!p.hasDoc} onclick={() => p.onFit("width")}>Fit width</button>
+  </div>
+  <div class="group">
+    <button type="button" class="icon-btn" aria-label="Fit page" title="Fit page (Ctrl+0)" disabled={!p.hasDoc} onclick={() => p.onFit("page")}>
+      <!-- a page inside corner brackets -->
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M1.75 5V1.75H5M11 1.75h3.25V5M14.25 11v3.25H11M5 14.25H1.75V11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        <rect x="5" y="4.5" width="6" height="7" rx="0.75" fill="none" stroke="currentColor" stroke-width="1.5" />
+      </svg>
+    </button>
+    <button type="button" class="icon-btn" aria-label="Fit width" title="Fit width (Ctrl+2)" disabled={!p.hasDoc} onclick={() => p.onFit("width")}>
+      <!-- the width between two edges -->
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M1.75 3v10M14.25 3v10M4.5 8h7M6.5 6l-2 2 2 2M9.5 6l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
   </div>
 </div>
 
@@ -170,9 +275,32 @@
     border-bottom: 1px solid var(--bd);
     flex-shrink: 0;
   }
+  /* The same height as the groups beside it (30 px buttons in 2 px padding and a 1 px border). */
   .side {
+    width: 36px;
+    height: 36px;
+  }
+  .side.on {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  /* Kept for the markup tools; pushes the mode and zoom groups to the right. */
+  .centre {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  /* Segments take the shared selected look (app.css .seg); icon buttons keep their own size. */
+  .seg .mode {
     width: 34px;
-    height: 34px;
+    padding: 0;
+  }
+  .seg .auto {
+    font-size: 12px;
+    padding: 0 9px;
+  }
+  /* While automatic: the mode it picked, outlined. */
+  .seg .mode.picked {
+    box-shadow: inset 0 0 0 1px var(--bd-strong);
   }
   .group {
     display: flex;
@@ -187,7 +315,9 @@
     position: absolute;
     left: -9999px;
   }
-  .pagebox {
+  /* The page and zoom boxes: a matched pair of compact boxed fields, mono numerals. */
+  .pagebox,
+  .zoom {
     height: 24px;
     border: 1px solid var(--bd-input);
     background: var(--app);
@@ -195,7 +325,13 @@
     border-radius: 4px;
     text-align: center;
     padding: 0;
+    font-family: var(--font-num);
+    font-size: 12px;
     user-select: text;
+  }
+  .pagebox:focus,
+  .zoom:focus {
+    cursor: text;
   }
   .of {
     color: var(--tx3);
@@ -206,26 +342,8 @@
     position: relative;
   }
   .zoom {
-    width: 64px;
-    height: 30px;
-    padding: 0 4px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--tx);
-    border-radius: 6px;
-    font-size: 12px;
-    text-align: center;
-    cursor: pointer;
-  }
-  .zoom:hover:not(:disabled) {
-    background: var(--hover);
-  }
-  .zoom:focus {
-    cursor: text;
-    border-color: var(--bd-input);
-    background: var(--app);
-    outline: none;
-    user-select: text;
+    width: 60px;
+    margin: 0 2px;
   }
   .presets {
     position: absolute;
@@ -238,22 +356,32 @@
     background: var(--ctl);
     border: 1px solid var(--bd-strong);
     border-radius: 8px;
-    box-shadow: 0 12px 32px var(--shadow);
+    box-shadow: var(--shadow-pop);
     display: flex;
     flex-direction: column;
   }
+  /* A menu like the others: 30 px rows, a tick column, the current value ticked. */
   .presets button {
-    height: 28px;
+    height: 30px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 10px;
+    gap: 6px;
+    padding: 0 10px 0 6px;
     border: none;
     background: transparent;
     color: var(--tx);
     border-radius: 5px;
     text-align: left;
+  }
+  .presets .mk {
+    width: 16px;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+  }
+  .presets span:not(.sep) {
+    margin-left: auto;
   }
   .presets button.num {
     font-size: 12px;
@@ -262,7 +390,7 @@
     background: var(--accent-soft);
   }
   .presets button[aria-selected="true"] {
-    color: var(--accent);
+    color: var(--accent-text);
   }
   .presets span:not(.sep) {
     color: var(--tx3);
@@ -272,24 +400,5 @@
     height: 1px;
     background: var(--bd);
     margin: 5px 4px;
-  }
-  .div {
-    width: 1px;
-    height: 18px;
-    background: var(--bd-strong);
-    margin: 0 2px;
-  }
-  .text-btn {
-    height: 30px;
-    padding: 0 9px;
-    border: none;
-    background: transparent;
-    color: var(--tx2);
-    border-radius: 6px;
-    white-space: nowrap;
-  }
-  .text-btn:hover:not(:disabled) {
-    background: var(--hover);
-    color: var(--tx);
   }
 </style>

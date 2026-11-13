@@ -1,20 +1,30 @@
 <script lang="ts">
   // Status bar (28 px): drawing scale (click to set), navigation hint, cursor position, page size.
+  // A short notice (something that didn't work) takes the hint's place for a few seconds.
   interface Props {
     scaleText: string | null;
     hint: string;
+    /** Shown instead of the hint while set. */
+    notice?: string | null;
     cursor: string;
     pageSize: string;
     onScale: () => void;
   }
-  let { scaleText, hint, cursor, pageSize, onScale }: Props = $props();
+  let { scaleText, hint, notice = null, cursor, pageSize, onScale }: Props = $props();
 </script>
 
 <footer class="bar">
-  {#if scaleText}
-    <button type="button" class="scale" title="Set the drawing scale" onclick={onScale}>{scaleText}</button>
+  <!-- A fixed slot, so the hint doesn't move as the scale appears or changes width. -->
+  <span class="slot">
+    {#if scaleText}
+      <button type="button" class="scale" title="Set the drawing scale" onclick={onScale}>{scaleText}</button>
+    {/if}
+  </span>
+  {#if notice}
+    <span class="hint notice" role="status">{notice}</span>
+  {:else}
+    <span class="hint">{hint}</span>
   {/if}
-  <span class="hint">{hint}</span>
   <span class="cursor num">{cursor}</span>
   <span class="size">{pageSize}</span>
 </footer>
@@ -44,6 +54,16 @@
   }
   .scale:hover {
     background: var(--hover);
+    color: var(--tx);
+  }
+  .scale:active {
+    background: var(--press-soft);
+  }
+  .slot {
+    min-width: 96px;
+    display: flex;
+  }
+  .notice {
     color: var(--tx);
   }
   .hint {

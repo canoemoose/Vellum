@@ -93,8 +93,14 @@ export interface ExportRequest {
     {#if progress}
       <button type="button" class="btn" onclick={onCancel}>Stop</button>
     {:else}
-      <button type="button" class="btn" onclick={onClose}>{result ? "Close" : "Cancel"}</button>
-      <button type="submit" form="exportform" class="btn primary" disabled={!!error}>Choose folder and export…</button>
+      {#if result}
+        <!-- Done: Close is the obvious next step (a lone Close is primary everywhere). -->
+        <button type="submit" form="exportform" class="btn" disabled={!!error}>Export again…</button>
+        <button type="button" class="btn primary" onclick={onClose}>Close</button>
+      {:else}
+        <button type="button" class="btn" onclick={onClose}>Cancel</button>
+        <button type="submit" form="exportform" class="btn primary" disabled={!!error}>Choose folder and export…</button>
+      {/if}
     {/if}
   {/snippet}
 </Dialog>
@@ -136,7 +142,6 @@ export interface ExportRequest {
   }
   .inline input.field {
     width: 140px;
-    height: 28px;
     margin-left: 6px;
   }
   .err {

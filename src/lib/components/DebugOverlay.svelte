@@ -62,7 +62,7 @@
   .dbg {
     position: absolute;
     top: 8px;
-    right: 8px;
+    right: 18px; /* clear of the vertical canvas scrollbar (10 px) */
     width: 300px;
     padding: 8px 10px;
     background: color-mix(in srgb, var(--chrome), transparent 8%);

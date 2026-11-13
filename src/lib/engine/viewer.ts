@@ -20,8 +20,13 @@ import {
   approachScale,
   clampScale,
   constrainView,
+  easeOutCubic,
   fitRect,
+  fitWidthKeepingY,
+  interpolateView,
+  keepCentre,
   nextZoomPreset,
+  stickyZoomTarget,
   scaleToZoom,
   screenToWorld,
   visibleWorldRect,
@@ -29,6 +34,7 @@ import {
   zoomToScale,
 } from "../view/viewMath";
 import { type Layout, type LayoutMode, computeLayout, currentPage, pagesInRect } from "../view/layout";
+import { snapshotSize } from "../view/snapshot";
 import {
   type Rotation,
   normRotation,
@@ -57,7 +63,9 @@ import type { DocInfo, DocKind, RegionRequest, Renderer } from "../render/types"
 import { rendererFor } from "../render/createRenderer";
 import { ThumbnailQueue } from "./thumbnails";
 
-export type NavMode = "cad" | "document";
+import { autoNavMode, type NavMode } from "../view/navMode";
+import { StickyAxis, alignStops, type Span } from "../view/stickyPan";
+export type { NavMode } from "../view/navMode";
 
 /** A point on a page, in unrotated page points (y down from the page's top-left). */
 export interface PagePoint {
@@ -76,20 +84,29 @@ export interface UiState {
   zoom: number;
   rotation: Rotation;
   layoutMode: LayoutMode;
+  columns: number;
   navMode: NavMode;
+  /** True while the navigation mode follows the page size (autoNavMode), not a user choice. */
+  navAuto: boolean;
   loading: boolean;
   error: string | null;
   /** Where the pointer is over a page (set through setPointer), null when off every page. */
   cursor: PagePoint | null;
   /** The viewport on the current page, in its page points (may extend past the page). */
   pageViewport: Rect | null;
+  /** Pages any part of which is on screen, in order (the sidebar marks them). */
+  visiblePages: number[];
+  /** The visible world rect and the whole document's, for the canvas scrollbars. */
+  viewWorld: Rect;
+  bounds: Rect;
 }
 
 /** The UI state before any document is open (for a component's initial state). */
 export function initialUiState(): UiState {
   return {
     fileName: "", docId: null, kind: null, page: 0, numPages: 0, zoom: 1, rotation: 0,
-    layoutMode: "continuous", navMode: "cad", loading: false, error: null, cursor: null, pageViewport: null,
+    layoutMode: "continuous", columns: 2, navMode: "cad", navAuto: true, loading: false, error: null, cursor: null, pageViewport: null,
+    visiblePages: [], viewWorld: { x: 0, y: 0, w: 0, h: 0 }, bounds: { x: 0, y: 0, w: 0, h: 0 },
   };
 }
 
@@ -115,6 +132,8 @@ const DEFAULTS: ViewerOptions = {
 const PREVIEW_MAX_SIDE = 2048;
 /** Padding used by Fit page / Fit width, CSS px. */
 const FIT_PAD = 16;
+/** Wheel scrolling gathered against a page's end before single-page layout turns the page. */
+const OVERSCROLL_PX = 60;
 /** Background work (thumbnails) waits this long after the last input. */
 const IDLE_AFTER_INPUT_MS = 300;
 /**
@@ -170,8 +189,14 @@ export interface DocView {
   readonly view: View;
   readonly page: number;
   readonly rotation: Rotation;
+  readonly navMode: NavMode;
+  readonly navAuto: boolean;
+  readonly layoutMode: LayoutMode;
+  readonly columns: number;
   /** Previews kept so the tab shows something at once when it comes back (owned here). */
   readonly previews: Map<number, Preview>;
+  /** A small picture of the view as it was left, for the tab's hover card (owned here). */
+  readonly snapshot: ImageBitmap | null;
 }
 
 export interface SharpEvent {
@@ -204,8 +229,12 @@ export class Viewer {
   layout: Layout = computeLayout([], "continuous");
   fileName = "";
   currentPath = "";
+  /** Per document: picked from the page size on open unless the user chooses (setNavMode). */
   navMode: NavMode = "cad";
+  navAuto = true;
   layoutMode: LayoutMode = "continuous";
+  /** Columns in the columns layout. */
+  columns = 2;
   private rotationDeg: Rotation = 0;
   private page = 0;
   private loading = false;
@@ -220,6 +249,25 @@ export class Viewer {
   /** A pan moved the view since the last plan: re-plan on the next frame, without waiting. */
   private panPending = false;
   private anim: { target: number; ax: number; ay: number } | null = null;
+  /** An eased move to a whole new view (fit, a typed zoom, actual size): see animateTo. */
+  private flight: { from: View; to: View; t0: number; dur: number } | null = null;
+  /** The fit the view is at, if it hasn't been moved since: refitted when the window resizes. */
+  private fitted: FitMode | null = null;
+  /** A pinch held at a sticky zoom stop: the zoom factor gathered since it stopped. */
+  private pinchHold: { stop: number; acc: number; t: number } | null = null;
+  /** Sticky page edges for the current drag. */
+  private stickX = new StickyAxis();
+  private stickY = new StickyAxis();
+
+  /** A wheel ease or a flight is moving the view. */
+  private get animating(): boolean {
+    return this.anim !== null || this.flight !== null;
+  }
+
+  private stopAnimations(): void {
+    this.anim = null;
+    this.flight = null;
+  }
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private settleAt = 0;
   private measuring = false;
@@ -321,6 +369,8 @@ export class Viewer {
     }
     this.doc = doc;
     this.page = 0;
+    this.navAuto = true;
+    this.navMode = autoNavMode(doc.sizes[0]);
     this.relayout();
     this.loading = false;
     this.fit(this.navMode === "document" ? "width" : "page", true);
@@ -420,6 +470,7 @@ export class Viewer {
    */
   detach(): DocView | null {
     if (!this.doc) return null;
+    const snapshot = this.snapshotView(); // before anything clears the canvas
     const previews = this.previews;
     this.previews = new Map();
     this.previewBytes = 0;
@@ -444,7 +495,12 @@ export class Viewer {
       view: { ...this.view },
       page: this.page,
       rotation: this.rotationDeg,
+      navMode: this.navMode,
+      navAuto: this.navAuto,
+      layoutMode: this.layoutMode,
+      columns: this.columns,
       previews: keep,
+      snapshot,
     };
     this.doc = null;
     this.clearAttached();
@@ -465,15 +521,21 @@ export class Viewer {
     this.error = null;
     this.loading = false;
     this.rotationDeg = state.rotation;
+    this.navMode = state.navMode;
+    this.navAuto = state.navAuto;
+    this.layoutMode = state.layoutMode;
+    this.columns = state.columns;
     this.page = Math.min(state.page, state.doc.numPages - 1);
     for (const [p, pv] of state.previews) {
       this.previews.set(p, pv);
       this.previewBytes += pv.bytes;
     }
     state.previews.clear();
+    state.snapshot?.close();
     this.relayout();
     this.view = constrainView(state.view, this.layout.bounds, this.vw, this.vh);
-    this.anim = null;
+    this.stopAnimations();
+    this.fitted = null;
     this.requestFrame();
     this.emitUi();
     this.settleNow();
@@ -484,8 +546,30 @@ export class Viewer {
   closeDetached(state: DocView): void {
     for (const pv of state.previews.values()) pv.bitmap.close();
     state.previews.clear();
+    state.snapshot?.close();
     this.thumbnails.cancelDoc(state.doc.docId);
     state.renderer.close(state.doc.docId).catch((e) => console.error("close failed", e));
+  }
+
+  /**
+   * The canvas as it is now, shrunk (snapshotSize): what the tab looked like when it was left.
+   * Synchronous, so it's taken before detaching clears anything. Null where there's no
+   * OffscreenCanvas (tests) or nothing drawn.
+   */
+  private snapshotView(): ImageBitmap | null {
+    const size = snapshotSize(this.canvas.width, this.canvas.height);
+    if (!size || typeof OffscreenCanvas === "undefined") return null;
+    try {
+      const c = new OffscreenCanvas(size.w, size.h);
+      const g = c.getContext("2d", { alpha: false });
+      if (!g) return null;
+      g.imageSmoothingQuality = "high";
+      g.drawImage(this.canvas, 0, 0, size.w, size.h);
+      return c.transferToImageBitmap();
+    } catch (e) {
+      console.warn("tab snapshot failed", String(e));
+      return null;
+    }
   }
 
   private resetRendering(): void {
@@ -523,7 +607,7 @@ export class Viewer {
 
   private relayout(): void {
     const sizes = (this.doc?.sizes ?? []).map((s) => rotatedSize(s, this.rotationDeg));
-    this.layout = computeLayout(sizes, this.layoutMode, this.page);
+    this.layout = computeLayout(sizes, this.layoutMode, this.page, this.columns);
   }
 
   // ---------------------------------------------------------------- viewport
@@ -532,9 +616,23 @@ export class Viewer {
     const w = Math.max(1, Math.round(cssW * dpr));
     const h = Math.max(1, Math.round(cssH * dpr));
     const dprChanged = dpr !== this.dpr;
+    const [oldW, oldH] = [this.vw, this.vh];
     this.vw = cssW;
     this.vh = cssH;
     this.dpr = dpr;
+    // The drawing stays put relative to the window: refit if it was at a fit, else keep the
+    // point at the centre of the view at the centre (not the top-left corner).
+    if (this.doc && (oldW !== cssW || oldH !== cssH) && oldW > 1 && oldH > 1) {
+      this.flight = null;
+      const r = this.fitted ? this.fitRectFor(this.fitted) : null;
+      if (this.fitted && r) {
+        const kept = keepCentre(this.view, oldW, oldH, cssW, cssH);
+        const v = this.fitted === "width" ? fitWidthKeepingY(r, kept, cssW, cssH, FIT_PAD) : fitRect(r, cssW, cssH, FIT_PAD, "page");
+        this.setView(v, "zoom");
+      } else {
+        this.setView(keepCentre(this.view, oldW, oldH, cssW, cssH), "pan");
+      }
+    }
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
@@ -558,6 +656,8 @@ export class Viewer {
   }
 
   panBy(dx: number, dy: number): void {
+    this.flight = null;
+    this.fitted = null;
     if (this.anim) {
       // Keep the zoom anchor glued to the content while panning mid-animation.
       this.anim.ax += dx;
@@ -566,17 +666,123 @@ export class Viewer {
     this.setView({ scale: this.view.scale, tx: this.view.tx + dx, ty: this.view.ty + dy }, "pan");
   }
 
-  /** Zoom by `factor` keeping screen point (sx, sy) fixed. Animated zooms ease over ~100 ms. */
+  /**
+   * Drag-pan by (dx, dy): like panBy, but a page edge reaching the viewport edge (or a page
+   * narrower than the view reaching its centre) holds there for a short distance. Call
+   * endDrag when the drag ends.
+   */
+  dragPan(dx: number, dy: number): void {
+    const s = this.view.scale;
+    const { tx, ty } = this.view;
+    const world = visibleWorldRect(this.view, this.vw, this.vh);
+    const spansX: Span[] = [];
+    const spansY: Span[] = [];
+    // Pages in or near view (a viewport either side), on screen at the current view.
+    const near = { x: world.x - world.w, y: world.y - world.h, w: world.w * 3, h: world.h * 3 };
+    for (const r of this.layout.rects) {
+      if (!r) continue; // pages not laid out (single-page layout)
+      if (r.x > near.x + near.w || r.x + r.w < near.x || r.y > near.y + near.h || r.y + r.h < near.y) continue;
+      spansX.push({ a: r.x * s + tx, b: (r.x + r.w) * s + tx });
+      spansY.push({ a: r.y * s + ty, b: (r.y + r.h) * s + ty });
+    }
+    const nx = this.stickX.move(tx, dx, alignStops(spansX, tx, this.vw));
+    const ny = this.stickY.move(ty, dy, alignStops(spansY, ty, this.vh));
+    if (nx !== tx || ny !== ty) this.panBy(nx - tx, ny - ty);
+  }
+
+  endDrag(): void {
+    this.stickX.reset();
+    this.stickY.reset();
+  }
+
+  /** Wheel scrolling pushed past the end of a page in single-page layout, in px. */
+  private overscroll = { px: 0, t: 0 };
+
+  /**
+   * Wheel scrolling (same sign as panBy: negative dy scrolls down the page). In single-page
+   * layout, scrolling on against the end of the page turns to the next one (its top), and
+   * against the top to the previous one (its bottom), once OVERSCROLL_PX has gathered; at
+   * fit page, where the page can't move, that's a page a notch.
+   */
+  scrollBy(dx: number, dy: number): void {
+    const ty0 = this.view.ty;
+    this.panBy(dx, dy);
+    if (this.layoutMode !== "single" || !this.doc || dy === 0) return;
+    const moved = this.view.ty - ty0;
+    const now = performance.now();
+    if (Math.abs(moved) > 0.5 || now - this.overscroll.t > 400) this.overscroll.px = 0;
+    this.overscroll.t = now;
+    if (Math.abs(moved) > 0.5) return;
+    this.overscroll.px += dy;
+    if (Math.abs(this.overscroll.px) < OVERSCROLL_PX) return;
+    const down = this.overscroll.px < 0;
+    this.overscroll.px = 0;
+    if (down && this.page < this.doc.numPages - 1) {
+      this.gotoPage(this.page + 1); // lands at the page's top
+    } else if (!down && this.page > 0) {
+      this.gotoPage(this.page - 1);
+      const r = this.layout.rects[this.page];
+      const s = this.view.scale;
+      if (r && r.h * s > this.vh - 2 * FIT_PAD) {
+        this.setView({ scale: s, tx: this.view.tx, ty: this.vh - FIT_PAD - (r.y + r.h) * s }, "jump"); // its bottom
+      }
+    }
+  }
+
+  /** The zooms a wheel or pinch stops at on the way past: 100%, fit width, fit page. */
+  private zoomStops(): number[] {
+    const stops = [zoomToScale(1)];
+    const page = this.fitRectFor("page");
+    const width = this.fitRectFor("width");
+    if (page) stops.push(fitRect(page, this.vw, this.vh, FIT_PAD, "page").scale);
+    if (width) stops.push(fitRect(width, this.vw, this.vh, FIT_PAD, "width").scale);
+    return stops;
+  }
+
+  /**
+   * Zoom by `factor` keeping screen point (sx, sy) fixed. Animated zooms (wheel notches,
+   * keys) ease over ~100 ms. Both stick at 100%, fit width and fit page: a notch that would
+   * cross one lands on it, and a pinch holds there until it has gone 8% further.
+   */
   zoomAt(sx: number, sy: number, factor: number, animate: boolean): void {
+    this.flight = null;
+    this.fitted = null;
     if (animate) {
       const base = this.anim ? this.anim.target : this.view.scale;
-      this.anim = { target: clampScale(base * factor), ax: sx, ay: sy };
+      const target = stickyZoomTarget(base, clampScale(base * factor), this.zoomStops());
+      this.anim = { target, ax: sx, ay: sy };
       this.inputActivity(true);
       this.requestFrame();
     } else {
       this.anim = null;
-      this.setView(zoomAt(this.view, sx, sy, this.view.scale * factor), "zoom");
+      const now = performance.now();
+      if (this.pinchHold && now - this.pinchHold.t > 300) this.pinchHold = null; // a new gesture
+      let next = this.view.scale * factor;
+      if (this.pinchHold) {
+        const h = this.pinchHold;
+        h.acc *= factor;
+        h.t = now;
+        if (Math.abs(Math.log(h.acc)) < Math.log(1.08)) return; // still held
+        next = h.stop * h.acc;
+        this.pinchHold = null;
+      } else {
+        const stop = stickyZoomTarget(this.view.scale, next, this.zoomStops());
+        if (stop !== next) {
+          this.pinchHold = { stop, acc: next / stop, t: now };
+          next = stop;
+        }
+      }
+      this.setView(zoomAt(this.view, sx, sy, next), "zoom");
     }
+  }
+
+  /** Ease to a whole new view over `ms` (fit, a typed zoom, actual size). */
+  animateTo(target: View, ms = 220): void {
+    this.anim = null;
+    const to = this.doc ? constrainView(target, this.layout.bounds, this.vw, this.vh) : target;
+    this.flight = { from: { ...this.view }, to, t0: performance.now(), dur: ms };
+    this.inputActivity(true);
+    this.requestFrame();
   }
 
   zoomStep(dir: 1 | -1): void {
@@ -584,9 +790,12 @@ export class Viewer {
   }
 
   /** Set the zoom (1 = 100%, actual size) keeping screen point (sx, sy) fixed. */
-  setZoom(zoom: number, sx = this.vw / 2, sy = this.vh / 2): void {
-    this.anim = null;
-    this.setView(zoomAt(this.view, sx, sy, zoomToScale(zoom)), "zoom");
+  setZoom(zoom: number, sx = this.vw / 2, sy = this.vh / 2, animate = false): void {
+    this.fitted = null;
+    const v = zoomAt(this.view, sx, sy, zoomToScale(zoom));
+    if (animate) return this.animateTo(v);
+    this.stopAnimations();
+    this.setView(v, "zoom");
   }
 
   /** Step to the next zoom preset (ZOOM_PRESETS) above or below the current zoom. */
@@ -595,15 +804,39 @@ export class Viewer {
     if (z !== null) this.setZoom(z);
   }
 
-  fit(mode: FitMode, jump = false): void {
+  /**
+   * Fit the current page (or its width) to the view. Fit width keeps the point at the
+   * vertical centre where it is (fitWidthKeepingY), except on a jump (opening a document),
+   * which starts at the page's top. `animate` eases there (toolbar, keys); otherwise at once.
+   */
+  /**
+   * What a fit fits: the current page, except fit width in the columns layout, which fits the
+   * whole row of columns (the grid's width, at the current page's row).
+   */
+  private fitRectFor(mode: FitMode): Rect | null {
     const r = this.layout.rects[this.page];
-    if (!r) return;
-    this.anim = null;
-    this.setView(fitRect(r, this.vw, this.vh, FIT_PAD, mode), jump ? "jump" : "zoom");
+    if (!r) return null;
+    if (mode === "width" && this.layoutMode === "columns") {
+      const b = this.layout.bounds;
+      return { x: b.x, y: r.y, w: b.w, h: r.h };
+    }
+    return r;
   }
 
-  actualSize(): void {
-    this.setZoom(1);
+  fit(mode: FitMode, jump = false, animate = false): void {
+    const r = this.fitRectFor(mode);
+    if (!r) return;
+    const v = mode === "width" && !jump ? fitWidthKeepingY(r, this.view, this.vw, this.vh, FIT_PAD) : fitRect(r, this.vw, this.vh, FIT_PAD, mode);
+    if (animate && !jump) this.animateTo(v);
+    else {
+      this.stopAnimations();
+      this.setView(v, jump ? "jump" : "zoom");
+    }
+    this.fitted = mode;
+  }
+
+  actualSize(animate = false): void {
+    this.setZoom(1, this.vw / 2, this.vh / 2, animate);
   }
 
   gotoPage(i: number): void {
@@ -618,7 +851,7 @@ export class Viewer {
     const right = (r.x + r.w) * s + tx;
     if (r.w * s <= this.vw || right < 0 || left > this.vw) tx = this.vw / 2 - (r.x + r.w / 2) * s;
     const ty = r.h * s <= this.vh - 2 * FIT_PAD ? this.vh / 2 - (r.y + r.h / 2) * s : FIT_PAD - r.y * s;
-    this.anim = null;
+    this.stopAnimations();
     this.setView({ scale: s, tx, ty }, "jump");
   }
 
@@ -626,6 +859,15 @@ export class Viewer {
   prevPage(): void { this.gotoPage(this.page - 1); }
   firstPage(): void { this.gotoPage(0); }
   lastPage(): void { this.gotoPage((this.doc?.numPages ?? 1) - 1); }
+
+  /** Centre the view on a world point, keeping the zoom (the mini map's click and drag). */
+  centreOnWorld(wx: number, wy: number): void {
+    if (!this.doc) return;
+    const s = this.view.scale;
+    this.stopAnimations();
+    this.fitted = null;
+    this.setView({ scale: s, tx: this.vw / 2 - wx * s, ty: this.vh / 2 - wy * s }, "pan");
+  }
 
   /**
    * Centre the view on a page point (unrotated page points), keeping the zoom: outline
@@ -641,7 +883,8 @@ export class Viewer {
     if (!r) return;
     const [X, Y] = rotatePoint(x, y, this.doc.sizes[page], this.rotationDeg);
     const s = this.view.scale;
-    this.anim = null;
+    this.stopAnimations();
+    this.fitted = null;
     this.setView({ scale: s, tx: this.vw / 2 - (r.x + X) * s, ty: this.vh / 2 - (r.y + Y) * s }, "pan");
   }
 
@@ -658,15 +901,30 @@ export class Viewer {
     this.setView({ scale: s, tx: this.vw / 2 - (r.x + X) * s, ty: FIT_PAD - (r.y + Y) * s }, "jump");
   }
 
+  /** Columns for the columns layout; relays out if that's the layout in use. */
+  setColumns(n: number): void {
+    if (n === this.columns) return;
+    this.columns = n;
+    if (this.layoutMode === "columns") {
+      this.relayout();
+      this.gotoPage(this.page);
+      if (this.doc) this.fit("width", true);
+    }
+  }
+
   setLayoutMode(m: LayoutMode): void {
     if (m === this.layoutMode) return;
     this.layoutMode = m;
     this.relayout();
     this.gotoPage(this.page);
+    // Columns opens fitted to the whole row, the current page's row at the top.
+    if (m === "columns" && this.doc) this.fit("width", true);
   }
 
-  setNavMode(m: NavMode): void {
-    this.navMode = m;
+  /** Choose the navigation mode for this document, or "auto" to follow its page size. */
+  setNavMode(m: NavMode | "auto"): void {
+    this.navAuto = m === "auto";
+    this.navMode = m === "auto" ? autoNavMode(this.doc?.sizes[0]) : m;
     this.emitUi();
   }
 
@@ -769,13 +1027,13 @@ export class Viewer {
 
   /** Any input in the last settle window, or a zoom animation in flight. */
   get interacting(): boolean {
-    return this.anim !== null || performance.now() - this.lastInput < this.opts.settleMs;
+    return this.animating || performance.now() - this.lastInput < this.opts.settleMs;
   }
 
   /** Nothing rendering or queued for the view and no recent input: background work may run. */
   get idleForBackground(): boolean {
     return (
-      !this.anim &&
+      !this.animating &&
       !this.settleTimer &&
       this.active.size === 0 &&
       this.queue.length === 0 &&
@@ -789,7 +1047,7 @@ export class Viewer {
    * seconds): the other workers are idle. Not beside a banded render, which uses every worker.
    */
   get idleForThumbnails(): boolean {
-    if (this.anim || this.settleTimer || this.queue.length > 0) return false;
+    if (this.animating || this.settleTimer || this.queue.length > 0) return false;
     if (performance.now() - this.lastInput <= IDLE_AFTER_INPUT_MS) return false;
     for (const j of this.active) if (j.bands !== 1) return false;
     return true;
@@ -801,7 +1059,7 @@ export class Viewer {
    * carries on throughout a drag and the newly uncovered strip fills in as you go.
    */
   private get renderBlocked(): boolean {
-    return this.anim !== null || performance.now() - this.lastScaleInput < this.scaleSettleMs;
+    return this.animating || performance.now() - this.lastScaleInput < this.scaleSettleMs;
   }
 
   /** Settle delay for the latest scale change: short after a wheel ease, else opts.settleMs. */
@@ -839,7 +1097,7 @@ export class Viewer {
       this.scaleSettleMs = this.opts.settleMs;
       this.queue = [];
       // Mid-ease the display scale is in passing: choose when the animation lands.
-      if (!this.anim) this.updateRenderRs();
+      if (!this.animating) this.updateRenderRs();
       if (scaleChanged) {
         const rs = this.renderScale;
         for (const j of this.active) if (j.rs !== rs) j.ac?.abort();
@@ -851,14 +1109,14 @@ export class Viewer {
   private scheduleSettle(): void {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
-    if (this.anim) return; // restarted when the animation lands
+    if (this.animating) return; // restarted when the animation lands
     const ms = performance.now() - this.lastScaleInput < this.scaleSettleMs ? this.scaleSettleMs : this.opts.settleMs;
     this.settleTimer = setTimeout(() => this.onSettle(), ms);
   }
 
   private onSettle(): void {
     this.settleTimer = null;
-    if (!this.doc || this.anim) return;
+    if (!this.doc || this.animating) return;
     this.settleAt = performance.now();
     this.measuring = true;
     this.regionsThisSettle = 0;
@@ -1229,6 +1487,22 @@ export class Viewer {
       this.driver(t);
       this.requestFrame();
     }
+    if (this.flight) {
+      const f = this.flight;
+      const e = easeOutCubic((performance.now() - f.t0) / f.dur);
+      this.view = interpolateView(f.from, f.to, e, this.vw, this.vh);
+      if (e >= 1) {
+        this.view = f.to;
+        this.flight = null;
+        this.inputActivity(true);
+        this.scaleSettleMs = Math.min(WHEEL_SETTLE_MS, this.opts.settleMs);
+        this.scheduleSettle();
+      } else {
+        this.lastInput = performance.now();
+        this.requestFrame();
+      }
+      this.emitUi();
+    }
     if (this.anim) {
       const s = approachScale(this.view.scale, this.anim.target, dt);
       this.view = constrainView(
@@ -1365,7 +1639,7 @@ export class Viewer {
     }
 
     const cp = currentPage(this.layout, vis);
-    if (cp !== this.page && this.layoutMode === "continuous") {
+    if (cp !== this.page && this.layoutMode !== "single") {
       this.page = cp;
       this.emitUi();
     }
@@ -1392,11 +1666,16 @@ export class Viewer {
       zoom: this.zoom,
       rotation: this.rotationDeg,
       layoutMode: this.layoutMode,
+      columns: this.columns,
       navMode: this.navMode,
+      navAuto: this.navAuto,
       loading: this.loading,
       error: this.error,
       cursor: this.pointer ? this.pagePointAt(this.pointer.x, this.pointer.y) : null,
       pageViewport: this.viewportOnPage(this.page),
+      visiblePages: this.doc ? pagesInRect(this.layout, visibleWorldRect(this.view, this.vw, this.vh)) : [],
+      viewWorld: visibleWorldRect(this.view, this.vw, this.vh),
+      bounds: this.layout.bounds,
     };
   }
 

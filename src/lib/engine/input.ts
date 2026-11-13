@@ -1,17 +1,18 @@
 // Mouse, trackpad and keyboard handling. Translates DOM events into Viewer calls.
 //
-// CAD mode (default)
+// CAD navigation (picked automatically from the page size, or chosen)
 //   middle drag            pan 1:1          double middle click   fit page
 //   wheel (notched)        zoom at cursor   wheel (touchpad)      pan
 //   shift + wheel          horizontal pan   ctrl + wheel / pinch  zoom at cursor
 //   space + left drag      pan
-// Document mode
+// Document navigation
 //   wheel scrolls, shift+wheel scrolls sideways, ctrl+wheel / pinch zooms.
-// Keyboard (both): + / - zoom, Ctrl+0 fit page, Ctrl+1 actual size,
+// Keyboard (both): + / - zoom, Ctrl+0 fit page, Ctrl+1 actual size, Ctrl+2 fit width,
 //   PgUp/PgDn previous/next page, Home/End first/last page,
 //   F12 debug overlay.
 
 import type { Viewer } from "./viewer";
+import { blockedWhileTyping } from "./keys";
 import {
   WheelClassifier,
   deltaToPixels,
@@ -22,6 +23,10 @@ import {
 export interface InputCallbacks {
   open(): void;
   toggleDebug(): void;
+  /** True while a modal owns the keyboard (a dialog or the print dialog). */
+  blocked?(): boolean;
+  /** False with no document open: the view keys then do nothing, as their menu items are disabled. */
+  hasDoc?(): boolean;
 }
 
 const DOUBLE_CLICK_MS = 350;
@@ -66,7 +71,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
       viewer.zoomAt(x, y, wheelZoomFactor(e.deltaY, e.deltaMode), true);
       return;
     }
-    viewer.panBy(-dx, -dy);
+    viewer.scrollBy(-dx, -dy);
   };
 
   const onPointerDown = (e: PointerEvent) => {
@@ -81,7 +86,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
         Math.hypot(e.clientX - lastMiddle.x, e.clientY - lastMiddle.y) < DOUBLE_CLICK_PX
       ) {
         lastMiddle.t = 0;
-        viewer.fit("page");
+        viewer.fit("page", false, true);
         return;
       }
       lastMiddle = { t: now, x: e.clientX, y: e.clientY };
@@ -102,12 +107,13 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
     const dy = e.clientY - dragging.y;
     dragging.x = e.clientX;
     dragging.y = e.clientY;
-    if (dx || dy) viewer.panBy(dx, dy);
+    if (dx || dy) viewer.dragPan(dx, dy);
   };
 
   const onPointerUp = (e: PointerEvent) => {
     if (!dragging || e.pointerId !== dragging.id) return;
     dragging = null;
+    viewer.endDrag();
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
     setCursor();
   };
@@ -125,9 +131,9 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (cb.blocked?.() || blockedWhileTyping(e)) return;
     const ctrl = e.ctrlKey || e.metaKey;
+    const doc = cb.hasDoc?.() ?? true;
     let handled = true;
     if (e.key === " ") {
       if (!spaceHeld) {
@@ -135,13 +141,17 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
         setCursor();
       }
     } else if (e.key === "F12" || (ctrl && e.shiftKey && e.key.toLowerCase() === "d")) {
-      cb.toggleDebug();
+      if (!e.repeat) cb.toggleDebug();
     } else if (ctrl && e.key.toLowerCase() === "o") {
-      cb.open();
-    } else if (ctrl && e.key === "0") {
-      viewer.fit("page");
-    } else if (ctrl && e.key === "1") {
-      viewer.actualSize();
+      if (!e.repeat) cb.open();
+    } else if (!doc) {
+      handled = false;
+    } else if (ctrl && !e.shiftKey && e.key === "0") {
+      viewer.fit("page", false, true);
+    } else if (ctrl && !e.shiftKey && e.key === "1") {
+      viewer.actualSize(true);
+    } else if (ctrl && !e.shiftKey && e.key === "2") {
+      viewer.fit("width", false, true);
     } else if (e.key === "+" || e.key === "=" || e.key === "Add") {
       viewer.zoomStep(1);
     } else if (e.key === "-" || e.key === "_" || e.key === "Subtract") {
@@ -170,6 +180,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   const onBlur = () => {
     spaceHeld = false;
     dragging = null;
+    viewer.endDrag();
     setCursor();
   };
 

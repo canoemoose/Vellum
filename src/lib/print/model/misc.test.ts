@@ -89,12 +89,16 @@ describe("page ranges", () => {
     expect(parseRange("2–4;2", 10)).toEqual({ ok: true, pages: [1, 2, 3, 1] });
   });
 
-  it("explains what's wrong", () => {
-    expect(parseRange("", 10)).toEqual({ ok: false, error: "Enter pages, e.g. 1-3, 7" });
-    expect(parseRange("0", 10)).toEqual({ ok: false, error: "Pages run from 1 to 10" });
-    expect(parseRange("3-11", 10)).toEqual({ ok: false, error: "Pages run from 1 to 10" });
-    expect(parseRange("a", 10)).toEqual({ ok: false, error: '"a" isn\'t a page number' });
-    expect(parseRange("-", 10)).toEqual({ ok: false, error: '"-" isn\'t a page range' });
+  it("takes an empty range as every page", () => {
+    expect(parseRange("", 3)).toEqual({ ok: true, pages: [0, 1, 2] });
+    expect(parseRange(" , ", 2)).toEqual({ ok: true, pages: [0, 1] });
+  });
+
+  it("explains what's wrong, in one message for anything unreadable", () => {
+    expect(parseRange("0", 10)).toEqual({ ok: false, error: "Pages run from 1 to 10." });
+    expect(parseRange("3-11", 10)).toEqual({ ok: false, error: "Pages run from 1 to 10." });
+    expect(parseRange("a", 10)).toEqual({ ok: false, error: "Use page numbers and ranges, such as 1-3, 7." });
+    expect(parseRange("-", 10)).toEqual({ ok: false, error: "Use page numbers and ranges, such as 1-3, 7." });
   });
 });
 

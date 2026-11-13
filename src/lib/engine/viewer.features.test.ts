@@ -318,3 +318,174 @@ describe("Viewer persistent previews", () => {
     expect(r.stored).toEqual([]);
   });
 });
+
+describe("Viewer navigation mode per document", () => {
+  const A4 = { w: 595, h: 842 };
+  const A1 = { w: 2384, h: 1684 };
+
+  it("picks from the page size on open, keeps a choice per tab, and can go back to automatic", async () => {
+    const big = new StubRenderer(doc([A1], 1));
+    big.auto = true;
+    const v = new Viewer(stubCanvas(), {}, big);
+    v.resize(1600, 1000, 1);
+    await v.open("C:/x/plan.pdf", undefined, big);
+    expect(v.uiState()).toMatchObject({ navMode: "cad", navAuto: true });
+
+    // The user switches this drawing to Document navigation.
+    v.setNavMode("document");
+    expect(v.uiState()).toMatchObject({ navMode: "document", navAuto: false });
+    const plan = v.detach()!;
+
+    // A new A4 document starts automatic again, whatever the last tab chose.
+    const small = new StubRenderer(doc([A4], 2));
+    small.auto = true;
+    await v.open("C:/x/letter.pdf", undefined, small);
+    expect(v.uiState()).toMatchObject({ navMode: "document", navAuto: true });
+    const letter = v.detach()!;
+
+    // Back to the drawing: its choice came with it.
+    v.attach(plan);
+    expect(v.uiState()).toMatchObject({ navMode: "document", navAuto: false });
+    v.setNavMode("auto");
+    expect(v.uiState()).toMatchObject({ navMode: "cad", navAuto: true });
+    v.closeDetached(letter);
+  });
+});
+
+describe("Viewer eased fits, sticky zoom, resize and sticky drags", () => {
+  it("fit eases to the fit rather than jumping, and lands exactly", async () => {
+    const { v } = await openViewer();
+    v.setZoom(3);
+    const start = v.view.scale;
+    v.fit("page", false, true);
+    expect(v.view.scale).toBe(start); // nothing yet: it eases
+    await vi.advanceTimersByTimeAsync(100);
+    expect(v.view.scale).toBeLessThan(start);
+    await vi.advanceTimersByTimeAsync(300);
+    const landed = { ...v.view };
+    v.setZoom(3);
+    v.fit("page"); // the same fit, at once, for comparison
+    expect(landed.scale).toBeCloseTo(v.view.scale, 9);
+    expect(landed.tx).toBeCloseTo(v.view.tx, 6);
+    expect(landed.ty).toBeCloseTo(v.view.ty, 6);
+  });
+
+  it("a wheel notch that would cross 100% stops there", async () => {
+    const { v } = await openViewer();
+    v.setZoom(0.95);
+    v.zoomAt(400, 300, 1.12, true); // 0.95 x 1.12 = 1.064: crosses 100%
+    await vi.advanceTimersByTimeAsync(500);
+    expect(v.zoom).toBeCloseTo(1, 6);
+    v.zoomAt(400, 300, 1.12, true); // starting on 100%: carries on
+    await vi.advanceTimersByTimeAsync(500);
+    expect(v.zoom).toBeCloseTo(1.12, 6);
+  });
+
+  it("resizing keeps the centre point, or refits when at a fit", async () => {
+    const { v } = await openViewer([{ w: 1190, h: 842 }, { w: 1190, h: 842 }]);
+    v.setZoom(2);
+    const centre = v.pagePointAt(400, 300)!;
+    v.resize(1000, 700, 1);
+    const after = v.pagePointAt(500, 350)!;
+    expect(after.x).toBeCloseTo(centre.x, 6);
+    expect(after.y).toBeCloseTo(centre.y, 6);
+
+    v.fit("page");
+    v.resize(1400, 900, 1);
+    const refit = v.view.scale;
+    v.fit("page");
+    expect(v.view.scale).toBeCloseTo(refit, 9);
+  });
+
+  it("dragging holds a page edge at the viewport edge before carrying on", async () => {
+    const { v } = await openViewer();
+    v.setZoom(2);
+    // Move the page's left edge to 10 px right of the viewport's left, then drag left past it.
+    const r = v.layout.rects[0]!;
+    v.panBy(10 - (r.x * v.view.scale + v.view.tx), 0);
+    v.dragPan(-15, 0); // crosses the edge-at-0 stop by 5
+    expect(r.x * v.view.scale + v.view.tx).toBeCloseTo(0, 6);
+    v.dragPan(-10, 0); // still within the hold
+    expect(r.x * v.view.scale + v.view.tx).toBeCloseTo(0, 6);
+    v.dragPan(-20, 0); // past it: carries on
+    expect(r.x * v.view.scale + v.view.tx).toBeLessThan(0);
+    v.endDrag();
+  });
+});
+
+describe("Viewer single-page wheel scrolling", () => {
+  it("turns the page after scrolling on against its end, and back from its top", async () => {
+    const { v } = await openViewer([{ w: 595, h: 842 }, { w: 595, h: 842 }, { w: 595, h: 842 }]);
+    v.setLayoutMode("single");
+    v.fit("page"); // the page can't move at all: every notch is overscroll
+    v.scrollBy(0, -40); // under the threshold
+    expect(v.uiState().page).toBe(0);
+    v.scrollBy(0, -40); // 80 gathered: next page
+    expect(v.uiState().page).toBe(1);
+    v.scrollBy(0, 100); // one notch up: back
+    expect(v.uiState().page).toBe(0);
+    v.scrollBy(0, 100); // the first page has no page before it
+    expect(v.uiState().page).toBe(0);
+  });
+
+  it("scrolls normally within a page taller than the view, then lands at the next page's top", async () => {
+    const { v } = await openViewer([{ w: 595, h: 842 }, { w: 595, h: 842 }]);
+    v.setLayoutMode("single");
+    v.fit("width"); // taller than the 800 x 600 view
+    const ty0 = v.view.ty;
+    v.scrollBy(0, -100);
+    expect(v.view.ty).toBeCloseTo(ty0 - 100, 6); // just scrolls
+    expect(v.uiState().page).toBe(0);
+    for (let i = 0; i < 40 && v.uiState().page === 0; i++) v.scrollBy(0, -100);
+    expect(v.uiState().page).toBe(1);
+    const r = v.layout.rects[1]!;
+    expect(r.y * v.view.scale + v.view.ty).toBeCloseTo(16, 6); // the top, at the margin
+  });
+});
+
+describe("Viewer columns layout fit", () => {
+  it("switching to columns fits the whole row, and fit width keeps doing so", async () => {
+    const { v } = await openViewer(Array(6).fill({ w: 595, h: 842 }));
+    v.setLayoutMode("columns"); // 2 across by default
+    const b = v.layout.bounds;
+    // The row's width fills the 800 px view, less the 16 px margins.
+    expect(b.w * v.view.scale).toBeCloseTo(800 - 32, 6);
+    expect(b.x * v.view.scale + v.view.tx).toBeCloseTo(16, 6);
+    v.setZoom(3);
+    v.fit("width");
+    expect(b.w * v.view.scale).toBeCloseTo(800 - 32, 6);
+    v.setColumns(3); // a wider row: refitted
+    expect(v.layout.bounds.w * v.view.scale).toBeCloseTo(800 - 32, 6);
+    v.fit("page"); // fit page still fits one page
+    const r = v.layout.rects[v.uiState().page]!;
+    expect(Math.max((r.w * v.view.scale) / (800 - 32), (r.h * v.view.scale) / (600 - 32))).toBeCloseTo(1, 6);
+  });
+});
+
+describe("Viewer visible pages", () => {
+  it("lists every page any part of which is on screen", async () => {
+    const { v } = await openViewer(Array(6).fill({ w: 595, h: 842 }));
+    v.setLayoutMode("columns"); // 2 across, fitted to the row at the top
+    expect(v.uiState().visiblePages.slice(0, 2)).toEqual([0, 1]);
+    v.setLayoutMode("single");
+    expect(v.uiState().visiblePages).toEqual([v.uiState().page]);
+  });
+});
+
+describe("Viewer layout per document", () => {
+  it("each tab keeps its own layout and columns", async () => {
+    const { v } = await openViewer(Array(4).fill({ w: 595, h: 842 }));
+    v.setLayoutMode("columns");
+    v.setColumns(3);
+    const first = v.detach()!;
+    const r2 = new StubRenderer(doc([{ w: 595, h: 842 }], 9));
+    r2.auto = true;
+    v.layoutMode = "continuous"; // what the shell sets before opening another file
+    await v.open("C:/x/report.pdf", undefined, r2);
+    expect(v.uiState()).toMatchObject({ layoutMode: "continuous" });
+    const second = v.detach()!;
+    v.attach(first);
+    expect(v.uiState()).toMatchObject({ layoutMode: "columns", columns: 3 });
+    v.closeDetached(second);
+  });
+});

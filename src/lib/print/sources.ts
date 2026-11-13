@@ -51,9 +51,9 @@ export function pickSources(
       return r.ok ? { ok: true, sources: r.pages.map((p) => ({ ref: pageRef(doc, p), crop: null })) } : r;
     }
     case "view":
-      return ctx.viewRect ? { ok: true, sources: [regionSource(doc, ctx.viewRect)] } : { ok: false, error: "Nothing of the page is on screen" };
+      return ctx.viewRect ? { ok: true, sources: [regionSource(doc, ctx.viewRect)] } : { ok: false, error: "Nothing of the page is on screen." };
     case "marquee":
-      return marquee ? { ok: true, sources: [regionSource(doc, marquee)] } : { ok: false, error: "Drag a rectangle on the page" };
+      return marquee ? { ok: true, sources: [regionSource(doc, marquee)] } : { ok: false, error: "Drag an area on the page." };
   }
 }
 

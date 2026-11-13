@@ -14,8 +14,6 @@ export interface MenuItem extends MenuItemLike {
   /** Shows a tick (toggles) or a dot (radio choices). */
   checked?: boolean;
   radio?: boolean;
-  /** A colour swatch before the label (accent choices). */
-  swatch?: string;
   submenu?: MenuItem[];
 }
 
@@ -77,17 +75,43 @@ export type MenuKeyAction =
   | { type: "closeSub" }
   | { type: "activate" }
   | { type: "close" }
+  /** Let the key through with the menu still open (modifier keys, F10, which the menu bar owns). */
+  | { type: "pass" }
+  /** Close the menu, then let the key through so its shortcut runs (Ctrl+P, F1...). */
+  | { type: "closeAndPass" }
+  /** Nothing to do; the menu still swallows the key so it can't act on the drawing behind. */
   | { type: "none" };
+
+/** Modifiers held with the key. */
+export interface MenuKeyMods {
+  ctrl?: boolean;
+  alt?: boolean;
+  meta?: boolean;
+}
+
+const MODIFIER_KEYS = new Set(["Control", "Alt", "AltGraph", "Shift", "Meta", "OS"]);
 
 /**
  * What a key does inside an open menu. `inSub` says the focus is in a submenu (Left closes
- * it rather than moving to the previous menu).
+ * it rather than moving to the previous menu). Keys the menu doesn't use are swallowed
+ * ("none"), except shortcuts (Ctrl, Alt or Meta held, or an F-key), which close the menu and
+ * then run: never type-ahead, so Ctrl+P prints rather than moving to "Print".
  */
 export function menuKey(
   key: string,
-  st: { items: MenuItemLike[]; labels: (string | null)[]; index: number; menu: number; menuCount: number; inSub: boolean },
+  st: {
+    items: MenuItemLike[];
+    labels: (string | null)[];
+    index: number;
+    menu: number;
+    menuCount: number;
+    inSub: boolean;
+    mods?: MenuKeyMods;
+  },
 ): MenuKeyAction {
   const { items, index } = st;
+  if (MODIFIER_KEYS.has(key) || key === "F10") return { type: "pass" };
+  if (st.mods?.ctrl || st.mods?.alt || st.mods?.meta || /^F\d{1,2}$/.test(key)) return { type: "closeAndPass" };
   switch (key) {
     case "ArrowDown":
       return { type: "move", index: nextItem(items, index, 1) };

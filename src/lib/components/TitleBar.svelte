@@ -7,6 +7,10 @@ export interface TabView {
   loading: boolean;
   error: boolean;
   note: string | null;
+  /** "Page 3 of 12", or why the file didn't open; for the hover card. */
+  detail: string | null;
+  /** The view as it was left (background tabs only), for the hover card. Not owned here. */
+  snapshot: ImageBitmap | null;
 }
 </script>
 
@@ -16,7 +20,10 @@ export interface TabView {
   // drag there moves the window, a double-click maximises), never the tabs or buttons.
   import { onMount } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { dropIndex, truncateMiddle } from "../shell/tabs";
+  import CloseButton from "./CloseButton.svelte";
 
 
   interface Props {
@@ -31,6 +38,10 @@ export interface TabView {
   let { tabs, activeId, onSelect, onClose, onMove, onNew, onContext }: Props = $props();
 
   let maximised = $state(false);
+  /** The maximise button, covered by a native overlay for Windows 11 snap layouts (snap.rs). */
+  let maxBtn: HTMLButtonElement;
+  /** The overlay reports hover, since the button underneath no longer sees the mouse. */
+  let maxHover = $state(false);
   let stripWidth = $state(1000);
 
   /**
@@ -46,6 +57,73 @@ export interface TabView {
   let strip: HTMLDivElement;
   let drag: { id: number; pointer: number; x0: number; moved: boolean } | null = null;
 
+  // ---------------------------------------------------------------- hover card
+  // Like Chrome's tab previews: the full name, the folder, the page, and for a background tab a
+  // picture of the view as it was left. It appears after a pause, then moves straight from tab
+  // to tab while the pointer stays on the strip, and goes on a click, a drag or the wheel.
+
+  const CARD_DELAY_MS = 500;
+  const CARD_W = 260;
+  let card = $state<{ id: number; left: number } | null>(null);
+  let cardTimer: ReturnType<typeof setTimeout> | null = null;
+  /** No card until the pointer leaves the tab (after a click or drag on it). */
+  let cardHeld = false;
+  const cardTab = $derived(card ? tabs.find((t) => t.id === card!.id) ?? null : null);
+
+  function cardLeft(el: HTMLElement): number {
+    const r = el.getBoundingClientRect();
+    return Math.max(8, Math.min(r.left, window.innerWidth - CARD_W - 8));
+  }
+
+  function clearCardTimer() {
+    if (cardTimer !== null) clearTimeout(cardTimer);
+    cardTimer = null;
+  }
+
+  function onTabEnter(e: PointerEvent, id: number) {
+    if (e.pointerType === "touch" || drag) return;
+    cardHeld = false;
+    clearCardTimer();
+    const el = e.currentTarget as HTMLElement;
+    if (card) {
+      card = { id, left: cardLeft(el) }; // already showing: follow at once
+      return;
+    }
+    cardTimer = setTimeout(() => {
+      cardTimer = null;
+      if (!cardHeld && el.isConnected) card = { id, left: cardLeft(el) };
+    }, CARD_DELAY_MS);
+  }
+
+  function onTabLeave() {
+    clearCardTimer();
+    cardHeld = false;
+    // A short grace, so moving onto the next tab keeps the card up and it just follows.
+    cardTimer = setTimeout(() => {
+      cardTimer = null;
+      card = null;
+    }, 80);
+  }
+
+  function hideCard() {
+    clearCardTimer();
+    card = null;
+    cardHeld = true;
+  }
+
+  /** Draw a bitmap into the card's canvas (the bitmap belongs to the tab; it isn't closed here). */
+  function paint(node: HTMLCanvasElement, bmp: ImageBitmap) {
+    const draw = (b: ImageBitmap) => {
+      node.width = b.width;
+      node.height = b.height;
+      node.getContext("2d")?.drawImage(b, 0, 0);
+    };
+    draw(bmp);
+    return { update: draw };
+  }
+
+  const folderOf = (path: string) => path.replace(/[\\/][^\\/]*$/, "");
+
   const win = getCurrentWindow();
 
   onMount(() => {
@@ -53,7 +131,28 @@ export interface TabView {
     const sync = () => win.isMaximized().then((m) => (maximised = m)).catch(() => {});
     sync();
     win.onResized(sync).then((u) => (un = u)).catch(() => {});
-    return () => un?.();
+
+    // Keep the snap overlay over the maximise button, in physical pixels.
+    const place = () => {
+      if (!maxBtn) return;
+      const r = maxBtn.getBoundingClientRect();
+      const k = window.devicePixelRatio || 1;
+      invoke("snap_max_button", { x: r.left * k, y: r.top * k, w: r.width * k, h: r.height * k }).catch(() => {});
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(document.documentElement);
+    ro.observe(maxBtn);
+    window.addEventListener("resize", place);
+    let unHover: (() => void) | null = null;
+    listen<boolean>("snap://hover", (e) => (maxHover = e.payload)).then((u) => (unHover = u)).catch(() => {});
+
+    return () => {
+      un?.();
+      unHover?.();
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+    };
   });
 
   function tabCentres(): number[] {
@@ -64,6 +163,7 @@ export interface TabView {
   }
 
   function onPointerDown(e: PointerEvent, id: number) {
+    hideCard();
     if (e.button === 1) {
       e.preventDefault(); // no autoscroll; auxclick closes
       return;
@@ -92,9 +192,12 @@ export interface TabView {
 
 <header class="bar" data-tauri-drag-region>
   <div class="brand" data-tauri-drag-region>
+    <!-- The app icon's 16 px drawing (src-tauri/icons/source/vellum-16.svg), in its own colours. -->
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" fill="none" stroke="var(--accent)" stroke-width="1.5" />
-      <path d="M5 5.5h6M5 8h6M5 10.5h3.5" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" />
+      <rect x="0" y="0" width="16" height="16" rx="3.5" fill="#0a4540" />
+      <polygon points="11.7,2.5 13.4,2.5 9,13 8.4,13" fill="#14b8a6" />
+      <polygon points="10,3.5 12,3.5 8.6,13 6,13" fill="#ffffff" />
+      <polygon points="2,3 5,3 9,13 6,13" fill="#2dd4bf" />
     </svg>
     <span>Vellum</span>
   </div>
@@ -107,8 +210,10 @@ export interface TabView {
         role="tab"
         tabindex="0"
         aria-selected={t.id === activeId}
-        title={t.note ? `${t.path}\n${t.note}` : t.path}
         data-tab={t.id}
+        onpointerenter={(e) => onTabEnter(e, t.id)}
+        onpointerleave={onTabLeave}
+        onwheel={hideCard}
         onpointerdown={(e) => onPointerDown(e, t.id)}
         onpointermove={onPointerMove}
         onpointerup={onPointerUp}
@@ -136,29 +241,43 @@ export interface TabView {
           <svg class="ic" width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="2.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M2 10l3-3 2.5 2.5L9 8l3 3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
         {/if}
         <span class="title" class:loading={t.loading}>{truncateMiddle(t.title, titleChars)}</span>
-        <button type="button" class="close" aria-label="Close tab" tabindex="-1" onclick={() => onClose(t.id)}>
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
-        </button>
+        <CloseButton size="small" label="Close tab" tabindex={-1} onclick={() => onClose(t.id)} />
       </div>
     {/each}
-    <button type="button" class="new" aria-label="Open file" title="Open file (Ctrl+O)" onclick={onNew}>
+    <button type="button" class="new" aria-label="Open a file" title="Open (Ctrl+O)" onclick={onNew}>
       <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
     </button>
     <div class="fill" data-tauri-drag-region></div>
   </div>
 
+  {#if card && cardTab}
+    <div class="card" style:left="{card.left}px" style:width="{CARD_W}px" aria-hidden="true">
+      <div class="name">{cardTab.title}</div>
+      <div class="path">{folderOf(cardTab.path)}</div>
+      {#if cardTab.detail}
+        <div class="detail" class:err={cardTab.error}>{cardTab.detail}</div>
+      {/if}
+      {#if cardTab.note}
+        <div class="detail">{cardTab.note}</div>
+      {/if}
+      {#if cardTab.snapshot && cardTab.id !== activeId}
+        <canvas class="shot" use:paint={cardTab.snapshot}></canvas>
+      {/if}
+    </div>
+  {/if}
+
   <div class="controls">
     <button type="button" aria-label="Minimise" title="Minimise" onclick={() => win.minimize()}>
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor" /></svg>
     </button>
-    <button type="button" aria-label={maximised ? "Restore" : "Maximise"} title={maximised ? "Restore" : "Maximise"} onclick={() => win.toggleMaximize()}>
+    <button type="button" aria-label={maximised ? "Restore" : "Maximise"} title={maximised ? "Restore" : "Maximise"} class:hov={maxHover} bind:this={maxBtn} onclick={() => win.toggleMaximize()}>
       {#if maximised}
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" /><path d="M2.5 2.5v-2h7v7h-2" fill="none" stroke="currentColor" /></svg>
       {:else}
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>
       {/if}
     </button>
-    <button type="button" class="x" aria-label="Close window" title="Close" onclick={() => win.close()}>
+    <button type="button" class="x" aria-label="Close" title="Close" onclick={() => win.close()}>
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" /></svg>
     </button>
   </div>
@@ -213,6 +332,7 @@ export interface TabView {
   }
   .tab:hover:not(.on) {
     color: var(--tx2);
+    background: var(--hover);
   }
   .tab.on {
     background: var(--app);
@@ -235,22 +355,6 @@ export interface TabView {
   }
   .title.loading {
     opacity: 0.6;
-  }
-  .close {
-    width: 20px;
-    height: 20px;
-    border: none;
-    background: transparent;
-    color: var(--tx3);
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .close:hover {
-    background: var(--hover);
-    color: var(--tx);
   }
   .new {
     width: 28px;
@@ -275,6 +379,49 @@ export interface TabView {
     align-self: stretch;
     min-width: 24px;
   }
+  .card {
+    position: fixed;
+    top: 42px;
+    z-index: var(--z-menu);
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px 12px;
+    background: var(--ctl);
+    border-color: var(--bd-strong);
+    border: 1px solid var(--bd);
+    border-radius: 8px;
+    box-shadow: var(--shadow-pop);
+  }
+  .card .name {
+    color: var(--tx);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .card .path {
+    color: var(--tx3);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .card .detail {
+    color: var(--tx2);
+    font-size: 12px;
+  }
+  .card .detail.err {
+    color: var(--danger);
+  }
+  .card .shot {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 200px;
+    object-fit: contain;
+    margin-top: 8px;
+    border-radius: 4px;
+    border: 1px solid var(--bd);
+    background: var(--canvas);
+  }
   .controls {
     display: flex;
     align-items: stretch;
@@ -289,7 +436,8 @@ export interface TabView {
     align-items: center;
     justify-content: center;
   }
-  .controls button:hover {
+  .controls button:hover,
+  .controls button.hov {
     background: var(--hover);
     color: var(--tx);
   }

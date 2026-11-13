@@ -1,6 +1,6 @@
 <script lang="ts">
   // Password prompt for a protected PDF. The shell retries the open with what's typed; on
-  // "Wrong password" it reopens this with the message.
+  // a wrong password it reopens this with the message (a full sentence).
   import Dialog from "../Dialog.svelte";
 
   interface Props {
@@ -32,7 +32,7 @@
     <label for="pw">Password</label>
     <input id="pw" class="field" type="password" autocomplete="off" bind:value={pw} bind:this={input} disabled={busy} />
     {#if error}
-      <p class="err" role="alert">{error}. Try again.</p>
+      <p class="err" role="alert">{error} Try again.</p>
     {/if}
   </form>
   {#snippet footer()}

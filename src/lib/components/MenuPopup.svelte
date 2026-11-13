@@ -1,7 +1,8 @@
 <script lang="ts">
   // A dropdown list of menu items (menu bar menus, submenus, context menus). Keyboard:
   // arrows, Home/End, type-ahead, Enter, Escape; Left/Right switch menus or open submenus
-  // (shell/menuNav.ts decides).
+  // (shell/menuNav.ts decides). Other keys are swallowed, except shortcuts, which close the
+  // menu and run.
   import { onMount, tick } from "svelte";
   import { menuKey, type MenuItem } from "../shell/menuNav";
   import MenuPopup from "./MenuPopup.svelte";
@@ -31,8 +32,8 @@
   let pos = $state({ x: 0, y: 0 });
 
   const labels = $derived(items.map((i) => i.label ?? null));
-  /** Reserve a column for ticks and swatches only when some item has one (the File menu has none). */
-  const hasMarks = $derived(items.some((i) => i.checked !== undefined || i.swatch));
+  /** Reserve a column for ticks only when some item has one (the File menu has none). */
+  const hasMarks = $derived(items.some((i) => i.checked !== undefined));
 
   onMount(async () => {
     pos = { x, y };
@@ -64,8 +65,13 @@
 
   function onKey(e: KeyboardEvent) {
     if (sub) return; // the submenu has focus and handles keys
-    const a = menuKey(e.key, { items, labels, index, menu, menuCount, inSub });
-    if (a.type === "none") return;
+    const a = menuKey(e.key, { items, labels, index, menu, menuCount, inSub, mods: { ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey } });
+    if (a.type === "pass") return;
+    if (a.type === "closeAndPass") {
+      onClose(); // the key carries on to the window, where its shortcut runs
+      return;
+    }
+    // Everything else stops here, used or not, so it can't act on the drawing behind.
     e.preventDefault();
     e.stopPropagation();
     switch (a.type) {
@@ -123,14 +129,12 @@
         onpointerenter={() => {
           index = i;
           if (item.submenu) openSub(i, false);
-          else if (sub) sub = null;
+          else if (sub) closeSubmenu(); // take focus back, or keys would reach the drawing
         }}
         onclick={() => activate(i)}
       >
         {#if hasMarks}<span class="mark">
-          {#if item.swatch}
-            <span class="swatch" style:background={item.swatch}></span>
-          {:else if item.checked}
+          {#if item.checked}
             {#if item.radio}
               <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3" fill="currentColor" /></svg>
             {:else}
@@ -168,7 +172,7 @@
 <style>
   .menu {
     position: fixed;
-    z-index: 50;
+    z-index: var(--z-menu);
     min-width: 260px;
     max-width: 420px;
     max-height: calc(100vh - 16px);
@@ -177,7 +181,7 @@
     background: var(--ctl);
     border: 1px solid var(--bd-strong);
     border-radius: 8px;
-    box-shadow: 0 12px 32px var(--shadow);
+    box-shadow: var(--shadow-pop);
     display: flex;
     flex-direction: column;
     outline: none;
@@ -206,11 +210,6 @@
     justify-content: center;
     color: var(--tx2);
     flex-shrink: 0;
-  }
-  .swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 3px;
   }
   .label {
     flex: 1 1 auto;

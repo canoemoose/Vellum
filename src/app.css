@@ -1,7 +1,16 @@
 /* Theme tokens, from the mockups' <style> blocks (docs/mockups/project/Main.dc.html).
-   The shell sets data-theme on <html> ("dark" or "light"; "System" resolves to one of them)
-   and the accent variables inline (shell/theme.ts accentVars). Nothing else hard-codes a
-   colour; pages always render on white. */
+   The shell sets data-theme on <html> ("dark" or "light"; "System" resolves to one of them).
+   The accent is fixed: Deep teal (chosen 12 November 2026, see docs/ui-review.md). Nothing else
+   hard-codes a colour; pages always render on white. */
+
+/* Stacking order for everything that floats above the window. A dialog sits above the print
+   dialog, so one opened while printing is never hidden underneath it. */
+:root {
+  --z-menu: 50;
+  --z-print: 100;
+  --z-dialog: 110;
+}
+
 :root,
 :root[data-theme="dark"] {
   --chrome: #141517; /* title and status bars */
@@ -21,6 +30,12 @@
   --map: #e9e9e6;
   --hover: rgba(255, 255, 255, 0.06);
   --danger: #e5484d;
+  /* Accent-coloured text (links, the current item...): a lighter teal, as Deep teal is too dim
+     as text on dark. */
+  --accent-text: #2dd4bf;
+  /* Pressed: a step past hover. --press on filled controls, --press-soft on transparent ones. */
+  --press: #1e1f22;
+  --press-soft: rgba(0, 0, 0, 0.22);
   color-scheme: dark;
 }
 
@@ -39,18 +54,32 @@
   --canvas: #d9d9d4;
   --tab-on: #e3e3de;
   --shadow: rgba(0, 0, 0, 0.18);
-  --map: #ffffff;
+  /* Pale grey, not white, so white pages keep their edges on the mini map (as in dark). */
+  --map: #e2e2dd;
   --hover: rgba(0, 0, 0, 0.05);
   --danger: #c9353a;
+  --accent-text: #0d9488;
+  --press: #d6d6d0;
+  --press-soft: rgba(0, 0, 0, 0.1);
   color-scheme: light;
 }
 
 :root {
-  --accent: #e5484d;
-  --accent-soft: #e5484d2e;
-  --accent-bd: #ac3639;
+  /* Fills, rings, outlines and the logo. Buttons on it take white text. */
+  --accent: #0d9488;
+  --accent-soft: #0d94882e; /* the accent at 18% */
+  --accent-bd: #0a6f66; /* the accent darkened by a quarter: filled buttons' visible border */
   /* Windows' own close-button hover red, the same in both themes. */
   --close-hover: #c42b1c;
+  /* One dimming behind every modal, one shadow for popups (menus, lists) and one for dialogs. */
+  --scrim: rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 12px 32px var(--shadow);
+  --shadow-modal: 0 20px 48px var(--shadow);
+  /* Pages are paper: always white. */
+  --paper: #ffffff;
+  /* The print preview's printable-area line: the accent at half strength (a guide, not a
+     selection). A plain colour so canvas code can read it. */
+  --print-margin: rgba(13, 148, 136, 0.55);
   --font-ui: "Inter", system-ui, "Segoe UI", sans-serif;
   --font-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
 }
@@ -80,11 +109,22 @@ select {
   color: inherit;
 }
 
-button {
-  cursor: pointer;
+/* Thin scrollbars on a transparent track, so a scrollbar takes the colour of the panel it's
+   in (the default dark track matched the canvas and looked like part of the drawing). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd-input) transparent;
 }
 
-button:disabled {
+/* Windows controls take the arrow; the hand is for links only. */
+button {
+  cursor: default;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
   cursor: default;
   opacity: 0.45;
 }
@@ -99,9 +139,11 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-/* Shared control styles (mockup sizes). */
+/* Shared control styles: the only button and field styles (UI review group B). Every control
+   hovers, presses and dims the same way (group C). */
 .btn {
   height: 32px;
+  flex-shrink: 0; /* never squashed below its height in a column */
   padding: 0 14px;
   border: 1px solid var(--bd-strong);
   background: var(--ctl);
@@ -111,6 +153,16 @@ button:disabled {
 }
 .btn:hover:not(:disabled) {
   background: var(--tab-on);
+}
+.btn:active:not(:disabled) {
+  background: var(--press);
+}
+.btn.small {
+  height: 28px;
+  padding: 0 10px;
+}
+.btn.danger {
+  color: var(--danger);
 }
 /* Filled accent buttons keep a visible, darker border (house rule: never transparent). */
 .btn.primary {
@@ -124,6 +176,10 @@ button:disabled {
   background: var(--accent);
   filter: brightness(1.08);
 }
+.btn.primary:active:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(0.9);
+}
 .btn.ghost {
   border-color: transparent;
   background: transparent;
@@ -131,6 +187,10 @@ button:disabled {
 }
 .btn.ghost:hover:not(:disabled) {
   background: var(--hover);
+  color: var(--tx);
+}
+.btn.ghost:active:not(:disabled) {
+  background: var(--press-soft);
 }
 
 .field {
@@ -144,6 +204,15 @@ button:disabled {
 }
 select.field {
   padding-right: 4px;
+}
+/* Compact fields (toolbar, print side panel, preset editor): the page box's tighter size. */
+.field.compact {
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 4px;
+}
+select.field.compact {
+  padding-right: 2px;
 }
 input[type="checkbox"],
 input[type="radio"] {
@@ -165,6 +234,60 @@ input[type="radio"] {
 .icon-btn:hover:not(:disabled) {
   background: var(--hover);
   color: var(--tx);
+}
+.icon-btn:active:not(:disabled) {
+  background: var(--press-soft);
+}
+
+/* Segmented controls: one selected look everywhere (group D): pale accent, accent text,
+   normal weight (bold would shift the label's width). Icons take the accent too. */
+.seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--ctl);
+  border: 1px solid var(--bd-ctl);
+  border-radius: 8px;
+}
+.seg > button {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--tx2);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.seg > button:hover:not(:disabled):not(.on) {
+  background: var(--hover);
+  color: var(--tx);
+}
+.seg > button:active:not(:disabled) {
+  background: var(--press-soft);
+}
+.seg > button.on,
+.on-style {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* Text that acts (links): accent text, underlined on hover. */
+.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  text-decoration: underline transparent;
+  text-underline-offset: 2px;
+}
+.link:hover:not(:disabled) {
+  text-decoration-color: currentColor;
 }
 
 .selectable {

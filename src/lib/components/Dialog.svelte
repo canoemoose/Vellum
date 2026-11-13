@@ -3,6 +3,7 @@
   // footer. Escape and the close button call onClose; focus moves into the dialog on open and
   // Tab stays inside it.
   import { onMount, type Snippet } from "svelte";
+  import CloseButton from "./CloseButton.svelte";
 
   interface Props {
     title: string;
@@ -17,7 +18,17 @@
 
   onMount(() => {
     const prev = document.activeElement as HTMLElement | null;
-    const first = box.querySelector<HTMLElement>("[autofocus], input, select, textarea, .btn.primary, button");
+    // In priority order, not document order: a selector list would match the header's close X
+    // first. Then a field in the body, the primary button, any other button; never the X.
+    const body = box.querySelector<HTMLElement>(".body");
+    const foot = box.querySelector<HTMLElement>("footer");
+    const usable = ":not(:disabled):not([type='hidden'])";
+    const first =
+      box.querySelector<HTMLElement>("[autofocus]") ??
+      body?.querySelector<HTMLElement>(`input${usable}:not([type='radio']:not(:checked)), select${usable}, textarea${usable}`) ??
+      foot?.querySelector<HTMLElement>(`.btn.primary${usable}`) ??
+      body?.querySelector<HTMLElement>(`button${usable}`) ??
+      foot?.querySelector<HTMLElement>(`button${usable}`);
     (first ?? box).focus();
     return () => prev?.focus?.();
   });
@@ -49,9 +60,7 @@
   <div class="box" role="dialog" aria-modal="true" aria-label={title} tabindex="-1" style:width="{width}px" bind:this={box}>
     <header>
       <span>{title}</span>
-      <button type="button" class="x" aria-label="Close" onclick={onClose}>
-        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-      </button>
+      <CloseButton onclick={onClose} />
     </header>
     <div class="body">{@render children()}</div>
     {#if footer}
@@ -64,10 +73,10 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    z-index: 60;
+    z-index: var(--z-dialog);
     display: grid;
     place-items: center;
-    background: rgba(0, 0, 0, 0.35);
+    background: var(--scrim);
   }
   .box {
     max-width: calc(100vw - 32px);
@@ -79,7 +88,7 @@
     border: 1px solid var(--bd-strong);
     border-radius: 10px;
     overflow: hidden;
-    box-shadow: 0 20px 48px var(--shadow);
+    box-shadow: var(--shadow-modal);
     outline: none;
   }
   header {
@@ -98,22 +107,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .x {
-    width: 32px;
-    height: 32px;
-    border: none;
-    background: transparent;
-    color: var(--tx3);
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .x:hover {
-    background: var(--hover);
-    color: var(--tx);
   }
   .body {
     padding: 18px 20px;

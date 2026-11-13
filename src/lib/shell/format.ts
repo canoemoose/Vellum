@@ -1,6 +1,7 @@
 // Small formatting and parsing helpers for the toolbar, recent files and export dialog.
 
 import { MAX_ZOOM, MIN_ZOOM } from "../view/viewMath";
+import { pageSet } from "../print/model/pages";
 
 /** Toolbar zoom text: "212%", "8.5%" below 10%. */
 export function formatZoom(zoom: number): string {
@@ -34,26 +35,12 @@ export function removeRecent(list: string[], path: string): string[] {
 
 /**
  * Parse a page range like "1-3, 7" against a document of `n` pages into zero-based page
- * indices, ascending and unique. An empty string means every page. Returns an error message
- * for the UI when it doesn't parse or is out of range.
+ * indices, ascending and unique (export). An empty string means every page. Returns the
+ * message for the UI when it doesn't parse. The one parser is print/model/pages.ts.
  */
 export function parsePageRange(s: string, n: number): number[] | string {
-  const t = s.trim();
-  if (!t) return Array.from({ length: n }, (_, i) => i);
-  const out = new Set<number>();
-  for (const part of t.split(/[,;]+/)) {
-    const p = part.trim();
-    if (!p) continue;
-    const m = /^(\d+)\s*(?:[-–]\s*(\d+)?)?$/.exec(p);
-    if (!m) return `"${p}" isn't a page or a range`;
-    const a = Number(m[1]);
-    const b = m[2] !== undefined ? Number(m[2]) : p.includes("-") || p.includes("–") ? n : a;
-    if (a < 1 || b < 1 || a > n || b > n) return `Pages run from 1 to ${n}`;
-    if (b < a) return `"${p}" runs backwards`;
-    for (let i = a; i <= b; i++) out.add(i - 1);
-  }
-  if (!out.size) return "No pages chosen";
-  return [...out].sort((x, y) => x - y);
+  const r = pageSet(s, n);
+  return r.ok ? r.pages : r.error;
 }
 
 /** "12.4 MB", "830 KB". */

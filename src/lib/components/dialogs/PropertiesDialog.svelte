@@ -83,7 +83,7 @@
   .link {
     border: none;
     background: none;
-    color: var(--accent);
+    color: var(--accent-text);
     padding: 0 0 0 8px;
   }
   .link:hover {

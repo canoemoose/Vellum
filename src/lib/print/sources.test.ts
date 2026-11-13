@@ -36,7 +36,7 @@ describe("pickSources", () => {
     expect(cur.ok && cur.sources[0].ref).toMatchObject({ docId: 2, page: 3, w: 103, h: 200, drawingScale: 100, path: "C:/plans/d2.pdf" });
     const r = pickSources(ctx, "range", "1-2, 5", null);
     expect(r.ok && r.sources.map((s) => s.ref.page)).toEqual([0, 1, 4]);
-    expect(pickSources(ctx, "range", "9", null)).toEqual({ ok: false, error: "Pages run from 1 to 5" });
+    expect(pickSources(ctx, "range", "9", null)).toEqual({ ok: false, error: "Pages run from 1 to 5." });
   });
 
   it("view and marquee crop the page", () => {

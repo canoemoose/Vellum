@@ -73,6 +73,24 @@ describe("menuKey", () => {
     expect(menuKey("Tab", st)).toEqual({ type: "close" });
     expect(menuKey("p", st)).toEqual({ type: "move", index: 4 });
     expect(menuKey("z", st)).toEqual({ type: "none" });
-    expect(menuKey("F5", st)).toEqual({ type: "none" });
+  });
+  it("never type-aheads with Ctrl, Alt or Meta held: the shortcut runs instead", () => {
+    expect(menuKey("p", { ...st, mods: { ctrl: true } })).toEqual({ type: "closeAndPass" });
+    expect(menuKey("r", { ...st, mods: { ctrl: true } })).toEqual({ type: "closeAndPass" });
+    expect(menuKey("p", { ...st, mods: { alt: true } })).toEqual({ type: "closeAndPass" });
+    expect(menuKey("p", { ...st, mods: { meta: true } })).toEqual({ type: "closeAndPass" });
+    expect(menuKey("ArrowDown", { ...st, mods: { ctrl: true } })).toEqual({ type: "closeAndPass" });
+    expect(menuKey("p", { ...st, mods: { ctrl: false, alt: false, meta: false } })).toEqual({ type: "move", index: 4 });
+  });
+  it("closes and passes F-keys, but leaves F10 to the menu bar", () => {
+    expect(menuKey("F1", st)).toEqual({ type: "closeAndPass" });
+    expect(menuKey("F5", st)).toEqual({ type: "closeAndPass" });
+    expect(menuKey("F10", st)).toEqual({ type: "pass" });
+  });
+  it("passes modifier keys on their own, so Alt still toggles the menu bar", () => {
+    for (const k of ["Alt", "Control", "Shift", "Meta"]) expect(menuKey(k, { ...st, mods: { alt: k === "Alt" } })).toEqual({ type: "pass" });
+  });
+  it("swallows keys it doesn't use, rather than letting them reach the drawing", () => {
+    for (const k of ["+", "-", "PageDown", "PageUp", "z"]) expect(menuKey(k, st)).toEqual({ type: "none" });
   });
 });

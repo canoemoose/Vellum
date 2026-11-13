@@ -103,6 +103,12 @@
     font-family: var(--font-num);
     font-size: 12px;
   }
+  .chip:hover:not(.on) {
+    background: var(--tab-on);
+  }
+  .chip:active {
+    background: var(--press);
+  }
   .chip.on {
     border-color: var(--accent);
     background: var(--accent-soft);

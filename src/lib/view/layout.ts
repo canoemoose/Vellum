@@ -8,7 +8,11 @@ export interface PageSize {
   h: number;
 }
 
-export type LayoutMode = "continuous" | "single";
+export type LayoutMode = "continuous" | "single" | "columns";
+
+/** Columns a user can choose for the columns layout. */
+export const MIN_COLUMNS = 2;
+export const MAX_COLUMNS = 6;
 
 export interface Layout {
   mode: LayoutMode;
@@ -23,8 +27,10 @@ export const PAGE_GAP = 18;
 /**
  * Continuous: pages stacked top to bottom, each centred on x = 0, with PAGE_GAP between.
  * Single: only `current` is laid out, at the origin.
+ * Columns: pages fill rows of `columns`, left to right, in equal cells as wide as the widest
+ * page (each page centred in its cell, at the top of its row), the grid centred on x = 0.
  */
-export function computeLayout(sizes: PageSize[], mode: LayoutMode, current = 0): Layout {
+export function computeLayout(sizes: PageSize[], mode: LayoutMode, current = 0, columns = MIN_COLUMNS): Layout {
   const rects: (Rect | null)[] = new Array(sizes.length).fill(null);
   if (sizes.length === 0) {
     return { mode, rects, bounds: { x: 0, y: 0, w: 1, h: 1 } };
@@ -35,6 +41,25 @@ export function computeLayout(sizes: PageSize[], mode: LayoutMode, current = 0):
     const r = { x: -s.w / 2, y: 0, w: s.w, h: s.h };
     rects[i] = r;
     return { mode, rects, bounds: { ...r } };
+  }
+  if (mode === "columns") {
+    const n = Math.min(MAX_COLUMNS, Math.max(MIN_COLUMNS, Math.round(columns)));
+    const cellW = Math.max(...sizes.map((s) => s.w));
+    const cols = Math.min(n, sizes.length);
+    const gridW = cols * cellW + (cols - 1) * PAGE_GAP;
+    const x0 = -gridW / 2;
+    let y = 0;
+    for (let row = 0; row * n < sizes.length; row++) {
+      let rowH = 0;
+      for (let c = 0; c < n && row * n + c < sizes.length; c++) {
+        const i = row * n + c;
+        const s = sizes[i];
+        rects[i] = { x: x0 + c * (cellW + PAGE_GAP) + (cellW - s.w) / 2, y, w: s.w, h: s.h };
+        rowH = Math.max(rowH, s.h);
+      }
+      y += rowH + PAGE_GAP;
+    }
+    return { mode, rects, bounds: { x: x0, y: 0, w: gridW, h: y - PAGE_GAP } };
   }
   let y = 0;
   let maxW = 0;
@@ -55,7 +80,9 @@ export function computeLayout(sizes: PageSize[], mode: LayoutMode, current = 0):
 export function pagesInRect(layout: Layout, r: Rect): number[] {
   const out: number[] = [];
   const rects = layout.rects;
-  if (layout.mode === "single") {
+  if (layout.mode !== "continuous") {
+    // Single page has one rect; columns has several per row, so the one-page-per-row binary
+    // search below doesn't apply. A scan is cheap enough either way.
     rects.forEach((p, i) => {
       if (p && p.x < r.x + r.w && r.x < p.x + p.w && p.y < r.y + r.h && r.y < p.y + p.h) out.push(i);
     });

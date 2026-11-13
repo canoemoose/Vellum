@@ -24,7 +24,7 @@
           {#each g.items as s, i (i)}
             <tr class:dim={s.mode && s.mode !== current}>
               <td class="keys">{s.keys}</td>
-              <td>{s.action}{#if s.mode}<span class="mode">{s.mode} mode</span>{/if}</td>
+              <td>{s.action}{#if s.mode}<span class="mode">{s.mode} navigation</span>{/if}</td>
             </tr>
           {/each}
         </tbody>

@@ -171,22 +171,20 @@ export function fitRect(rect: Rect, vw: number, vh: number, pad: number, mode: F
 }
 
 /**
- * Keep at least `keep` CSS pixels of the document bounds visible, so the drawing can
- * never be panned completely out of sight. Free panning otherwise (CAD style).
+ * Keep the document on screen, axis by axis. Where it's smaller than the view (less a `pad`
+ * margin each side) it stays wholly in view, free to move within it; where it's larger, its
+ * edges can't come further in than the margin, so no page (or the document's end) can be
+ * scrolled off leaving an empty view.
  */
-export function constrainView(v: View, bounds: Rect, vw: number, vh: number, keep = 64): View {
-  const left = bounds.x * v.scale + v.tx;
-  const right = (bounds.x + bounds.w) * v.scale + v.tx;
-  const top = bounds.y * v.scale + v.ty;
-  const bottom = (bounds.y + bounds.h) * v.scale + v.ty;
-  let { tx, ty } = v;
-  const kx = Math.min(keep, (right - left) / 2);
-  const ky = Math.min(keep, (bottom - top) / 2);
-  if (right < kx) tx += kx - right;
-  if (left > vw - kx) tx -= left - (vw - kx);
-  if (bottom < ky) ty += ky - bottom;
-  if (top > vh - ky) ty -= top - (vh - ky);
-  return tx === v.tx && ty === v.ty ? v : { scale: v.scale, tx, ty };
+export function constrainView(v: View, bounds: Rect, vw: number, vh: number, pad = 16): View {
+  const axis = (start: number, len: number, view: number): number => {
+    const lo = Math.min(pad, view - pad - len);
+    const hi = Math.max(pad, view - pad - len);
+    return Math.min(hi, Math.max(lo, start)) - start;
+  };
+  const dx = axis(bounds.x * v.scale + v.tx, bounds.w * v.scale, vw);
+  const dy = axis(bounds.y * v.scale + v.ty, bounds.h * v.scale, vh);
+  return dx === 0 && dy === 0 ? v : { scale: v.scale, tx: v.tx + dx, ty: v.ty + dy };
 }
 
 /** Visible world rectangle for a viewport of vw x vh CSS pixels. */
@@ -213,4 +211,204 @@ export function approachScale(current: number, target: number, dtMs: number, tau
   const k = 1 - Math.exp(-dtMs / tau);
   const next = Math.exp(Math.log(current) + (Math.log(target) - Math.log(current)) * k);
   return Math.abs(Math.log(target / next)) < 1e-3 ? target : next;
+}
+
+// ---------------------------------------------------------------- eased view changes
+
+/** Ease-out cubic on 0..1: quick to start, gentle to land. */
+export function easeOutCubic(t: number): number {
+  const u = Math.min(1, Math.max(0, t));
+  return 1 - (1 - u) ** 3;
+}
+
+/**
+ * The view part way (`e`, 0..1) from `a` to `b`: the world point at the viewport centre
+ * moves in a straight line and the scale changes geometrically, so a zoom feels even at
+ * every size and nothing swings off sideways.
+ */
+export function interpolateView(a: View, b: View, e: number, vw: number, vh: number): View {
+  if (e <= 0) return a;
+  if (e >= 1) return b;
+  const [ax, ay] = screenToWorld(a, vw / 2, vh / 2);
+  const [bx, by] = screenToWorld(b, vw / 2, vh / 2);
+  const scale = Math.exp(Math.log(a.scale) + (Math.log(b.scale) - Math.log(a.scale)) * e);
+  const cx = ax + (bx - ax) * e;
+  const cy = ay + (by - ay) * e;
+  return { scale, tx: vw / 2 - cx * scale, ty: vh / 2 - cy * scale };
+}
+
+/**
+ * Fit the page's width, keeping the point at the vertical centre of the view where it is
+ * (so fitting width doesn't jump to the top), unless that point isn't on the page: then the
+ * page's top, as `fitRect` does.
+ */
+export function fitWidthKeepingY(rect: Rect, current: View, vw: number, vh: number, pad: number): View {
+  const fit = fitRect(rect, vw, vh, pad, "width");
+  const [, wy] = screenToWorld(current, vw / 2, vh / 2);
+  if (wy < rect.y || wy > rect.y + rect.h) return fit;
+  return { scale: fit.scale, tx: fit.tx, ty: vh / 2 - wy * fit.scale };
+}
+
+/** After the viewport changes size, keep the world point at its centre at the new centre. */
+export function keepCentre(v: View, oldW: number, oldH: number, newW: number, newH: number): View {
+  return { scale: v.scale, tx: v.tx + (newW - oldW) / 2, ty: v.ty + (newH - oldH) / 2 };
+}
+
+/**
+ * Where a zoom from `from` towards `to` should stop: at the first of `stops` it crosses
+ * (sticky zoom at 100%, fit width and fit page), or `to` if it crosses none. A stop the zoom
+ * starts on (within 0.5%) doesn't hold it, so the next notch carries on past.
+ */
+export function stickyZoomTarget(from: number, to: number, stops: number[]): number {
+  if (to === from) return to;
+  const up = to > from;
+  let best = to;
+  for (const s of stops) {
+    if (!(s > 0) || Math.abs(Math.log(s / from)) < 0.005) continue;
+    const between = up ? s > from && s < to : s < from && s > to;
+    if (between && (up ? s < best : s > best)) best = s;
+  }
+  return best;
+}
+
+/**
+ * Whether the page fits in the viewport at the current zoom (the viewport, in the page's
+ * points as Viewer.viewportOnPage gives it, is at least as big as the page both ways),
+ * wherever it's scrolled to. The mini map shows only when it doesn't: it's for finding your
+ * way round a page you're zoomed into, and judging by size, not position, keeps it from
+ * flickering on and off while you scroll from page to page at fit.
+ */
+export function pageFitsView(viewport: Rect | null, pageW: number, pageH: number): boolean {
+  if (!viewport) return false;
+  const e = 0.5; // half a point of slack for rounding
+  return viewport.w >= pageW - e && viewport.h >= pageH - e;
+}
+
+/** The smallest rect containing all of `rects`; null for none. */
+export function unionRect(rects: Rect[]): Rect | null {
+  if (rects.length === 0) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rects) {
+    x0 = Math.min(x0, r.x);
+    y0 = Math.min(y0, r.y);
+    x1 = Math.max(x1, r.x + r.w);
+    y1 = Math.max(y1, r.y + r.h);
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** The rect part way (`e`, 0..1) from `a` to `b`, edges moving in straight lines. */
+export function lerpRect(a: Rect, b: Rect, e: number): Rect {
+  const t = Math.min(1, Math.max(0, e));
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t };
+}
+
+/**
+ * Whether the mini map has something to say: a page in view (world rects) is cut off at the
+ * view's left or right (zoomed in, or where columns meet), or, when `tallCounts` (CAD
+ * navigation), is taller than the view (inside a long drawing like the aerial one at fit
+ * width, its top and bottom included). In Document navigation a tall page is just reading
+ * down a document at fit width, where the map would only be in the way. A page no taller than
+ * the view, cut only by scrolling from page to page, says nothing the window and the
+ * thumbnails don't. Half a point of slack.
+ */
+export function mapUseful(view: Rect, pages: Rect[], tallCounts = true): boolean {
+  const e = 0.5;
+  return pages.some((r) => r.x < view.x - e || r.x + r.w > view.x + view.w + e || (tallCounts && r.h > view.h + e));
+}
+
+/** Mini map shape limits (width / height) and its drawing width at default size, CSS px. */
+export const MAP_MIN_ASPECT = 1 / 6;
+export const MAP_MAX_ASPECT = 6;
+export const MAP_WIDTH = 136;
+
+/**
+ * What the mini map frames: `pages` (the union of the pages in view), unless that's longer
+ * than MAP_MIN_ASPECT..MAP_MAX_ASPECT allows, when it's a window of the limit's shape onto
+ * it, the page's full width (or height), centred on the view and kept inside the pages.
+ */
+export function mapFraming(pages: Rect, view: Rect): Rect {
+  const a = pages.w / pages.h;
+  if (a < MAP_MIN_ASPECT) {
+    const h = pages.w / MAP_MIN_ASPECT;
+    const cy = view.y + view.h / 2;
+    const y = Math.min(pages.y + pages.h - h, Math.max(pages.y, cy - h / 2));
+    return { x: pages.x, y, w: pages.w, h };
+  }
+  if (a > MAP_MAX_ASPECT) {
+    const w = pages.h * MAP_MAX_ASPECT;
+    const cx = view.x + view.w / 2;
+    const x = Math.min(pages.x + pages.w - w, Math.max(pages.x, cx - w / 2));
+    return { x, y: pages.y, w, h: pages.h };
+  }
+  return pages;
+}
+
+/** The mini map's size, as a multiple of its default width (MAP_WIDTH), that the user can set. */
+export const MAP_SIZE_MIN = 0.6;
+/** Large enough to reach any screen's width; the drawing area limits it in practice (mapLimits). */
+export const MAP_SIZE_MAX = 20;
+/** Space kept between the mini map and the drawing area's edges, each side, CSS px. */
+export const MAP_GUTTER = 16;
+/** The map's padding and border round its drawing area, both sides together, CSS px. */
+export const MAP_FRAME = 14;
+
+/**
+ * The largest size that keeps a map of aspect `a` within the guards: 60% of the drawing area
+ * (`stageW` x `stageH`) both ways. Sizes beyond this are a temporary blow-up: only this much
+ * is remembered. `turned`: the view is a quarter turn round (see mapBox).
+ */
+export function mapGuardSize(stageW: number, stageH: number, a: number, turned = false): number {
+  if (turned) return mapGuardSize(stageH, stageW, 1 / a);
+  const s = Math.min(MAP_MAX_ASPECT, Math.max(MAP_MIN_ASPECT, a));
+  const w = Math.min(stageW * 0.6 - MAP_FRAME, (stageH * 0.6 - MAP_FRAME) * s);
+  return Math.max(MAP_SIZE_MIN, w / MAP_WIDTH);
+}
+
+/**
+ * The most room the mini map's drawing area may take in a drawing area `stageW` x `stageH`:
+ * 60% of it at default size, growing with the size the user sets, up to the whole drawing
+ * area less the gutters. Also the largest size the grip may set for a framing of aspect `a`
+ * (beyond it the map can't grow, so the grip stops rather than run on unseen).
+ */
+export function mapLimits(
+  stageW: number,
+  stageH: number,
+  size: number,
+  a: number,
+  turned = false,
+): { maxW: number; maxH: number; maxSize: number } {
+  if (turned) {
+    const r = mapLimits(stageH, stageW, size, 1 / a);
+    return { maxW: r.maxH, maxH: r.maxW, maxSize: r.maxSize };
+  }
+  const fullW = Math.max(1, stageW - 2 * MAP_GUTTER - MAP_FRAME);
+  const fullH = Math.max(1, stageH - 2 * MAP_GUTTER - MAP_FRAME);
+  const frac = 0.6 * Math.max(1, size);
+  const maxW = Math.min(fullW, stageW * frac - MAP_FRAME);
+  const maxH = Math.min(fullH, stageH * frac - MAP_FRAME);
+  const s = Math.min(MAP_MAX_ASPECT, Math.max(MAP_MIN_ASPECT, a));
+  const maxSize = Math.max(MAP_SIZE_MIN, Math.min(fullW, fullH * s) / MAP_WIDTH);
+  return { maxW, maxH, maxSize };
+}
+
+/**
+ * The mini map's drawing area for a framing of aspect `a` (width / height): MAP_WIDTH times
+ * `size` wide, as tall as that shape makes it, shrunk evenly if need be to fit within
+ * `maxW` x `maxH` (so a tall or enlarged map never outgrows the window). `turned`: the view is
+ * a quarter turn round, so the map turns with it: the fixed side follows the page's own width,
+ * which is now upright, and width and height swap rather than the map changing size.
+ */
+export function mapBox(a: number, size = 1, maxW = Infinity, maxH = Infinity, turned = false): { w: number; h: number } {
+  if (turned) {
+    const b = mapBox(1 / a, size, maxH, maxW);
+    return { w: b.h, h: b.w };
+  }
+  const s = Math.min(MAP_MAX_ASPECT, Math.max(MAP_MIN_ASPECT, a));
+  let w = MAP_WIDTH * size;
+  let h = w / s;
+  const k = Math.min(1, maxW / w, maxH / h);
+  w *= k;
+  h *= k;
+  return { w: Math.max(1, Math.round(w)), h: Math.max(1, Math.round(h)) };
 }

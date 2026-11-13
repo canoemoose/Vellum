@@ -8,8 +8,10 @@
 
   interface Props {
     menus: Menu[];
+    /** A modal is open: Alt and F10 mustn't open a menu behind it. */
+    disabled?: boolean;
   }
-  let { menus }: Props = $props();
+  let { menus, disabled = false }: Props = $props();
 
   let open = $state<{ index: number; keyboard: boolean } | null>(null);
   let bar: HTMLElement;
@@ -37,6 +39,10 @@
       close();
     };
     const keydown = (e: KeyboardEvent) => {
+      if (disabled) {
+        altAlone = false;
+        return;
+      }
       if (e.key === "Alt") {
         altAlone = !e.repeat;
         return;
@@ -49,7 +55,7 @@
       }
     };
     const keyup = (e: KeyboardEvent) => {
-      if (e.key !== "Alt" || !altAlone) return;
+      if (e.key !== "Alt" || !altAlone || disabled) return;
       altAlone = false;
       e.preventDefault();
       if (open) close();

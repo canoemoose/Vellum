@@ -67,6 +67,14 @@
     background: none;
     padding: 0;
     color: var(--tx3);
+    border-radius: 4px;
+  }
+  .tw:hover {
+    background: var(--hover);
+    color: var(--tx);
+  }
+  .tw:active {
+    background: var(--press-soft);
   }
   svg {
     transition: transform 0.1s;
