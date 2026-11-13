@@ -22,6 +22,53 @@ merges, so 0.2.0 reaches installed copies through the updater.
   the branch and before pushing any tag. Nothing is published without Matt: releases are
   created as drafts.
 
+## As built (branch `release-pipeline`)
+
+Where the build differs from, or adds to, the design below. The design sections are left as
+scoped; this section wins where they disagree.
+
+- **A shared setup step.** `.github/actions/setup` (Volta, caches, Rust, `npm ci`, PDFium) is
+  used by both workflows so they can't drift. Rust comes from the runner's own rustup, not a
+  third-party action.
+- **The crate needs two generated things before cargo runs:** `dist/` (the front end) and
+  `src-tauri/licenses/THIRD-PARTY-NOTICES.txt`. Both workflows build them before the tests.
+- **`set-version` also writes the two lockfiles** (`package-lock.json`, `src-tauri/Cargo.lock`),
+  which repeat the version. `--check` is what the release workflow runs against the tag. It has
+  its own tests (`tools/set-version.test.mjs`, run by `npm test`).
+- **Pre-release tags** (a version with a `-`, such as `v0.1.1-rc1`) make a draft that is also
+  marked prerelease, so even if published it is never "latest".
+- **No `tauri-plugin-process`.** On Windows the updater's install step ends the app and the
+  installer starts the new version itself (`/R`, with the original command line), so there is
+  nothing for a restart plugin to do. One plugin, one permission (`updater:default`).
+- **"What's new" opens the version's release page in the browser.** The notes inside
+  `latest.json` are frozen when the workflow builds it, before the draft's notes are written,
+  so they can't be shown in the app. The address is built in Rust from a checked version.
+- **Other Vellum windows.** Checked in Tauri's NSIS template: in passive mode the installer
+  shuts down every running copy of the exe **without asking**. So Vellum counts other copies
+  of its own exe before downloading and again before installing, and says "close them, then
+  try again" instead of going ahead. This matters more once windows can hold unsaved edits.
+- **Tabs across the restart** are noted in a file (`%LOCALAPPDATA%\Vellum\update-handover.json`),
+  not in the WebView's storage: the install step ends the process at once and that storage
+  isn't certain to be on disk. The note is read once, removed, and ignored if it is more than
+  ten minutes old. Tabs that had failed to open aren't carried over.
+- **Order of the install:** download (with progress), then ask the shell to close
+  (`closeForUpdate` in `App.svelte`, where the unsaved-changes prompt goes), then install. So
+  the prompt appears at the moment it matters, and cancelling it keeps the download.
+- **A failed check doesn't count** towards "once a day": the next start tries again. Only a
+  check that got an answer is recorded.
+- **Development builds** (`tauri dev`) never check automatically; Help > Check for updates
+  still works there.
+- **The setting** is "Check for updates automatically" in the Help menu, and again in Help >
+  About with the sentence about what the check sends. "Later" and the time of the last check
+  are kept in their own storage entry, not in the settings.
+- **The update code** is in `src/lib/updater.ts` (the plugin, storage and commands),
+  `src/lib/shell/update.ts` (every decision, pure and tested) and `src-tauri/src/update.rs`
+  (three small jobs the plugin doesn't do), beyond the files listed under "Files in play".
+- **A local installer build now needs the signing key,** because the configuration asks for
+  signed update artefacts. Without `TAURI_SIGNING_PRIVATE_KEY` set, build the exe only
+  (`npm run tauri build -- --no-bundle`, which is what the benchmarks use), or pass
+  `--config "{\"bundle\":{\"createUpdaterArtifacts\":false}}"` for an unsigned installer.
+
 ## What's there today (checked)
 
 - Version 0.1.0 in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`. No
