@@ -4667,7 +4667,7 @@ dependencies = [
 
 [[package]]
 name = "vellum"
-version = "0.1.1-rc1"
+version = "0.1.0"
 dependencies = [
  "fast_image_resize",
  "image",
