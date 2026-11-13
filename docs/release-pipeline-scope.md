@@ -166,10 +166,12 @@ Shared with the editing branch, keep changes small:
    saved in your password manager.
 3. **Publishing** the 0.1.1 and 0.1.2 releases, and installing them for the end-to-end check.
 
+## Decisions (Matt, 13 November 2026)
+
+- **Checking:** a quiet daily check on start, plus Help > Check for updates, as designed above.
+- **Proving releases:** 0.1.1 and 0.1.2 are published as real releases.
+- **Code signing:** not now; SmartScreen stays as it is.
+
 ## Open questions
 
-1. **Check on start, once a day, with a notice:** right behaviour, or manual checks only?
-2. **0.1.1 and 0.1.2 as the proving releases:** fine, or would you rather prove it with
-   prereleases and keep the public version history clean? (Prereleases can't be offered by the
-   "latest" endpoint, so proving that way needs a temporary second endpoint.)
-3. **Code signing:** leave SmartScreen as it is for now?
+None.
