@@ -252,6 +252,24 @@ impl Docs {
             EntryRef::Image(_) => Ok(Vec::new()),
         }
     }
+
+    /// The page's characters, boxes and links (`text::encode_layer`); an empty layer for images.
+    pub fn text_layer(&self, pdf: &PdfiumState, doc_id: u64, page: usize) -> Result<Vec<u8>, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.text_layer(doc_id, page),
+            EntryRef::Image(_) => Ok(crate::text::encode_layer(&[], &[], &[], &[])),
+        }
+    }
+
+    /// Search hits on one page (none for images).
+    pub fn search_page(
+        &self, pdf: &PdfiumState, doc_id: u64, page: usize, query: String, match_case: bool, whole_word: bool,
+    ) -> Result<crate::text::PageHits, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.search_page(doc_id, page, query, match_case, whole_word),
+            EntryRef::Image(_) => Ok(crate::text::PageHits { chars: 0, hits: Vec::new(), truncated: false }),
+        }
+    }
 }
 
 /// Bytes reserved after each streamed band for the command's trailer.

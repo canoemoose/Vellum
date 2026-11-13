@@ -664,7 +664,8 @@ impl PdfiumState {
         self.run_on_worker(move |ctx| {
             let b = ctx.bindings();
             let p = ctx.page(doc_id, page)?;
-            let ph = unsafe { b.FPDF_GetPageHeightF(p) } as f64;
+            // Char boxes are in user space; the frame applies /Rotate and the page box origin.
+            let frame = crate::text::page_frame(b, p);
             with_text_page(b, p, |tp| {
                 let n = unsafe { b.FPDFText_CountChars(tp) }.max(0);
                 // One char per PDFium char index, so match positions map straight to char boxes.
@@ -681,11 +682,12 @@ impl PdfiumState {
                             if ok == 0 || (r - l).abs() < 1e-9 && (t - bo).abs() < 1e-9 {
                                 continue; // generated or invisible char
                             }
-                            // PDF user space is y-up from the bottom; report y-down from the top.
-                            x0 = x0.min(l.min(r));
-                            x1 = x1.max(l.max(r));
-                            y0 = y0.min(ph - t.max(bo));
-                            y1 = y1.max(ph - t.min(bo));
+                            // Report page points, y down from the top of the page as shown.
+                            let q = frame.rect(l, bo, r, t);
+                            x0 = x0.min(q[0] as f64);
+                            y0 = y0.min(q[1] as f64);
+                            x1 = x1.max(q[2] as f64);
+                            y1 = y1.max(q[3] as f64);
                         }
                         (x0 <= x1).then(|| crate::scale::RawCandidate {
                             ratio: m.ratio,
@@ -711,7 +713,7 @@ impl PdfiumState {
 }
 
 /// Load the text layer of a parsed page for the duration of `f`.
-fn with_text_page<R>(
+pub(crate) fn with_text_page<R>(
     b: &dyn PdfiumLibraryBindings,
     page: FPDF_PAGE,
     f: impl FnOnce(FPDF_TEXTPAGE) -> Result<R, String>,

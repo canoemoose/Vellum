@@ -49,6 +49,8 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_LibraryLoader",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
+  # text.rs links: ShellExecuteW hands a web address to the default browser.
+  "Win32_UI_Shell",
 ] }
 
 # WP-Print: printer enumeration, capabilities and GDI output (StartDoc / StretchDIBits), and

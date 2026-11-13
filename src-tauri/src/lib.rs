@@ -12,6 +12,7 @@ pub mod print;
 pub mod scale;
 pub mod shell; // WP-Shell
 pub mod snap;
+pub mod text; // reading: text layer, links, search
 pub mod update; // in-app updates
 
 use docs::{DocInfo, Docs};
@@ -312,6 +313,34 @@ async fn doc_find_scale(
     blocking(move || docs.find_scale(&pdf, doc_id, page)).await
 }
 
+/// The page's characters with their boxes, and its links, as raw bytes (`text::encode_layer`).
+#[tauri::command]
+async fn doc_text_layer(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    page: usize,
+) -> Result<tauri::ipc::Response, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    let bytes = blocking(move || docs.text_layer(&pdf, doc_id, page)).await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Search hits on one page; rects in page points, y down.
+#[tauri::command]
+async fn doc_search_page(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    page: usize,
+    query: String,
+    match_case: bool,
+    whole_word: bool,
+) -> Result<text::PageHits, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || docs.search_page(&pdf, doc_id, page, query, match_case, whole_word)).await
+}
+
 /// The page preview stored on disk for this document's file (WebP bytes), or an empty body.
 #[tauri::command]
 async fn doc_cached_preview(docs: tauri::State<'_, Arc<Docs>>, doc_id: u64, page: usize) -> Result<tauri::ipc::Response, String> {
@@ -415,12 +444,15 @@ pub fn run() {
             doc_page_text,
             doc_outline,
             doc_find_scale,
+            doc_text_layer,
+            doc_search_page,
             doc_cached_preview,
             doc_store_preview,
             pdfium_trims,
             // WP-Shell
             shell::shell_take_pending,
             shell::reveal_in_explorer,
+            shell::open_url,
             shell::open_notices,
             snap::snap_max_button,
             // WP-Shell end

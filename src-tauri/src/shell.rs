@@ -139,3 +139,40 @@ pub fn reveal_in_explorer(path: String) -> Result<(), String> {
     }
 }
 
+
+/// The address to hand to the browser, or None if Vellum shouldn't follow it: only http,
+/// https and mailto, no whitespace or control characters, at most 2048 characters. Links in a
+/// PDF are written by whoever made the file, so `file:`, `javascript:` and the like are never
+/// opened.
+pub fn safe_url(url: &str) -> Option<String> {
+    let u = url.trim();
+    if u.is_empty() || u.len() > 2048 || u.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return None;
+    }
+    let lower = u.to_ascii_lowercase();
+    let ok = ["http://", "https://"].iter().any(|p| lower.starts_with(p) && lower.len() > p.len()) || lower.starts_with("mailto:") && lower.len() > 7;
+    ok.then(|| u.to_string())
+}
+
+/// Open a link from a document in the default browser (or mail app for mailto).
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    let url = safe_url(&url).ok_or_else(|| crate::errcode::coded("not_supported", "Vellum only opens web and mail links"))?;
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let (verb, file) = (wide("open"), wide(&url));
+        // ShellExecute hands the address to its registered handler; no command line is parsed.
+        let r = unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+        if (r as isize) <= 32 {
+            return Err(crate::errcode::coded("explorer_failed", format!("Couldn't open the link (error {})", r as isize)));
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Err("Opening links only works on Windows".into())
+    }
+}
