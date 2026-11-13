@@ -1,8 +1,9 @@
 # Editing, markup and reading: scope
 
-Status: **scoped, decisions recorded** (13 November 2026). Nothing is built. This is the source
-of truth for the work; update it as phases land. "Matt" is the owner; "the builder" is whoever
-(person or session) is doing the work from this document.
+Status: **phase 0 done, waiting for Matt's check of the samples** (13 November 2026). The
+spike says go with `lopdf`; see "Phase 0 results" below. Nothing in the app is built yet. This
+is the source of truth for the work; update it as phases land. "Matt" is the owner; "the
+builder" is whoever (person or session) is doing the work from this document.
 
 ## Objective
 
@@ -59,7 +60,7 @@ Checked in `pdfium-render` 0.9.5's bindings and `src-tauri/pdfium/include/fpdf_a
 | Text: characters, boxes, find, links | Yes | Search, selection, text markups, clickable links. |
 | Form filling | Yes (`FORM_*`, `FPDF_FFLDraw`) | Phase 6. |
 | Save | `FPDF_SaveAsCopy`, full rewrite or incremental | Used only when PDFium itself changed the document (see "Two kinds of save"). |
-| Identify an annotation by its object number | No (index on the page only) | The writer must match existing annotations by position in the page's `/Annots` array. Check in phase 0. |
+| Identify an annotation by its object number | No (index on the page only) | The writer matches existing annotations by position in the page's `/Annots` array: PDFium's index is that position, Popups and nulls included (checked in phase 0). |
 | Write encrypted files, create digital signatures | No | Ruled out above. |
 
 **The main finding:** PDFium's annotation writer covers the document-reader types but not the
@@ -80,8 +81,8 @@ measurement) can't be created through it. So Vellum needs **its own annotation w
   with appearance streams and appends them to the file as a PDF **incremental update**. The
   original bytes are untouched and the save is fast whatever the file size (a 36 MB drawing
   gains a few kilobytes). This is also the gentlest thing to do to an issued drawing.
-- **Candidate library:** `lopdf` (MIT), which reads and writes PDF objects and has an
-  incremental-document mode. **Not yet verified** on our files; that's phase 0.
+- **Library:** `lopdf` 0.47 (MIT), which reads and writes PDF objects and has an
+  incremental-document mode. Verified in phase 0 (go; see "Phase 0 results").
 - After a save the file is reopened on the PDFium workers and the changed pages' tiles are
   dropped, so what's on screen is what's in the file.
 - **Text is laid out once, the same way in both places.** A text box wraps identically on the
@@ -151,6 +152,8 @@ changing what the file came with**:
   while panning can never grab part of the drawing. That's the practical gain beyond safety.
 - On unlock, say so if the file is digitally signed (saving changes invalidates it) or its
   permissions ask for no modification.
+- Phase 0 found that a *certified* file breaks when markups are merely added, which this lock
+  treats as free, so that warning can't wait for the unlock: see open question 1 at the end.
 - Nothing reaches the disk until Save in either state, and everything is undoable.
 
 Alternative considered: no lock, with the first-save confirmation listing the destructive
@@ -256,6 +259,8 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    memory, lifting an existing annotation, matching an existing annotation to its object in
    the file, and appending to an encrypted file (new strings and streams must be encrypted
    with the file's key). **Exit:** go with `lopdf`, or write down what else.
+   **Done (13 November 2026): go with `lopdf`.** Everything automatable passed; Matt's check
+   of the samples in Acrobat, Edge and Preview is outstanding. See "Phase 0 results".
 1. **Reading, part one:** search, text selection, copy, links. No save path needed.
 2. **Foundation:** markup model, overlay, select tool, history, unsaved state, save / save a
    copy / confirm once, close prompts, edit lock, toolbar centre and properties strip. Built
@@ -269,6 +274,96 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    markups list, and **reading, part two** (text highlight, underline, strikethrough, notes).
 8. **Page operations.**
 9. **Later phases**, each scoped when reached.
+
+## Phase 0 results (13 November 2026)
+
+**Verdict: go with `lopdf` 0.47.** It appends annotations as an incremental update to every
+kind of file we tried, keeps the original bytes identical, encrypts what it appends with the
+file's own key, and costs milliseconds. The fallback (our own narrow append-only writer) isn't
+needed; if `lopdf` ever regresses, its incremental path is about 200 lines we could own.
+
+The code is in `spikes/annot-writer/` (a standalone crate, not part of the app build), with
+a README on how to run it and what each sample should show. Its `writer.rs`, `appearance.rs`
+and `helvetica.rs` are shaped to move to `src-tauri/src/annot/` in phase 2.
+
+### What was tested and how
+
+Nine markups (arrow, rectangle, cloud, text box, pen, polygon, callout, distance, area) went
+onto page 1, and the last page where there is one, of the five synthetic files and of 15
+variants made from them (`fixtures.py`, with qpdf and pyHanko). Each output was then checked
+four ways, automatically: the original bytes are unchanged; PDFium (Vellum's DLL, Vellum's
+render flags) finds every annotation by its id, with the right type and rectangle, and draws
+something in each; `lopdf` reads its own output back; and a second save on top of the first
+works too. qpdf (`verify.py`, no code shared with either) found no structural problem in any
+of the 22 samples. The existing v0.1 release build opened and rendered six of them in bench
+mode with no faults.
+
+| Check | Result |
+|---|---|
+| Classic xref table, object streams + xref stream | Both work; the update uses the file's own kind of cross-reference. Hybrid files (a table plus `/XRefStm`) are handled by `lopdf` on read, but there was no way to make one, so untested. |
+| Encrypted: RC4 40 and 128, AES-128, AES-256 (R6), with and without object streams, with a user password | All work. `lopdf` decrypts on load with the password and encrypts the appended strings and streams with the file's key; nothing we write appears in clear (checked). A wrong password is refused. |
+| Signed (approval) and certified (DocMDP 2 and 3) | The signatures stay intact and valid for the revision they signed (pyHanko). pyHanko can't judge whether added comments are *permitted* (it says so, and treats an annotation written by its own writer the same way); that's for Acrobat (samples 14 to 16). |
+| Load time and memory | The 36 MB aerial drawing: 13 to 15 ms to parse, 4 ms to write, +38 KB. The four other real drawings (1 to 62 MB): 2 to 23 ms, under 10 ms to write, +11 to 13 KB. Memory while saving is about 2.3 times the file (the bytes plus `lopdf`'s parsed copy), freed after. Read-only runs; nothing derived from the client drawings was written. |
+| Matching an existing annotation to its object | PDFium's annotation index is the position in the page's `/Annots` array, counting Popups and null entries: matched 6 of 6 on a fixture built to be awkward (Popup, null, indirect array, object streams), and 8 of 8 on the aerial drawing. Page order also matches between `lopdf` and PDFium on all five real files. |
+| Lifting an existing annotation | `FPDFAnnot_SetFlags(hidden)` takes effect on the next render of the *same open page*: no page reload needed, and it holds when the page is reloaded. Lifting is: set the flag on every worker's copy, drop that page's tiles. |
+| Editing and deleting an existing annotation | Replacing keeps the object number (so other apps' popups and replies still point at it); deleting also removes its Popup. Checked on the fixture, classic and object-stream versions. |
+| PDFium rewrites first, then our writer appends ("Two kinds of save") | Works after both a full rewrite and PDFium's own incremental save; PDFium's annotation survives. |
+| Rotated page (`/Rotate 90`) | Works, once text is laid out in the reader's frame (see findings). |
+| Malformed file (wrong xref offsets) | Doesn't work as an append: see findings. Works through the rebuild path. |
+
+### Findings that change the later phases
+
+1. **Malformed files must be rebuilt, not appended to.** `lopdf` reads a file with broken
+   cross-reference data by scanning it (`xref_recovery` is set), and so does PDFium, but an
+   update appended to it points back at the broken table and qpdf then can't open the file
+   at all. So when `xref_recovery` is set, the save is the *rebuild* kind: PDFium rewrites the
+   file, then our writer appends (sample 18). The first-save confirmation should say so. None
+   of the five real drawings needed it.
+2. **Certified files conflict with "adding is always free".** Adding any markup to a file
+   certified with "no changes" or "form filling only" (DocMDP 1 or 2) breaks the
+   certification (sample 16 shows how Acrobat reports it). The writer already reads the
+   DocMDP level. The edit-lock design says adding markups needs no unlock; it needs at least
+   a warning before the first save into such a file. Ordinary (approval) signatures survive:
+   the signed revision stays valid and the markups show as later changes.
+3. **Permissions are not enforced by `lopdf`.** A file whose permissions say "no commenting"
+   (sample 13) takes our markups like any other, because the file key comes from the user
+   password, which is usually empty. Whether Vellum honours the permission is Matt's call
+   (open question below).
+4. **The password is needed again at save time.** Encrypted files are decrypted with the same
+   password PDFium was given on open, so the tab must keep it (in memory only) until it's
+   closed.
+5. **Text on rotated pages.** The aerial drawing is stored with `/Rotate`, so this isn't an
+   edge case. Text boxes, callouts and measurement labels are laid out in the reader's frame:
+   the appearance stream rotates the text by the page's rotation, and FreeText gets Acrobat's
+   `/Rotate` key so it stays upright when edited there. The overlay (phase 2) must draw text
+   the same way, and the shared line-breaking function wraps to the box's on-screen width.
+6. **Helvetica metrics are settled.** The width table in `helvetica.rs` matches Adobe's AFM
+   exactly (checked against reportlab's copy), so the shared, pure line-breaking function can
+   carry the same table into TypeScript.
+7. **Page coordinates.** The model is in unrotated page points, y down; the writer works in
+   PDF user space, y up, from the page's CropBox (else MediaBox) origin, which isn't always
+   0,0. The conversion belongs in one tested function; `Writer::page_box` gives what it needs.
+8. **Load the file into `lopdf` only when saving.** Parsing is cheap enough (15 ms on the
+   36 MB drawing) that nothing needs to be parsed at open, so "opening must not get slower"
+   holds by construction. Reading annotations for display stays with PDFium.
+9. **`lopdf`'s default features** pull in rayon and chrono. Phase 2 should try
+   `default-features = false` and see what the app actually needs. Pin the minor version,
+   since the writer leans on its incremental-save and encryption behaviour, and re-run the
+   writer tests on any upgrade.
+10. **What goes into `src-tauri/Cargo.toml` and when:** `lopdf`, in phase 2, when the writer
+    moves into the app. That's one of the files the release pipeline also touches.
+
+### What phase 0 could not verify
+
+- **How the samples look and behave in Acrobat, Edge or Chrome, and macOS Preview** (Matt;
+  the checklist is in `spikes/annot-writer/README.md` and beside the samples). In particular:
+  whether Acrobat treats the dimension and area as measurements, how it redraws a cloud or
+  text box after you edit one, and what its signature panel says about samples 14 to 16.
+- Bluebeam (no licence).
+- A hybrid-reference file (no tool here writes one) and a real encrypted or signed drawing
+  (none in `test-files/`).
+- Reopening in the current Vellum build on a password-protected sample (the bench can't pass
+  a password; PDFium opened it fine in the spike).
 
 ## How this work runs (Matt, 13 November 2026)
 
@@ -323,11 +418,16 @@ in plain terms what's covered, what isn't, and the one command). Plan:
   markup. Incremental update leaves the original bytes identical (checked byte for byte).
 - **Not automatable, for Matt:** how markups look and edit in Acrobat, Edge and Preview; how
   the tools feel; pen input.
+- **Phase 0 spike** (`spikes/annot-writer/`): `cargo test --release --manifest-path
+  spikes/annot-writer/Cargo.toml` (appearance maths, Helvetica metrics, append, chained saves,
+  replace and delete, encryption) and the `samples` command plus `verify.py` for the full
+  matrix. These tests move with the writer in phase 2.
 
 ## Risks
 
-- **`lopdf` on real files:** malformed-but-tolerated PDFs (CAD exporters produce plenty),
-  encryption, memory on large files. Phase 0 exists to find out. Fallback: a narrow
+- **`lopdf` on real files:** checked in phase 0 on all five real drawings and the fixtures:
+  fine, including encryption and memory. Malformed files take the rebuild path (finding 1).
+  Remaining exposure: CAD exporters we haven't seen. Fallback unchanged: a narrow
   append-only writer of our own that parses just the cross-reference table and page tree.
 - **Appearance fidelity:** every viewer draws our markups from the appearance stream we write,
   so they look the same everywhere, but an app that edits one regenerates it its own way.
@@ -341,8 +441,9 @@ in plain terms what's covered, what isn't, and the one command). Plan:
 ## Files in play
 
 - New: `src/lib/markup/` (model, tools, history), `src/lib/components/` (overlay, properties
-  strip, markups and search sidebar tabs), `src-tauri/src/annot/` (writer), `src-tauri/src/`
-  text and annotation-read commands.
+  strip, markups and search sidebar tabs), `src-tauri/src/annot/` (writer, moved from
+  `spikes/annot-writer/src/` in phase 2), `src-tauri/src/` text and annotation-read commands.
+- Phase 0: `spikes/annot-writer/` (standalone crate; delete it once the writer has moved).
 - Changed: `src/lib/engine/input.ts` (tool routing), `src/lib/engine/viewer.ts` (overlay hook,
   page list, tile keys), `src/lib/components/Toolbar.svelte` (centre slot), `Sidebar.svelte`,
   `Thumbnails.svelte`, `src/lib/shell/tabs.ts` (unsaved state), `src-tauri/src/pdfium.rs`,
@@ -350,6 +451,18 @@ in plain terms what's covered, what isn't, and the one command). Plan:
 
 ## Open questions for Matt
 
-None open: the first round was answered on 13 November 2026 and is recorded under "Decisions
-made". The table of assumed defaults above is still unreviewed by Matt; treat it as
-provisional and raise it before phase 2.
+The first round was answered on 13 November 2026 and is recorded under "Decisions made". The
+table of assumed defaults above is still unreviewed by Matt; treat it as provisional and
+raise it before phase 2.
+
+Raised by phase 0 (answer before phase 2):
+
+1. **Certified files** (finding 2): when a file is certified "no changes" or "form filling
+   only", should saving markups into it (a) warn once and let you go ahead, (b) only allow
+   "Save a copy", or (c) refuse? Suggested: (a), with the warning naming the certifier.
+2. **"No commenting" permission** (finding 3): honour it (adding markups then needs the edit
+   unlock, or is refused) or ignore it as Vellum does now? Suggested: treat it like a
+   certified file, a warning on first save.
+3. **Malformed files** (finding 1): saving one is a full rewrite through PDFium, not an append.
+   Suggested: the first-save confirmation says "This file has errors; saving rewrites it", and
+   nothing more.
