@@ -53,6 +53,8 @@
   import { resolveTheme, type ThemePref } from "./lib/shell/theme";
   import { placeOnScreen } from "./lib/shell/windowPlacement";
   import { exportPages } from "./lib/shell/exportPages";
+  import UpdateNotice from "./lib/components/UpdateNotice.svelte";
+  import { Updater, takeHandover, type UpdaterView } from "./lib/updater";
 
   // ------------------------------------------------------------------ state
 
@@ -456,6 +458,30 @@
     }
   }
 
+  // ------------------------------------------------------------------ updates
+
+  /**
+   * Ask the shell to close before an update installs. Nothing can be lost by closing today,
+   * so this only saves where the open document is; an unsaved-changes prompt belongs here
+   * (return false to keep Vellum open).
+   */
+  async function closeForUpdate(): Promise<boolean> {
+    rememberActive();
+    return true;
+  }
+
+  const updater = new Updater({
+    onChange: (v) => (update = v),
+    readyToClose: closeForUpdate,
+    openFiles: () => ({ paths: tabs.tabs.filter((t) => t.status !== "error").map((t) => t.path), active: active?.path ?? null }),
+  });
+  let update = $state.raw<UpdaterView>(updater.view());
+
+  function setUpdateCheck(on: boolean) {
+    settings.updateCheck = on;
+    save();
+  }
+
   // ------------------------------------------------------------------ menus
 
   const docItem = (label: string, action: () => void, shortcut?: string): MenuItem => ({ label, action, shortcut, disabled: !hasDoc });
@@ -551,6 +577,10 @@
         label: "Help",
         items: [
           { label: "Keyboard shortcuts", shortcut: "F1", action: () => (dialog = "shortcuts") },
+          { separator: true },
+          { label: "Check for updates…", action: () => void updater.check(true) },
+          { label: "Check for updates automatically", checked: settings.updateCheck, action: () => setUpdateCheck(!settings.updateCheck) },
+          { separator: true },
           { label: "About Vellum", action: () => (dialog = "about") },
         ],
       },
@@ -788,7 +818,12 @@
       }
       // The launch file first; files forwarded by later launches queue up behind it.
       if (args.file) openPaths([args.file]);
+      // The tabs that were open when an update restarted Vellum, once.
+      const reopen = await takeHandover();
+      if (reopen.length) openPaths(reopen);
       cleanups.push(await onForwardedFiles((paths) => openPaths(paths)));
+      // Not awaited: the check never holds up the window or a file opening.
+      void updater.autoCheck({ enabled: settings.updateCheck, bench: args.bench, dev: import.meta.env.DEV });
     })().catch((e) => {
       console.error(e);
       ui = { ...ui, error: String(e) };
@@ -939,6 +974,17 @@
       />
     {/if}
 
+    {#if chrome && update.notice}
+      <UpdateNotice
+        state={update.state}
+        currentVersion={update.currentVersion}
+        onInstall={() => void updater.install()}
+        onNotes={() => updater.openNotes().catch((e) => notify(userMessage(e, "open the release notes")))}
+        onLater={() => updater.later()}
+        onDismiss={() => updater.dismiss()}
+      />
+    {/if}
+
     <div class="stage" bind:this={host} bind:clientWidth={stageW} bind:clientHeight={stageH}>
       <canvas bind:this={canvas}></canvas>
 
@@ -1059,7 +1105,17 @@
     onSetScale={openScale}
   />
 {:else if dialog === "about"}
-  <AboutDialog onClose={() => (dialog = null)} />
+  <AboutDialog
+    update={update}
+    autoCheck={settings.updateCheck}
+    onAutoCheck={setUpdateCheck}
+    onCheck={() => void updater.check(true)}
+    onInstall={() => {
+      dialog = null;
+      void updater.install();
+    }}
+    onClose={() => (dialog = null)}
+  />
 {:else if dialog === "shortcuts"}
   <ShortcutsDialog navMode={ui.navMode} onClose={() => (dialog = null)} />
 {:else if dialog === "export" && active?.info}
@@ -1091,6 +1147,7 @@
     height: 100%;
   }
   .body {
+    position: relative; /* the update notice sits in its top-right corner */
     flex: 1 1 auto;
     min-height: 0;
     display: flex;

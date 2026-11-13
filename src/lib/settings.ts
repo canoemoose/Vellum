@@ -32,6 +32,8 @@ export interface Settings {
   docs: Record<string, DocMemory>;
   /** Physical pixels; null until the window has been moved or resized once. */
   window: WindowState | null;
+  /** Look for a new version on start, at most once a day (shell/update.ts). */
+  updateCheck: boolean;
 }
 
 export const SIDEBAR_MIN = 160;
@@ -50,6 +52,7 @@ export const DEFAULTS: Settings = {
   scales: {},
   docs: {},
   window: null,
+  updateCheck: true,
 };
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -77,6 +80,7 @@ export function sanitiseSettings(raw: unknown): Settings {
       w && num(w.x) && num(w.y) && num(w.w) && num(w.h) && w.w > 0 && w.h > 0
         ? { x: w.x, y: w.y, w: w.w, h: w.h, maximised: w.maximised === true }
         : null,
+    updateCheck: s.updateCheck !== false,
   };
 }
 
