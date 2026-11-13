@@ -1,7 +1,8 @@
 # Editing, markup and reading: scope
 
-Status: **phase 0 done, waiting for Matt's check of the samples** (13 November 2026). The
-spike says go with `lopdf`; see "Phase 0 results" below. Nothing in the app is built yet. This
+Status: **phase 0 done (go with `lopdf`), phase 1 built and waiting for Matt's check**
+(13 November 2026). See "Phase 0 results" below and
+[editing-phase1-scope.md](editing-phase1-scope.md). This
 is the source of truth for the work; update it as phases land. "Matt" is the owner; "the
 builder" is whoever (person or session) is doing the work from this document.
 
@@ -262,6 +263,9 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    **Done (13 November 2026): go with `lopdf`.** Everything automatable passed; Matt's check
    of the samples in Acrobat, Edge and Preview is outstanding. See "Phase 0 results".
 1. **Reading, part one:** search, text selection, copy, links. No save path needed.
+   **Built (13 November 2026), waiting for Matt's check:** see
+   [editing-phase1-scope.md](editing-phase1-scope.md) for what was assumed, measured and not
+   verified.
 2. **Foundation:** markup model, overlay, select tool, history, unsaved state, save / save a
    copy / confirm once, close prompts, edit lock, toolbar centre and properties strip. Built
    with the rectangle tool as its test case, so there is something to draw, save and reopen;

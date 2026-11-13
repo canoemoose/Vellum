@@ -1,6 +1,6 @@
 # Phase 1, reading part one: scope
 
-Status: **in progress** (13 November 2026). Phase 1 of [editing-scope.md](editing-scope.md):
+Status: **built, waiting for Matt's check** (13 November 2026). Phase 1 of [editing-scope.md](editing-scope.md):
 search, text selection and copy, links. No save path. Working autonomously (Matt's call);
 decisions not in the brief are recorded under "Assumed" for Matt to correct in one pass.
 
@@ -92,4 +92,51 @@ New: `src-tauri/src/text.rs`, `src-tauri/tests/text.rs`, `src/lib/text/*`,
 
 ## Progress
 
-- (updated as steps land)
+- Merged `main` (the release pipeline, 0.1.1) into `editing` first, as the brief says, while
+  this branch had no app changes: no conflicts.
+- Step 1 done: `text.rs` (frame, text layer, links, page search), `open_url`; cargo tests in
+  `tests/text.rs` (boxes land on the rendered ink at every rotation and with an offset crop
+  box; links; search options) and `tests/shell.rs` (which URLs are followed).
+- Steps 2 to 4 done: `src/lib/text/` (Vitest), `view/reveal.ts`, viewer highlights,
+  `engine/textTool.ts`, `engine/search.ts` (tested against a stub renderer in
+  `engine/reading.test.ts`), search field, Search tab, Edit menu, keys, status bar.
+- Step 5 done: `npm run check` clean, `npm test` (all Vitest files) and the new cargo tests pass;
+  release build run on the synthetic files and the aerial drawing (read-only) through a
+  throwaway DevTools script: search, the count, F3 / Shift+F3, the results tab, the text cursor
+  over text, Ctrl+A then Ctrl+C, a drag then Ctrl+C, Esc. No console errors, no panics.
+
+## Measured (release build, this machine)
+
+| File | Text layer, page 1 | Search, page 1 | Whole document |
+|---|---|---|---|
+| 1-a1-200k-lines (123 characters) | 50 ms cold, 7 ms after | 7 ms | instant |
+| 2-a1-50k-text (300,000 characters, 6.3 MB layer) | 163 ms cold, 115 ms after | 81 ms | one page |
+| 3-a3-40-pages | 29 ms | 4 ms | 40 pages in about 150 ms |
+| 5-a4-300-pages | 5 ms | 6 ms | 300 pages in about 1.1 s |
+| Aerial drawing (85,000 characters) | **6.3 s** the first time (queued behind the page's first render on the same worker), 64 ms after | 53 ms | one page |
+
+## Known problems
+
+1. **A text request waits for its worker.** Text layers and page searches run on the page's
+   own worker so a parsed page is reused, but they queue behind that worker's renders. Right
+   after opening the aerial drawing, the first text layer waited 6.3 s for the first render.
+   Hover fetches wait for the viewer to be idle, so this mostly shows if you start a selection
+   or a search while the first render is still going. Possible fix: send text jobs to whichever
+   worker is free when the page's own one is busy (costs a second parse of the page).
+2. **Links into a page use the page height, not its rotation** (as the bookmarks already do),
+   so a link to a point on a rotated page lands at the right page but maybe the wrong height.
+   Untested: none of the files here has internal links.
+3. Selecting by dragging doesn't scroll the view when the pointer reaches the edge.
+4. The text cursor and link hand only appear once the page's text layer has loaded (the pointer
+   rests a quarter of a second on an idle viewer).
+
+## Not verified (for Matt)
+
+- How it looks and feels: the highlight colours on a busy drawing, the search box's place in the
+  toolbar (it wraps when narrow), the Search tab, the I-beam and hand cursors.
+- Clicking a real link: none of the test files has links. The command and the URL check are
+  tested; opening the browser isn't.
+- Selection by drag in the real app on text I aimed at: the script dragged where it could
+  without knowing the view, and copied what it covered. Word and line selection are tested in
+  Vitest only.
+- Vertical text (CAD dimension text) selection: tested in Vitest, not by hand.

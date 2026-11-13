@@ -228,6 +228,8 @@ answer text, outline and scale queries with empty results.
 | `doc_page_text(docId, page)` | the page's text (`FPDFText_GetText`) |
 | `doc_outline(docId)` | `OutlineNode[]`: `{ title, page \| null, y \| null, children }`, y in points from the page top |
 | `doc_find_scale(docId, page)` | `[{ ratio, text, bbox: [x0, y0, x1, y1], statedRatio, sheet }]` best first; bbox in page points, y down. "1:200 @A3" on an A1 page gives ratio 100, statedRatio 200, sheet "A3" |
+| `doc_text_layer(docId, page)` | raw bytes: every character (code point, loose box in page points, generated flag) and the page's links as JSON (`text.rs`, `encode_layer`); parsed by `src/lib/text/layer.ts` |
+| `doc_search_page(docId, page, query, matchCase, wholeWord)` | `{ chars, hits: [{ index, count, rects, before, text, after }], truncated }`, PDFium's own matcher, at most 1000 hits |
 | `doc_close(docId)` | frees the document on every worker |
 
 `region` is `{ id, page, rs, x, y, w, h }`: a device-pixel rect of the page bitmap at `rs`
@@ -252,6 +254,23 @@ dates, paper sizes ("A1:50") and parts of larger numbers are rejected. Candidate
 1..100000 are dropped; the rest are ordered by a score: position (0 at the top-left, 2 at
 the bottom-right, since title blocks live there), +1.5 when "scale" appears in the 24
 characters before, +0.5 for a standard ratio, −1.5 for 1:1.
+
+### Text layer, links and search (`text.rs`, `src/lib/text/`, editing phase 1)
+
+PDFium reports character, link and search boxes in PDF user space (y up, before `/Rotate`,
+from the page box's own origin). `text::PageFrame` maps them into Vellum's page coordinates
+(the page as rendered: `/Rotate` applied, y down from the top-left), from
+`FPDFPage_GetRotation` and `FPDF_GetPageBoundingBox`; `doc_find_scale` uses it too. Text
+layers and page searches run on the page's own worker (`page % workers`, as small renders do),
+one page per job. The front end fetches a page's layer lazily (`engine/textTool.ts`: when the
+pointer rests on the page while the viewer is idle, or when a selection starts there) and keeps
+the last 12 per document. Selection, word and line ranges, highlight rectangles and link
+hit-testing are pure (`src/lib/text/`); whole-document search (`engine/search.ts`) runs two
+pages at a time from the current page, one session per document, stopping at 5,000 hits.
+`Viewer.setHighlights(name, layer)` draws rectangles above the tiles with a multiply blend
+(selection, search hits); `Viewer.revealRect(page, rect)` centres a hit and zooms in if it would
+be too small to read. Links: `open_url` (`shell.rs`) hands http, https and mailto addresses to
+the browser with `ShellExecuteW`; nothing else is followed.
 
 ### Running code on a PDFium worker (`run_on_worker`)
 
@@ -489,6 +508,8 @@ stroked lines, text and an optional clip. Rust composes the job into a PDF and p
 
 ## Navigation (`input.ts`)
 
+The left button (without Space) goes to `InputCallbacks.left`: the text tool, which selects
+text on or near characters, follows links on a click, and lets presses elsewhere fall through.
 Wheel events are classified as notched mouse wheel or touchpad. Per event: deltaMode 1/2,
 a single-axis whole multiple of 33.33 px (Chromium's pixels per system "line"; 100 at the
 default of 3 lines), or a single-axis integer delta of at least 50 px, counts as a notch.
