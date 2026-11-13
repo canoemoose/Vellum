@@ -2,6 +2,7 @@
   // Toolbar (48 px, wraps when narrow), agreed layout (docs/mockups/toolbar-options.html, a
   // variant of B): sidebar toggle, pages and page layout on the left; the centre is kept for
   // the markup tools; navigation mode, zoom and (later) search on the right.
+  import type { Snippet } from "svelte";
   import { ZOOM_PRESETS } from "../view/viewMath";
   import { formatZoom, parseZoom } from "../shell/format";
 
@@ -28,6 +29,8 @@
     /** Columns in the columns layout, for its tooltip. */
     columns: number;
     onLayout: (m: "continuous" | "single" | "columns") => void;
+    /** The search box, at the right-hand end. */
+    searchBox?: Snippet;
   }
   let p: Props = $props();
 
@@ -261,6 +264,7 @@
       </svg>
     </button>
   </div>
+  {@render p.searchBox?.()}
 </div>
 
 <style>

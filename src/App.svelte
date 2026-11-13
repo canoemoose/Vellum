@@ -11,6 +11,12 @@
   import MenuPopup from "./lib/components/MenuPopup.svelte";
   import Toolbar from "./lib/components/Toolbar.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
+  import SearchField from "./lib/components/SearchField.svelte";
+  import type { SearchView } from "./lib/components/SearchResults.svelte";
+  import { TextTool } from "./lib/engine/textTool";
+  import { SearchController } from "./lib/engine/search";
+  import { linkLabel } from "./lib/text/links";
+  import { countLabel } from "./lib/text/searchModel";
   import MiniMap from "./lib/components/MiniMap.svelte";
   import { type MapMode, rememberDoc } from "./lib/shell/docMemory";
   import { hasCode, userMessage } from "./lib/shell/messages";
@@ -28,7 +34,7 @@
   import appIcon from "../src-tauri/icons/source/vellum.svg";
   import { Viewer, initialUiState, refreshCanvasColour, type DocView, type UiState, type NavMode } from "./lib/engine/viewer";
   import { attachInput } from "./lib/engine/input";
-  import { blockedWhileTyping, isWebViewAccelerator } from "./lib/engine/keys";
+  import { blockedWhileTyping, isTyping, isWebViewAccelerator } from "./lib/engine/keys";
   import { rendererFor, pdfRenderer } from "./lib/render/createRenderer";
   import type { DocInfo, ScaleCandidate } from "./lib/render/types";
   import type { LayoutMode } from "./lib/view/layout";
@@ -37,7 +43,7 @@
   import type { PageRect, PrintContext } from "./lib/print/context";
   import { loadSettings, saveSettings, type Settings } from "./lib/settings";
   import {
-    appendPerfLog, jsHeapMb, launchArgs, memoryStats, onForwardedFiles, pickFiles, pickFolder, revealInExplorer,
+    appendPerfLog, jsHeapMb, launchArgs, memoryStats, onForwardedFiles, openUrl, pickFiles, pickFolder, revealInExplorer,
     writeBinaryFile, type LaunchArgs,
   } from "./lib/platform";
   import { runBench } from "./lib/perf/bench";
@@ -111,8 +117,74 @@
   let nextTabId = 1;
   let loadSeq = 0;
 
+  // ------------------------------------------------------------------ reading: text, links, search
+
+  /** Text selection and links on the canvas (engine/textTool.ts); made with the viewer. */
+  let textTool: TextTool | null = null;
+  /** Whole-document search, one session per document (engine/search.ts). */
+  let search: SearchController | null = null;
+  let searchField = $state<SearchField>();
+  let textUi = $state({ hasSelection: false, link: "" });
+  let searchView = $state.raw<SearchView | null>(null);
+  let searchOpts = $state({ matchCase: false, wholeWord: false });
+
+  function refreshText() {
+    const t = textTool;
+    if (!t) return;
+    textUi = { hasSelection: t.hasSelection, link: t.hoverLink ? linkLabel(t.hoverLink, viewer?.doc?.numPages ?? 0) : "" };
+  }
+
+  function refreshSearch() {
+    const s = search?.session;
+    searchView = s
+      ? {
+          query: s.query, hits: s.list.hits.slice(), current: s.current, running: s.running, scanned: s.list.scanned,
+          numPages: s.numPages, withText: s.list.withText, truncated: s.list.truncated, error: s.error,
+        }
+      : null;
+  }
+
+  /** The attached document changed (tab switch, open, close): selection and highlights follow. */
+  function readingFollowsDoc() {
+    textTool?.reset();
+    search?.paint();
+    refreshSearch();
+    refreshText();
+  }
+
+  function runSearch(q: string) {
+    search?.search(q, { ...searchOpts });
+    // Show the results as they come in, if the sidebar is open.
+    if (q.trim() && settings.sidebarOpen && settings.sidebarTab !== "search") {
+      settings.sidebarTab = "search";
+      save();
+    }
+  }
+
+  function toggleSearchOption(o: "matchCase" | "wholeWord") {
+    searchOpts[o] = !searchOpts[o];
+    if (searchView?.query) runSearch(searchView.query);
+  }
+
+  async function copySelection() {
+    const text = await textTool?.selectedText();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      console.warn("copy failed:", String(e));
+      notify("Couldn't copy the text to the clipboard");
+    }
+  }
+
+  function followUrl(url: string) {
+    openUrl(url).catch((e) => notify(userMessage(e, "open the link")));
+  }
+
   const active = $derived(activeTab(tabs));
   const hasDoc = $derived(!!active && active.status === "open" && ui.docId !== null);
+  /** A PDF is showing: search, selection and links apply (images have no text). */
+  const textDoc = $derived(hasDoc && ui.kind === "pdf");
   const theme = $derived(resolveTheme(settings.theme, systemDark));
   const chrome = $derived(!bench);
 
@@ -219,11 +291,14 @@
       v.attach(t.view);
       updateTab(id, { view: null });
       setTitle(t.title);
+      readingFollowsDoc();
     } else if (t.status === "pending") {
+      readingFollowsDoc();
       await load(id, t.password ?? undefined);
     } else {
       v.close(); // error or password tab: nothing on the canvas
       setTitle(t.title);
+      readingFollowsDoc();
     }
   }
 
@@ -269,6 +344,7 @@
       map: mem?.map ?? "auto", mapSize: mem?.mapSize ?? 1, mapKeep: mem?.mapSize ?? 1,
     });
     if (passwordFor?.tabId === id) passwordFor = null;
+    readingFollowsDoc();
     settings.recent = addRecent(settings.recent, t.path);
     save();
     detectScale(id, info);
@@ -281,6 +357,11 @@
     if (passwordFor?.tabId === id) passwordFor = null;
     const wasActive = id === tabs.activeId;
     if (wasActive && t.status === "open") rememberActive();
+    const closingDoc = wasActive ? (v.doc?.docId ?? null) : (t.info?.docId ?? null);
+    if (closingDoc !== null) {
+      textTool?.forgetDoc(closingDoc);
+      search?.forgetDoc(closingDoc);
+    }
     if (wasActive) v.close(); // also abandons an open in progress
     else if (t.view) v.closeDetached(t.view);
     const after = closeTabModel(tabs, id);
@@ -512,6 +593,17 @@
         ],
       },
       {
+        label: "Edit",
+        items: [
+          { label: "Copy", shortcut: "Ctrl+C", disabled: !textUi.hasSelection, action: copySelection },
+          { label: "Select all text on the page", shortcut: "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
+          { separator: true },
+          { label: "Find…", shortcut: "Ctrl+F", disabled: !textDoc, action: () => searchField?.focus() },
+          { label: "Find next", shortcut: "F3", disabled: !searchView?.hits.length, action: () => search?.step(1) },
+          { label: "Find previous", shortcut: "Shift+F3", disabled: !searchView?.hits.length, action: () => search?.step(-1) },
+        ],
+      },
+      {
         label: "View",
         items: [
           docItem("Zoom in", () => v?.zoomStep(1), "+"),
@@ -641,7 +733,19 @@
   function onKeyDown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
-    if (isWebViewAccelerator(e) || marquee || modalOpen || blockedWhileTyping(e)) return;
+    if (marquee || modalOpen) return;
+    // Find is ours, though it's also one of WebView2's accelerators (guardWebView stops that).
+    if (ctrl && !e.shiftKey && !e.altKey && k === "f") {
+      if (textDoc) searchField?.focus();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "F3" && !ctrl) {
+      search?.step(e.shiftKey ? -1 : 1);
+      e.preventDefault();
+      return;
+    }
+    if (isWebViewAccelerator(e) || blockedWhileTyping(e)) return;
     // Holding a key must not close every tab, spin the view or flicker the sidebar. Ctrl+Tab
     // may repeat to cycle through tabs.
     if (e.repeat && !(ctrl && e.key === "Tab")) return;
@@ -657,6 +761,14 @@
       if (hasDoc) dialog = "properties";
     } else if (ctrl && !e.shiftKey && k === "b") {
       toggleSidebar();
+    } else if (ctrl && !e.shiftKey && k === "c" && !isTyping(e)) {
+      if (textUi.hasSelection) copySelection();
+      else handled = false;
+    } else if (ctrl && !e.shiftKey && k === "a" && !isTyping(e)) {
+      // Never the WebView's select-all, which would highlight the whole shell.
+      if (textDoc) textTool?.selectPage(ui.page);
+    } else if (e.key === "Escape" && !isTyping(e) && textUi.hasSelection) {
+      textTool?.clear();
     } else if (e.key === "F1") {
       dialog = "shortcuts";
     } else if (ctrl && e.shiftKey && !e.altKey && /^Digit[123]$/.test(e.code)) {
@@ -765,11 +877,27 @@
       ro = new ResizeObserver(measure);
       ro.observe(host);
       measure();
+      const tt = new TextTool(v, { openUrl: followUrl, onChange: refreshText });
+      textTool = tt;
+      search = new SearchController(v, refreshSearch);
       detachInput = attachInput(host, v, {
         open: openDialog,
         toggleDebug: () => (debug = !debug),
         blocked: () => modalOpen,
         hasDoc: () => hasDoc,
+        left: {
+          down: (x, y, clicks) => (textDoc ? tt.pointerDown(x, y, clicks) : false),
+          move: (x, y) => {
+            if (textDoc) tt.pointerMove(x, y);
+          },
+          up: () => tt.pointerUp(),
+          leave: () => tt.pointerLeave(),
+          cursor: () => (textDoc ? tt.cursor() : null),
+        },
+        contextMenu: (x, y) => {
+          if (!tt.hasSelection) return;
+          contextMenu = { items: [{ label: "Copy", shortcut: "Ctrl+C", action: copySelection }], x, y };
+        },
       });
 
       // Log every settle-to-sharp event while the debug overlay is up.
@@ -946,7 +1074,22 @@
       layoutMode={ui.layoutMode}
       columns={ui.columns}
       onLayout={setLayout}
-    />
+    >
+      {#snippet searchBox()}
+        <SearchField
+          bind:this={searchField}
+          disabled={!textDoc}
+          query={searchView?.query ?? ""}
+          docKey={ui.docId}
+          label={searchView ? countLabel(searchView.current, searchView.hits.length, searchView.running, searchView.truncated) : ""}
+          matchCase={searchOpts.matchCase}
+          wholeWord={searchOpts.wholeWord}
+          onSearch={runSearch}
+          onStep={(d) => search?.step(d)}
+          onOption={toggleSearchOption}
+        />
+      {/snippet}
+    </Toolbar>
   {/if}
 
   <div class="body">
@@ -971,6 +1114,8 @@
         }}
         onGoto={(p) => viewer?.gotoPage(p)}
         onGotoPoint={(p, y) => viewer?.gotoPagePoint(p, y)}
+        search={searchView}
+        onSearchSelect={(i) => search?.select(i)}
       />
     {/if}
 
@@ -1061,7 +1206,7 @@
   {#if chrome}
     <StatusBar
       scaleText={hasDoc ? scaleStatusText(active?.scale ?? null) : null}
-      hint={hasDoc ? navHint(ui.navMode) : ""}
+      hint={hasDoc ? textUi.link || navHint(ui.navMode) : ""}
       {notice}
       cursor={cursorLabel}
       pageSize={pageSizeLabel}

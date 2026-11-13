@@ -39,6 +39,8 @@ export const exitApp = (code = 0) => invoke<void>("exit_app", { code });
 export const revealInExplorer = (path: string) => invoke<void>("reveal_in_explorer", { path });
 /** Open THIRD-PARTY-NOTICES.txt (installed beside the exe) in the default text editor. */
 export const openNotices = () => invoke<void>("open_notices");
+/** Open a link from a document in the default browser (http, https and mailto only). */
+export const openUrl = (url: string) => invoke<void>("open_url", { url });
 
 /** Every extension Vellum opens (PDF plus the image types). */
 export const OPEN_EXTENSIONS = ["pdf", ...IMAGE_EXTENSIONS];

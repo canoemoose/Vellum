@@ -1,13 +1,14 @@
 <script lang="ts">
-  // Sidebar (196 px by default, resizable, collapsible): Pages and Bookmarks (the PDF's
-  // outline; the setting keeps its old name, "outline"). The mockup's
-  // Markups tab is v0.2 and left out.
+  // Sidebar (196 px by default, resizable, collapsible): Pages, Bookmarks (the PDF's
+  // outline; the setting keeps its old name, "outline") and Search results. The mockup's
+  // Markups tab comes with the markup tools.
   import type { OutlineNode } from "../render/types";
   import type { PageSize } from "../view/layout";
   import type { SidebarTab } from "../settings";
   import { SIDEBAR_MAX, SIDEBAR_MIN } from "../settings";
   import Thumbnails from "./Thumbnails.svelte";
   import OutlineTree from "./OutlineTree.svelte";
+  import SearchResults, { type SearchView } from "./SearchResults.svelte";
   import { userMessage } from "../shell/messages";
 
   interface Props {
@@ -24,6 +25,8 @@
     onWidth: (w: number, done: boolean) => void;
     onGoto: (page: number) => void;
     onGotoPoint: (page: number, y: number | null) => void;
+    search: SearchView | null;
+    onSearchSelect: (i: number) => void;
   }
   let p: Props = $props();
 
@@ -45,6 +48,7 @@
   <div class="tabs" role="tablist" aria-label="Sidebar">
     <button type="button" role="tab" aria-selected={p.tab === "pages"} class:on={p.tab === "pages"} onclick={() => p.onTab("pages")}>Pages</button>
     <button type="button" role="tab" aria-selected={p.tab === "outline"} class:on={p.tab === "outline"} onclick={() => p.onTab("outline")}>Bookmarks</button>
+    <button type="button" role="tab" aria-selected={p.tab === "search"} class:on={p.tab === "search"} onclick={() => p.onTab("search")}>Search</button>
   </div>
 
   {#if p.docId === null}
@@ -53,6 +57,8 @@
     {#key p.docId}
       <Thumbnails docId={p.docId} width={p.width} sizes={p.sizes} current={p.current} visible={p.visible} thumbnail={p.thumbnail} cancelThumbnail={p.cancelThumbnail} onGoto={p.onGoto} />
     {/key}
+  {:else if p.tab === "search"}
+    <SearchResults view={p.search} onSelect={p.onSearchSelect} />
   {:else}
     <div class="outline">
       {#await outlineFor(p.docId)}

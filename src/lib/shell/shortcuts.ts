@@ -59,6 +59,21 @@ export const SHORTCUTS: ShortcutGroup[] = [
     ],
   },
   {
+    title: "Text and links",
+    items: [
+      { keys: "Ctrl+F", action: "Search the document" },
+      { keys: "Enter / F3", action: "Next search result" },
+      { keys: "Shift+Enter / Shift+F3", action: "Previous search result" },
+      { keys: "Esc (in the search box)", action: "Clear the search" },
+      { keys: "Drag over text", action: "Select text" },
+      { keys: "Double-click / triple-click", action: "Select a word / a line" },
+      { keys: "Ctrl+C", action: "Copy the selected text" },
+      { keys: "Ctrl+A", action: "Select all the text on the page" },
+      { keys: "Esc", action: "Clear the selection" },
+      { keys: "Click a link", action: "Follow it (web links open in the browser)" },
+    ],
+  },
+  {
     title: "Files and tabs",
     items: [
       { keys: "Ctrl+O", action: "Open" },
