@@ -21,8 +21,19 @@ PDF reader, not only a drawing tool.
 - **Destructive edits sit behind an "unlock to edit" step** (design below).
 - **Saving:** Ctrl+S overwrites the original only after a one-off confirmation for that file;
   "Save a copy" is always alongside.
-- **Later phases to investigate:** form filling, OCR search on scans, place image / delete
-  object.
+- **The job:** annotating drawings for crew, measuring for Matt's own planning, and signing
+  and returning documents. Not redlining for other people to act on, so the markups list and
+  round-trip editing in other apps matter less than measuring, signing and how markups print.
+- **Interoperability is checked against** Acrobat, Edge/Chrome and macOS Preview. No Bluebeam
+  licence, so Bluebeam behaviour is untested.
+- **The edit lock** is as drawn below: adding is free, changing what the file came with needs
+  unlocking.
+- **First five tools:** arrow, rectangle, cloud, text box, pen.
+- **Order:** reading first; measuring and signatures ahead of the second cut of markup tools.
+- **Form filling is in the main plan**, after signatures (sign-and-return documents have
+  fields).
+- **Signatures:** ask on the first save after placing one whether to bake it into the page.
+- **Later phases to investigate:** OCR search on scans, place image / delete object.
 - **Ruled out:** in-place paragraph editing (PDFium has no text-editing model), certificate
   signing and password protection on save (PDFium can't write either; each needs another
   library). Revisit only if asked.
@@ -79,7 +90,7 @@ PDFium in the tiles. When one is first selected for editing it is "lifted": hidd
 workers (`FPDFAnnot_SetFlags`), its tiles re-rendered, and from then on drawn by the overlay.
 Types Vellum understands are fully editable; anything else (3D, multimedia, another app's
 private types) can be moved or deleted but not restyled. Needs a spike: how close our redraw
-is to the original's appearance, particularly Bluebeam clouds and callouts.
+is to the original's appearance, particularly clouds and callouts made in other apps.
 
 ### 3. Page operations are a virtual page list
 
@@ -165,8 +176,9 @@ Proposed set, all standard annotation types:
   knocked out to transparent. No live webcam capture.
 - **Library:** stored in the user's profile, encrypted with Windows' per-user data protection
   (DPAPI) so another account on the machine can't read it.
-- **Placing:** as a Stamp annotation, movable until saved. Signatures are **flattened on save
-  by default** so they can't be lifted off; stamps stay as annotations.
+- **Placing:** as a Stamp annotation, movable until saved. On the first save after placing a
+  signature, Vellum **asks** whether to bake it into the page (it can't then be moved or
+  lifted off) or keep it movable. Stamps stay as annotations.
 - **Stamps:** a small built-in set of text stamps (APPROVED, FOR COMMENT, SUPERSEDED, with
   optional name and date), plus your own from an image or PDF.
 
@@ -191,9 +203,18 @@ From the thumbnail sidebar, behind the edit lock: drag to reorder, multi-select,
 permanently, delete, extract to a new file, insert pages from another file, merge open tabs,
 split. "Extract" is the one that doesn't need the lock (it writes a new file).
 
+### Form filling
+
+PDFium's form module (`FORM_*`, `FPDF_FFLDraw`), the one Chrome uses: text fields, tick boxes,
+radio buttons, lists. Needs a form environment per worker, focus and keyboard routed to the
+backend, and redraws of the fields as they change. Filled values save through PDFium, then
+markups are appended as usual. Not behind the edit lock: filling a form is what it's for.
+To check when scoped in detail: XFA forms (the build we ship has no XFA; those would show
+their fallback page), and script-driven fields (no JavaScript engine in our build, so
+calculated totals won't update).
+
 ### Later phases (investigate, then scope separately)
 
-- **Form filling:** PDFium's form module; needs focus, keyboard and redraw plumbing per worker.
 - **OCR search on scans:** Windows' built-in OCR; search only, nothing written back.
 - **Place image / delete object:** drop an image into the page content, remove or cover an
   object. Behind the edit lock.
@@ -205,19 +226,20 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
 
 0. **Spike: the writer.** Append a line, polygon, cloud, free text and measured line to the
    heavy test files by incremental update with `lopdf`; reopen in Vellum; Matt opens them in
-   Acrobat, Edge and Bluebeam (if available). Also: files with object streams and
+   Acrobat, Edge and macOS Preview. Also: files with object streams and
    cross-reference streams, encrypted files, signed files, a 36 MB file's load time and
    memory, lifting an existing annotation. **Exit:** go with `lopdf`, or write down what else.
 1. **Reading, part one:** search, text selection, copy, links. No save path needed.
 2. **Foundation:** markup model, overlay, select tool, history, unsaved state, save / save a
    copy / confirm once, close prompts, edit lock, toolbar centre and properties strip.
-3. **Markup tools**, in two cuts: arrow, rectangle, cloud, text box, pen first; then line,
-   ellipse, polyline, polygon, callout, highlighter. Markups list.
-4. **Reading, part two:** text highlight, underline, strikethrough, notes.
-5. **Measuring** and calibration.
-6. **Stamps and signatures.**
-7. **Page operations.**
-8. **Later phases**, each scoped when reached.
+3. **First five markup tools:** arrow, rectangle, cloud, text box, pen.
+4. **Measuring** and calibration.
+5. **Stamps and signatures.**
+6. **Form filling.**
+7. **Remaining markup tools** (line, ellipse, polyline, polygon, callout, highlighter), the
+   markups list, and **reading, part two** (text highlight, underline, strikethrough, notes).
+8. **Page operations.**
+9. **Later phases**, each scoped when reached.
 
 ## Defaults I've assumed (correct any in one pass)
 
@@ -230,7 +252,6 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
 | Pen and touch | Pointer events work with a pen; pressure ignored (ink annotations have one width). |
 | Markups when printing | Printed by default, with a toggle in the print dialog. |
 | Existing annotations | Editable when unlocked; otherwise display only. |
-| First tools built | Arrow, rectangle, cloud, text box, pen. |
 | Autosave | None. |
 
 ## Testing
@@ -242,7 +263,7 @@ Mine to set up and run. Plan:
 - **Writer** (`cargo test`): write each annotation type, reopen with PDFium, read it back with
   `FPDFAnnot_Get*`, render it and compare pixels with the overlay's drawing of the same
   markup. Incremental update leaves the original bytes identical (checked byte for byte).
-- **Not automatable, for Matt:** how markups look and edit in Acrobat, Edge and Bluebeam; how
+- **Not automatable, for Matt:** how markups look and edit in Acrobat, Edge and Preview; how
   the tools feel; pen input.
 
 ## Risks
@@ -271,13 +292,5 @@ Mine to set up and run. Plan:
 
 ## Open questions for Matt
 
-1. **The job:** who marks up what, and where does it go next? It decides the first tools and
-   how much the markups list matters.
-2. **Bluebeam:** do you have a licence to check interoperability against, or only Acrobat and
-   Edge?
-3. **The edit lock** as drawn above (adding is free, changing what the file came with needs
-   unlocking): right line?
-4. **First five tools** (arrow, rectangle, cloud, text box, pen): right five?
-5. **Reading first:** happy for search and text selection to ship before any markup, since
-   they're cheap and independent?
-6. **Signatures flattened by default:** agreed?
+None open: the first round was answered on 13 November 2026 and is recorded under "Decisions
+made". The table of assumed defaults above is still unreviewed.
