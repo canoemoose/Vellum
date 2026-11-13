@@ -241,6 +241,45 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
 8. **Page operations.**
 9. **Later phases**, each scoped when reached.
 
+## How this work runs (Matt, 13 November 2026)
+
+- **A new session picks this up** (Opus), working from this document. It was scoped in a
+  different session, so anything not written here is not known to the builder.
+- **On its own branch**, not `main`. Suggested name: `editing`. Phases are committed as they
+  land; nothing is pushed or merged without Matt asking.
+- **Merging back makes a new version.** The app is 0.1.0 today (in `package.json`,
+  `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`; no git tags yet). Suggested: 0.2.0
+  at the merge, bumped in all three in one commit and tagged `v0.2.0`.
+- **Start with phase 0** and stop at its exit for Matt's check in Acrobat, Edge and Preview
+  before building on the writer.
+- Read first: [ARCHITECTURE.md](../ARCHITECTURE.md), `docs/v0.1-handoff/engine.md` and
+  `shell.md`, and the toolchain notes in [CLAUDE.md](../CLAUDE.md).
+
+## Release pipeline (candidate, not yet decided)
+
+Matt may want a GitHub Actions build and an update mechanism pointed at it. Separate from the
+editing work and independent of it: it can be built on `main` before or after the merge, and
+is best kept off the `editing` branch so the two don't tangle.
+
+- **Build:** a workflow on `windows-latest` (which has the MSVC toolchain this repo is
+  documented to build with), triggered by a `v*` tag: `npm ci`, `node tools/fetch-pdfium.mjs`,
+  `npm test`, `cargo test`, `npm run tauri build`, then attach the NSIS installer to a GitHub
+  Release. `tauri-apps/tauri-action` does the build-and-release half.
+- **Updates:** Tauri's updater plugin, pointed at the release's `latest.json`. It checks on
+  start (or from Help), downloads the new installer and runs it. The installer is already
+  per-user NSIS, which is what the updater expects.
+- **Needs from Matt:** an updater signing key pair (generated once; the private key and its
+  password go in the repository's Actions secrets, the public key in `tauri.conf.json`). This
+  is Tauri's own update signature, not Windows code signing.
+- **To check before building it:**
+  - The print round-trip test needs "Microsoft Print to PDF" on the runner; skip it there if
+    it's missing.
+  - Whether the repository is public (the updater fetches releases without credentials).
+  - Without a Windows code-signing certificate the installer still triggers SmartScreen on
+    first download; updates through the updater don't. A certificate is a cost decision.
+  - First CI build on MSVC: v0.1 was built on the GNU toolchain, so this is also the first
+    proof the documented toolchain works.
+
 ## Defaults I've assumed (correct any in one pass)
 
 | Question | Assumed |
