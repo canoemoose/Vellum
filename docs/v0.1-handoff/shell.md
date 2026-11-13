@@ -190,7 +190,7 @@ Release build (`npm run tauri build -- --no-bundle`, plus one full `npm run taur
 to check the NSIS hooks compile), launched from a worktree `run/` copy and driven over
 WebView2's DevTools port with a throwaway script (not committed). Checked:
 
-- stage plan opens; status bar reads "Scale 1:200 (from title block)", "A1 · 841 × 594 mm",
+- The stage plan opens; status bar reads "Scale 1:200 (from title block)", "A1 · 841 × 594 mm",
   cursor in metres ("X 67.91  Y 58.83 m"); typed zoom 400% and the presets list work; mini map
   click pans; thumbnails render.
 - Aerial drawing, the five synthetic PDFs, a 3000 × 2000 JPEG, a password-protected PDF (made
@@ -208,8 +208,8 @@ WebView2's DevTools port with a throwaway script (not committed). Checked:
 - Window restore: size stable across launches; saved bounds off every monitor come back
   centred on the primary at the saved size; maximised state restored. `--new-instance` runs a
   second process.
-- Screenshots: `docs/v0.1-screenshots/shell-dark.png` (File menu open, as in the mockup) and
-  `shell-light.png`, captured with the DevTools protocol from the running exe.
+- Screenshots of the shell, dark and light, were captured with the DevTools protocol from the
+  running exe, then removed from the repository: they showed a client drawing.
 
 Two bugs found this way and fixed: submenus didn't open when separators came before them in a
 menu, and the window grew 16 px per launch (outer size saved, inner size restored), plus

@@ -94,8 +94,8 @@ Add PDF or image through the real Open dialog, double-click in the strip to plac
 the inspector; Save as PDF through the real Save dialog. Files added in manual layout open in
 the backend and are closed when the dialog closes (unless a tab has them).
 
-Screenshots: `docs/v0.1-screenshots/print.png`, `print-manual.png` (DevTools protocol capture of
-the running exe).
+Screenshot: `docs/v0.1-screenshots/print-manual.png` (DevTools protocol capture of the running
+exe). The print dialog's screenshot was removed: it showed a client drawing.
 
 ## Vector
 

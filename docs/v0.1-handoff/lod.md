@@ -16,7 +16,7 @@ The prototype works as designed and still makes the aerial drawing **slower**, s
 | Peak memory (MB) | 2638 | 5093 |
 
 One-run sanity checks with the final build: aerial with the flag off 3367 ms first page and
-1070 ms fit settle (unchanged); stage plan with the flag on 630 ms first page and 128 ms
+1070 ms fit settle (unchanged); the stage plan with the flag on 630 ms first page and 128 ms
 fit settle (no images, so untouched). These were measured on a machine also building other
 branches; compare the two columns with each other, not with RESULTS.md.
 
