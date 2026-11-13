@@ -1,7 +1,8 @@
 # Release pipeline: GitHub Actions build and in-app updates
 
-Status: **scoped, decisions recorded** (13 November 2026). Nothing is built. This is the source
-of truth for the work; update it as phases land.
+Status: **phases 1 to 3 built and green in CI** on branch `release-pipeline` (13 November
+2026). Not merged. Phase 4 (the real releases) and phase 5 (docs) remain; the steps for phase 4
+are under "Phase 4, step by step". This is the source of truth for the work.
 
 ## Objective
 
@@ -68,6 +69,52 @@ scoped; this section wins where they disagree.
   signed update artefacts. Without `TAURI_SIGNING_PRIVATE_KEY` set, build the exe only
   (`npm run tauri build -- --no-bundle`, which is what the benchmarks use), or pass
   `--config "{\"bundle\":{\"createUpdaterArtifacts\":false}}"` for an unsigned installer.
+
+## What has been proved, and what hasn't
+
+Proved:
+
+- **CI on MSVC.** The first MSVC build needed no changes. Type check, the front-end tests, the
+  Rust tests and the release build all pass on `windows-latest`. "Microsoft Print to PDF" is
+  on the runner, so the print round trip really runs there.
+- **The release workflow.** Tag `v0.1.1-rc1` produced a draft, marked prerelease, holding
+  `Vellum_0.1.1-rc1_x64-setup.exe`, its `.sig` and `latest.json`. The signature was made by
+  the key whose public half is in `tauri.conf.json` (key IDs compared). The draft and the tag
+  were then deleted and the version set back to 0.1.0.
+- **The app starts** with the updater plugin (release build, run locally), and a local
+  installer build signs its update artefact.
+
+Not proved until phase 4, because it needs a published release and an installed copy:
+
+- A real check finding a real update, the download, the signature check and the install.
+- The restart, and the tabs coming back.
+- What the notice and the About section look like (Matt checks visuals himself).
+- The "other Vellum windows" message against a real second window.
+- `latest.json` points at GitHub's asset API address
+  (`api.github.com/repos/.../releases/assets/<id>`), which is what `tauri-action` v1 writes and
+  what the updater is built to download from. It should work once a release is published;
+  phase 4 is the first time it is exercised.
+
+## Phase 4, step by step
+
+1. Merge `release-pipeline` into `main` (a pull request, or a fast-forward) and push.
+2. `node tools/set-version.mjs 0.1.1`, commit ("Release 0.1.1"), push `main`. Wait for CI.
+3. `git tag v0.1.1` then `git push origin v0.1.1`. The Release workflow takes about 16 minutes.
+4. On GitHub, open the draft "Vellum 0.1.1", write the notes, and press Publish.
+5. Download `Vellum_0.1.1_x64-setup.exe` from the release and install it over 0.1.0
+   (SmartScreen will warn: "More info", "Run anyway"). Open two or three files in tabs.
+   Help > Check for updates should say "You're up to date".
+6. `node tools/set-version.mjs 0.1.2`, commit, push, `git tag v0.1.2`, `git push origin v0.1.2`,
+   then publish that draft too.
+7. In the installed 0.1.1: Help > Check for updates. Expect "Vellum 0.1.2 is available".
+   Try "What's new" (the release page opens), then "Install and restart": progress, a small
+   installer window, and Vellum back at 0.1.2 with the same tabs, the front one in front.
+8. Also worth a look: start a second window (`vellum.exe --new-instance`) before installing
+   and confirm the notice asks to close it; press "Later" on one run and confirm the next
+   start stays quiet; and install once on a machine that has never had Vellum.
+
+To see the automatic check without waiting a day, clear the `vellum.update.v1` entry in the
+WebView's local storage, or just use the Help item, which runs the same check.
 
 ## What's there today (checked)
 
