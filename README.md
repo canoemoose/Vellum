@@ -43,6 +43,18 @@ because the rendering spike tried the alternatives and PDFium won. The numbers a
 - **A document reader.** No text search, no forms. If your PDF is mostly words, Edge already
   does that well.
 
+## Installing and updates
+
+The installer for the latest version is on the
+[releases page](https://github.com/canoemoose/Vellum/releases/latest). Windows SmartScreen
+warns about it the first time, because the installer isn't code signed: "More info", then
+"Run anyway".
+
+After that, Vellum keeps itself up to date. It looks for a new version when it starts, at most
+once a day, and shows a small notice when there is one; nothing downloads until you press
+"Install and restart", and your tabs come back afterwards. The check is one request to GitHub
+and sends nothing about you or your files. Turn it off, or check on demand, from the Help menu.
+
 ## Getting it running
 
 You need these once:
@@ -79,9 +91,9 @@ To open a file straight away in development:
 npm run tauri dev -- -- "C:\path\to\drawing.pdf"
 ```
 
-Release builds: `npm run tauri build` makes an installer (in
-`src-tauri\target\release\bundle\nsis\`); add `-- --no-bundle` for just the exe. A copied exe
-needs `pdfium.dll` beside it.
+Release builds: `npm run tauri build -- --no-bundle` makes the exe. A copied exe needs
+`pdfium.dll` beside it. Installers are built and signed by GitHub Actions from a version tag,
+not at the desk; the steps are under Releasing in [CLAUDE.md](CLAUDE.md).
 
 The exe takes a file path, so Explorer's "Open with" works. Only one Vellum runs at a time:
 opening another file adds a tab to the running window. `--new-instance` starts a separate one,

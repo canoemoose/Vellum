@@ -5,8 +5,9 @@ spike) is done: see [RESULTS.md](RESULTS.md), [ARCHITECTURE.md](ARCHITECTURE.md)
 and its brief in [docs/vellum-scope-spike.md](docs/vellum-scope-spike.md). The current work is
 v0.1, the first real app: brief in [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-brief.md).
 Next up, on separate branches: editing, markup, measuring and reading (scope, nothing built:
-[docs/editing-scope.md](docs/editing-scope.md)) and a GitHub Actions build with in-app updates
-([docs/release-pipeline-scope.md](docs/release-pipeline-scope.md)).
+[docs/editing-scope.md](docs/editing-scope.md)). Releases are built by GitHub Actions and
+installed copies update themselves: see Releasing below and
+[docs/release-pipeline-scope.md](docs/release-pipeline-scope.md).
 
 ## Commands
 
@@ -30,6 +31,35 @@ Next up, on separate branches: editing, markup, measuring and reading (scope, no
   `node tools/fetch-pdfium-licences.mjs` and commit `src-tauri/licenses/pdfium/`.
 - `node tools/make-icons.mjs`: rebuild the app icon set in `src-tauri/icons` from the SVGs in
   `src-tauri/icons/source` (rendered with headless Edge; 16 and 24 px have their own drawings).
+
+## Releasing
+
+A `v*` tag on `main` becomes a draft GitHub Release (`.github/workflows/release.yml`);
+publishing the draft is what makes installed copies offer the update. In order:
+
+1. `node tools/set-version.mjs 0.2.0`: writes the version to every file that carries it.
+2. Commit ("Release 0.2.0"), push `main`, wait for CI.
+3. `git tag v0.2.0`, then `git push origin v0.2.0`. The Release workflow takes about 16 minutes
+   and fails at once if the tag and the version files disagree.
+4. On GitHub, open the draft, write the notes ("What's new" in the app opens this page), and
+   publish. Or: `gh release edit v0.2.0 --draft=false --latest --notes "..."`.
+5. GitHub serves the previous version's update file for up to a minute after publishing, so
+   wait before testing with Help > Check for updates.
+
+Notes:
+
+- A version with a pre-release part (`0.2.0-rc1`) makes a draft marked prerelease, which is
+  never offered to installed copies even if published. Use one to try the workflow.
+- Updates are signed. The private key and its password live only in the repository's Actions
+  secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) and Matt's
+  password manager. Never commit or paste the key. The public half is in
+  `src-tauri/tauri.conf.json`; changing it strands every installed copy.
+- A local `npm run tauri build` builds the installer and then fails at the signing step
+  without the key. Use `-- --no-bundle` for the exe.
+- Third-party actions are pinned to commits. To update one, change the commit and the version
+  comment together.
+- After changing the PDFium version in `tools/fetch-pdfium.mjs`, update `SHA256` beside it
+  (a mismatch prints the hash it got).
 
 ## Conventions
 
