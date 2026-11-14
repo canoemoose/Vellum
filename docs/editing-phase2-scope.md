@@ -113,4 +113,14 @@ settings (tool styles, confirmed files, author).
 
 ## Progress
 
-- (updated as steps land)
+- Step 1 done (b8e51eb): `src-tauri/src/annot/` (`spec.rs`, `writer.rs` from the spike,
+  `commands.rs`), `lopdf ~0.47` with default features off, `tests/annot.rs` (6 tests: append
+  keeps the original bytes, replace keeps the object, delete, prepare beside the file then
+  rename once PDFium has closed it, changed-on-disk refused, hiding by /NM stops PDFium drawing
+  it, a malformed file is rebuilt first). Found: renaming over the file works once the document
+  is closed on every worker (`wait_idle`); printing flattens annotations with the print flag, so
+  markups print.
+- Step 2 done (09d5165): `src/lib/markup/` (`types`, `helvetica`, `ops`, `pdf`, `spec`,
+  `geometry`, `history`), 18 Vitest tests. Text in page coordinates needs no rotation handling;
+  `pdf.ts` carries the reading direction into user space, so it stays upright on rotated pages.
+- Next: step 3, the viewer painter hook and `reopen`, `engine/markupTool.ts`, input routing.
