@@ -22,7 +22,8 @@ import {
   toFrame,
   toScreen,
   turn,
-  zoomAt,
+  knobAt,
+  angleByDrag,
   type Box,
   type Crop,
 } from "./frame";
@@ -187,14 +188,26 @@ describe("view", () => {
     expect(between(a, b, 0.5, stage).scale).toBeCloseTo(2);
   });
 
-  it("zooms about the pointer and keeps within limits", () => {
-    const v = { scale: 1, x: 0, y: 0 };
-    const at = { x: 100, y: 50 };
-    const z = zoomAt(v, 2, at, 0.5, 4);
-    // The frame point under the pointer stays under it.
-    expect(toFrame(z, at)).toEqual(toFrame(v, at));
-    expect(zoomAt(v, 100, at, 0.5, 4).scale).toBe(4);
-    expect(zoomAt(v, 0.01, at, 0.5, 4).scale).toBe(0.5);
+  it("puts the rotate handle above the box's top edge, turning with it", () => {
+    const v = { scale: 2, x: 0, y: 0 };
+    const b: Box = { cx: 50, cy: 50, w: 40, h: 20 };
+    // Centre (100, 100) on screen, the top edge 20 px up, the handle KNOB_GAP beyond.
+    close(knobAt(v, b, 0), { x: 100, y: 52 });
+    close(knobAt(v, b, 90), { x: 148, y: 100 });
+  });
+
+  it("turns the box as far as the handle goes round its centre", () => {
+    const c = { x: 0, y: 0 };
+    // From straight up to up-and-right by 20 degrees: 20 degrees clockwise.
+    const up = { x: 0, y: -100 };
+    const to = rotate(up, 20);
+    expect(angleByDrag(0, c, up, to)).toBeCloseTo(20);
+    expect(angleByDrag(10, c, up, rotate(up, -25))).toBeCloseTo(-15);
+    // Kept within 45 degrees, and across the left of the circle without a jump.
+    expect(angleByDrag(0, c, up, rotate(up, 80))).toBe(45);
+    expect(angleByDrag(0, c, { x: -100, y: 1 }, { x: -100, y: -1 })).toBeCloseTo(1.1, 1);
+    // Close to level snaps level.
+    expect(angleByDrag(0.4, c, up, rotate(up, 0.2))).toBe(0);
   });
 
   it("maps between the screen and the frame", () => {

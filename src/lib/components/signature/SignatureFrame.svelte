@@ -3,30 +3,29 @@
   // box round the signature, which can be turned to lie along a slanted one. Shown on an
   // upright preview (signature_preview); the framing is applied to the full-size photo in
   // Rust. Drag the box's corners or edges to resize it, drag inside it to move it, drag outside
-  // it to draw a new one. When the box is let go the view settles on it, with room round it.
-  // (The wheel zooms and Space-drag or middle-drag pans, as quiet extras.) Maths in
-  // src/lib/signature/frame.ts.
+  // it to draw a new one, and drag the round handle above it to turn it along a slanted
+  // signature (double-click the handle to level it). When the box is let go, the view settles
+  // on it with room round it. Maths in src/lib/signature/frame.ts.
   import { onMount } from "svelte";
   import {
     between,
     bounds,
     boxBetween,
-    clampAngle,
+    angleByDrag,
     corners,
     dragBox,
-    fitView,
     frameSize,
     FULL,
     handleCursor,
     hitBox,
-    MAX_ANGLE,
+    knobAt,
+    KNOB_GAP,
     settleView,
     toBox,
     toCrop,
     toFrame,
     toScreen,
     turn,
-    zoomAt,
     type Adjust,
     type Box,
     type Handle,
@@ -52,16 +51,16 @@
   let canvas: HTMLCanvasElement;
   let host: HTMLDivElement;
   let straightening = $state(false);
-  let spaceDown = false;
   let cursor = $state("crosshair");
   let anim = 0;
 
-  const PAD = 24; // room round the photo for the handles
+  const PAD = 44; // room round the photo for the handles and the rotate handle above
   const HANDLE_TOL = 8;
   const MIN_PX = 24; // the box's shortest side, in preview pixels
   const FILL = 0.75; // how much of the stage a settled box fills
   const MAX_SCALE = 6; // screen pixels per preview pixel, at most, when settling
   const SETTLE_MS = 220;
+  const KNOB_R = 7; // the rotate handle's radius, screen pixels
 
   const frame = $derived(frameSize(image.width, image.height, adj.turns));
   const box = $derived(toBox(adj.crop, frame));
@@ -73,7 +72,7 @@
   type Drag =
     | { kind: "box"; handle: Handle; from: Pt; box: Box; id: number }
     | { kind: "new"; from: Pt; id: number }
-    | { kind: "pan"; from: Pt; view: View; id: number };
+    | { kind: "rotate"; from: Pt; angle: number; id: number };
   let drag: Drag | null = null;
 
   function stopSettling() {
@@ -207,9 +206,47 @@
     ctx.moveTo(r.x + r.w, -B);
     ctx.lineTo(r.x + r.w, B);
     ctx.stroke();
+
+    // The rotate handle: a stalk up from the top edge's middle to a round knob.
+    const ky = r.y - KNOB_GAP;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, r.y);
+    ctx.lineTo(0, ky + KNOB_R);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, ky, KNOB_R, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // While turning, the angle beside the knob, upright.
+    if (straightening) {
+      const k = knobAt(view, box, adj.angle);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const text = `${adj.angle.toFixed(1)}°`;
+      ctx.font = "12px system-ui, sans-serif";
+      const tw = ctx.measureText(text).width;
+      const x = k.x + KNOB_R + 8;
+      const y = k.y - 9;
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.beginPath();
+      ctx.roundRect(x, y, tw + 12, 18, 4);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x + 6, y + 9);
+    }
   }
 
-  function point(e: PointerEvent | WheelEvent): Pt {
+  function onKnob(p: Pt): boolean {
+    const k = knobAt(view, box, adj.angle);
+    return Math.hypot(p.x - k.x, p.y - k.y) <= KNOB_R + 4;
+  }
+
+  function point(e: MouseEvent): Pt {
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
@@ -217,17 +254,18 @@
   function down(e: PointerEvent) {
     if (drag || busy) return;
     const p = point(e);
-    if (e.button === 1 || (e.button === 0 && spaceDown)) {
-      stopSettling();
-      drag = { kind: "pan", from: p, view: { ...view }, id: e.pointerId };
+    if (e.button !== 0) return;
+    stopSettling();
+    if (onKnob(p)) {
+      drag = { kind: "rotate", from: p, angle: adj.angle, id: e.pointerId };
+      straightening = true;
       cursor = "grabbing";
-    } else if (e.button === 0) {
-      stopSettling();
+    } else {
       const handle = hitBox(view, box, adj.angle, p, HANDLE_TOL);
       drag = handle
         ? { kind: "box", handle, from: p, box: { ...box }, id: e.pointerId }
         : { kind: "new", from: toFrame(view, p), id: e.pointerId };
-    } else return;
+    }
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
   }
@@ -235,13 +273,13 @@
   function move(e: PointerEvent) {
     const p = point(e);
     if (!drag) {
-      const h = spaceDown ? null : hitBox(view, box, adj.angle, p, HANDLE_TOL);
-      cursor = spaceDown ? "grab" : h ? handleCursor(h, adj.angle) : "crosshair";
+      const h = hitBox(view, box, adj.angle, p, HANDLE_TOL);
+      cursor = onKnob(p) ? "grab" : h ? handleCursor(h, adj.angle) : "crosshair";
       return;
     }
     if (e.pointerId !== drag.id) return;
-    if (drag.kind === "pan") {
-      view = { scale: drag.view.scale, x: drag.view.x + p.x - drag.from.x, y: drag.view.y + p.y - drag.from.y };
+    if (drag.kind === "rotate") {
+      adj.angle = angleByDrag(drag.angle, toScreen(view, { x: box.cx, y: box.cy }), drag.from, p);
     } else if (drag.kind === "box") {
       const d = { x: (p.x - drag.from.x) / view.scale, y: (p.y - drag.from.y) / view.scale };
       setBox(dragBox(drag.box, adj.angle, drag.handle, d, MIN_PX, frame));
@@ -252,32 +290,21 @@
 
   function up(e: PointerEvent) {
     if (!drag || e.pointerId !== drag.id) return;
-    const placed = drag.kind !== "pan";
     drag = null;
-    cursor = spaceDown ? "grab" : "crosshair";
-    if (placed) settle();
+    straightening = false;
+    cursor = onKnob(point(e)) ? "grab" : "crosshair";
+    settle();
   }
 
-  function wheel(e: WheelEvent) {
-    e.preventDefault();
-    stopSettling();
-    const fitScale = fitView(frame, stage, PAD).scale;
-    view = zoomAt(view, Math.exp(-e.deltaY * 0.0015), point(e), fitScale * 0.5, Math.max(fitScale, 8));
+  function dblclick(e: MouseEvent) {
+    if (busy || !onKnob(point(e))) return;
+    adj.angle = 0;
+    settle();
   }
 
   function quarter(dir: 1 | -1) {
     adj = turn(adj, dir);
     settle(true);
-  }
-
-  function setAngle(v: number) {
-    adj.angle = clampAngle(Math.round(v * 10) / 10);
-  }
-
-  function endTurning() {
-    if (!straightening) return;
-    straightening = false;
-    settle();
   }
 
   function reset() {
@@ -286,11 +313,7 @@
   }
 
   function key(e: KeyboardEvent) {
-    if (e.key === " " && !e.repeat) {
-      spaceDown = true;
-      cursor = "grab";
-      e.preventDefault();
-    } else if (e.key === "Escape") {
+    if (e.key === "Escape") {
       e.preventDefault();
       oncancel();
     } else if (e.key === "Enter" && !busy) {
@@ -299,12 +322,6 @@
     }
   }
 
-  function keyUp(e: KeyboardEvent) {
-    if (e.key === " ") {
-      spaceDown = false;
-      if (!drag) cursor = "crosshair";
-    }
-  }
 </script>
 
 <div class="framer">
@@ -316,8 +333,6 @@
     role="application"
     aria-label="Crop the photo to the signature"
     onkeydown={key}
-    onkeyup={keyUp}
-    onblur={() => (spaceDown = false)}
   >
     <canvas
       bind:this={canvas}
@@ -326,8 +341,7 @@
       onpointermove={move}
       onpointerup={up}
       onpointercancel={up}
-      onwheel={wheel}
-      onauxclick={(e) => e.preventDefault()}
+      ondblclick={dblclick}
     ></canvas>
     {#if busy}<div class="working" role="status">Removing the paper…</div>{/if}
   </div>
@@ -350,33 +364,10 @@
         <path d="M10.5 8.5l2 2 2-2" />
       </svg>
     </button>
-    <label class="straighten" title="Turn the box to lie along the signature (double-click to level it)">
-      <span class="label">Straighten</span>
-      <input
-        type="range"
-        min={-MAX_ANGLE}
-        max={MAX_ANGLE}
-        step="0.1"
-        value={adj.angle}
-        disabled={busy}
-        oninput={(e) => {
-          straightening = true;
-          setAngle(+e.currentTarget.value);
-        }}
-        onchange={endTurning}
-        onpointerup={endTurning}
-        onblur={endTurning}
-        ondblclick={() => {
-          setAngle(0);
-          settle();
-        }}
-      />
-      <span class="angle">{adj.angle.toFixed(1)}°</span>
-    </label>
   </div>
 
   <div class="row">
-    <span class="hint">Drag a box round the signature, then turn it to lie along the writing.</span>
+    <span class="hint">Drag a box round the signature. Turn it with the round handle to lie along the writing.</span>
     <span class="spacer"></span>
     <button class="btn small" onclick={reset} disabled={busy}>Reset</button>
     <button class="btn" onclick={oncancel} disabled={busy}>Cancel</button>
@@ -446,28 +437,10 @@
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .straighten {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: 8px;
-  }
-  .straighten input {
-    width: 220px;
-    margin: 0;
-    accent-color: var(--accent);
-  }
-  .label,
   .hint {
     color: var(--tx3);
   }
   .hint {
     font-size: 12px;
-  }
-  .angle {
-    width: 44px;
-    text-align: right;
-    color: var(--tx2);
-    font-variant-numeric: tabular-nums;
   }
 </style>

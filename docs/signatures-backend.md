@@ -59,9 +59,10 @@ alone, so the page never ships. What to look at:
   uneven light is the point). The photo opens in the framing view first: drag a box round the
   signature (corners and edges resize it, drag inside to move it, drag outside for a new box),
   turn the photo a quarter with the two page-and-arrow buttons, and turn the box to lie along a
-  slanted signature with the Straighten slider (a fine grid shows in the box while you drag;
-  double-click levels it). When you let go, the view settles on the box with room round it
-  (the wheel and Space-drag still zoom and pan, unadvertised).
+  slanted signature by dragging the round handle above it (a fine grid and the angle show
+  while you drag; it snaps level near 0, and double-clicking the handle levels it). When you
+  let go of the box or the handle, the view settles on the box with room round it. There's no
+  manual zoom or pan.
   Enter or "Remove the paper" applies, Esc or Cancel goes back. The result should come back as
   clean ink on the checkerboard, cropped close; "Adjust the photo…" reopens the framing as you
   left it. Blue biro should stay blue. Try a HEIC straight off an iPhone too: **does it come in
@@ -84,10 +85,11 @@ alone, so the page never ships. What to look at:
   and an angle, and Rust applies it to the full-size photo, re-reading the file (no cached
   image). Cropping happens before the shrink to the 3000 px working size, so a small signature in
   a big photo keeps its full resolution. Scale is set by the box's size (Matt); there's no zoom
-  control, the view settles on the box each time it's let go, filling 3/4 of the stage, never
+  or pan (wheel, buttons or dragging), the view settles on the box each time it's let go, filling 3/4 of the stage, never
   further out than the whole photo nor closer than 6 screen pixels per preview pixel.
   Straightening turns the **box**, not the photo (Matt, 14 November 2026: "I expected it to
-  rotate the crop box, not straighten the picture underneath"): the photo stays put and what's
+  rotate the crop box, not straighten the picture underneath", and then "a rotate handle on
+  the crop box"): the photo stays put and what's
   in the box comes out level. Level, the box stays inside the photo; turned, it may stick out
   (its centre stays on the photo), and what's beyond the photo repeats its edge in Rust, which
   is paper and knocks out. Drawing a new box while the box is turned draws it at the same turn.
@@ -203,14 +205,16 @@ For tuning the import by eye, an ignored test writes each synthetic photo and it
   the cropped one of two signatures, cropping first keeps a small signature in a big photo at
   full resolution, the preview is capped at 2048 px, and a tight crop round a wavy biro line or
   a thick marker is still found. A blank photo with a desk at the edge is still "no ink".
-- *Framing maths* (20 Vitest tests): the box turns with the picture, fractions to pixels and
+- *Framing maths* (21 Vitest tests): the box turns with the picture, fractions to pixels and
   back, turned corners, a level box's corners and edges stay in the frame and above the
   minimum, moving keeps the size, drawing a new box either way round; a turned box resizes
   along its own sides with the opposite side fixed, may stick out but keeps its centre on the
   photo, and draws new boxes at the same turn; the whole frame sends no crop; fitting, settling
   on the box (centred, room round it, within limits), the in-between views of the settle, zoom
   about the pointer, screen and frame mapping, what the pointer grabs on a level or turned box,
-  and the resize cursor following the turn.
+  and the resize cursor following the turn, and the rotate handle (where it sits, the angle from
+  dragging it round the centre, the 45 degree limit, no jump across the left of the circle,
+  the snap to level).
 - *Ink* (4 tests): hex colours, recolouring (alpha kept), APCA contrast, which inks count as
   pale (black, blue, mid grey and red pass; yellow, sky blue and pale grey are flagged).
 - *Stroke model* (20 tests): thinning, smoothing (ends pinned, jitter gone, straight stays
@@ -257,7 +261,8 @@ Answered 14 November 2026: ink for imports is an option (Original or another ink
 signatures get a colour picker, HEIC is in. Still open:
 
 1. **The framing view** is untried by hand since the box became turnable: does the turned box
-   feel right (handles, the settle after letting go, the slider's 45 degrees each way), and does
+   feel right (the handles, the rotate handle with its 45 degrees each way, the settle after
+   letting go), and does
    the result match what was in the box?
 2. **iPhone HEIC orientation:** import one taken in portrait. If it comes in sideways, send the
    `[signature] decoded with WIC` line from the terminal.

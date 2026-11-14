@@ -248,11 +248,30 @@ export function between(a: View, b: View, t: number, stage: Size): View {
   return { scale, x: stage.w / 2 - c.x * scale, y: stage.h / 2 - c.y * scale };
 }
 
-/** Zoom by `factor` keeping the screen point `at` still, the scale kept within [min, max]. */
-export function zoomAt(v: View, factor: number, at: Pt, min: number, max: number): View {
-  const scale = clamp(v.scale * factor, min, max);
-  const k = scale / v.scale;
-  return { scale, x: at.x - (at.x - v.x) * k, y: at.y - (at.y - v.y) * k };
+/** How far the rotate handle sits above the box's top edge, in screen pixels. */
+export const KNOB_GAP = 28;
+/** Within this many degrees of level, the rotate handle snaps level. */
+export const SNAP_LEVEL = 0.75;
+
+/** Where the rotate handle is drawn: on a stalk out from the middle of the box's top edge. */
+export function knobAt(v: View, b: Box, angle: number): Pt {
+  const c = toScreen(v, { x: b.cx, y: b.cy });
+  const d = rotate({ x: 0, y: -((b.h * v.scale) / 2 + KNOB_GAP) }, angle);
+  return { x: c.x + d.x, y: c.y + d.y };
+}
+
+/**
+ * The box's angle while the rotate handle is dragged from `from` to `to` (screen points) about
+ * the box's centre `c` (on screen), starting at `start` degrees: turned as far as the pointer has
+ * gone round the centre, to a tenth of a degree, kept within 45 degrees, and snapped level close to 0.
+ */
+export function angleByDrag(start: number, c: Pt, from: Pt, to: Pt): number {
+  const a0 = Math.atan2(from.y - c.y, from.x - c.x);
+  const a1 = Math.atan2(to.y - c.y, to.x - c.x);
+  let d = ((a1 - a0) * 180) / Math.PI;
+  d = ((((d + 180) % 360) + 360) % 360) - 180;
+  const a = clampAngle(Math.round((start + d) * 10) / 10);
+  return Math.abs(a) < SNAP_LEVEL ? 0 : a;
 }
 
 /** A screen point in frame pixels. */
