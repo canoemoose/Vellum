@@ -100,6 +100,11 @@ alone, so the page never ships. What to look at:
   only the view turns, the framing sent to Rust is the same. The initial box is the whole
   photo, so a photo that's already tight is one click; dragging inside it draws a new box,
   since a whole-photo box can't move.
+- **No keystone (perspective) correction** (Matt, 14 November 2026). A phone 15 to 20 degrees off
+  square stretches one end of a signature by a few percent, less than one signature differs
+  from the next; a photo skewed enough to show is plain in the framing view and quicker to
+  retake. It would need four free corners instead of a box and a perspective warp in Rust. If
+  skewed signatures turn up in use, it can be added without changing what's here.
 - **No control over how hard the edges are cut** (Matt, 14 November 2026: real photos came out
   clean). The thresholds already adapt to each photo: alpha starts at 5 times the paper's noise
   above the paper and is solid halfway to the ink's typical darkness. If faint pencil breaks up
