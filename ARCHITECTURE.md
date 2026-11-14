@@ -272,6 +272,23 @@ pages at a time from the current page, one session per document, stopping at 5,0
 be too small to read. Links: `open_url` (`shell.rs`) hands http, https and mailto addresses to
 the browser with `ShellExecuteW`; nothing else is followed.
 
+### Markups (`src/lib/markup/`, `engine/markup*.ts`, `src-tauri/src/annot/`, editing phases 2 and 3)
+
+Markups are plain objects in page points (`markup/types.ts`). Each one becomes a list of drawing
+operations (`markup/ops.ts`): paths and lines of text. The same operations are painted on the
+canvas (`engine/markupPainter.ts`, through `Viewer.setPainter`, above the tiles and highlights)
+and turned into the annotation's appearance stream in PDF user space when saved
+(`markup/pdf.ts`, using the page's frame from `doc_page_frame`), so the screen and the file
+agree. Text uses Helvetica's widths (`markup/helvetica.ts`; Arial on screen has the same).
+`engine/markupTool.ts` draws and edits; each tab has a `MarkupDoc` (undo history, what the file
+holds, frames, selection). Saving: `annot_prepare` applies add / replace / delete specs with
+`lopdf` and writes a temporary file beside the original; `Viewer.reopen` closes the document on
+every PDFium worker (`doc_close_wait`; PDFium holds the file open), `annot_commit` renames the
+file into place, and the document is reopened with the same view, tiles and previews, this
+session's markups hidden in PDFium (`doc_hide_annots`) so the overlay keeps drawing them. Files
+with broken cross-reference data are rewritten by PDFium first. Unsaved markups go to
+`%LOCALAPPDATA%\Vellum\recovery` a second after each change and are offered back after a crash.
+
 ### Running code on a PDFium worker (`run_on_worker`)
 
 PDFium is not thread-safe, so other Rust modules (printing, composition) must never call it

@@ -1,6 +1,6 @@
 # Phases 2 and 3, markup foundation and the first five tools: scope
 
-Status: **in progress** (14 November 2026), autonomous, on `editing`. The brief is
+Status: **built, waiting for Matt's review** (14 November 2026), autonomous, on `editing`. The brief is
 [editing-scope.md](editing-scope.md) (phases 2 and 3, "Architecture", "Decisions made", the
 agreed defaults). Decisions not in the brief are under "Assumed" for Matt to correct in one pass.
 Stop at the end of phase 3 for Matt's review.
@@ -137,3 +137,59 @@ settings (tool styles, confirmed files, author).
   recovery key), toolbar tools, properties strip, text editor overlay, Save / Save a copy with
   the first-save confirmation, prompts on closing a tab, quitting and updating, an unsaved dot
   on tabs, crash recovery. The phase 3 tools came with step 3: they share the machinery.
+- Run in the release build (215f2fd) through a throwaway DevTools script on copies of the
+  synthetic A1, with `--debug`: all five tools drawn, a markup selected by clicking its edge,
+  nudged and the nudge undone, Ctrl+S through the first-save question, the arrow deleted and
+  saved again with no question, the close-tab question (Cancel kept the work), and a crash
+  (process killed with unsaved markups) followed by the recovery question, Restore, and a save
+  that added only the unsaved markup. qpdf found no problems in the saved files; the original
+  bytes were kept every time; every annotation carries "Matt James" as author. No console
+  errors, no panics.
+- Found and fixed that way: the properties strip sat in the page layout, so showing or hiding
+  it resized the canvas and, at a fit zoom, the drawing jumped under the pointer. It now floats
+  over the top of the canvas.
+
+## Tests (for Matt)
+
+- `npm test`: the markup model (`src/lib/markup/markup.test.ts`: drawing operations, the page
+  frame at every rotation, upright text on rotated pages, specs for each kind, hit-testing,
+  handles, resizing, Shift constraints, simplifying pen strokes, undo, what a save changes),
+  the markup tool against a stub viewer (`engine/markupTool.test.ts`: every tool, selecting,
+  moving, resizing, marquee, nudge, delete, copy and paste, text boxes), the save wording and
+  preferences (`shell/save.test.ts`).
+- `cd src-tauri && cargo test`: `tests/annot.rs` (appending, replacing, deleting, preparing and
+  renaming, changed-on-disk, hiding in PDFium, malformed files, recovery names).
+- Not covered by automated tests: the Svelte components (toolbar tools, properties strip, text
+  editor, dialogs) other than through the scripted run above; how anything looks.
+
+## Known problems and gaps
+
+1. **Markups saved in an earlier session aren't editable**: once you close and reopen a file,
+   your markups are ordinary annotations drawn by PDFium. Editing them needs "lifting" (reading
+   them back into the model), planned for after phase 3; so does the padlock.
+2. **Edge fixes deferred** (from phase 0): text boxes turning transparent and callouts losing
+   their leader when edited in Edge. Waiting for Matt's Acrobat reference file.
+3. **Text**: Helvetica only, so characters outside Western European text come out as "?"; no
+   bold, italic or alignment; the text box grows downwards to fit but never shrinks.
+4. **The author can't be changed in the app**: the setting exists (`markup.author`) but there's
+   no settings dialog to edit it yet. The account's display name is used.
+5. **Rotated view while typing in a text box**: the editor is rotated with the view; not tried.
+6. The update banner (release pipeline) appearing also resizes the canvas and refits a view at
+   fit zoom; not changed here.
+7. Tool shortcuts: only V and Esc (back to Select). Letters for each tool weren't in the brief.
+8. A save reopens the document in PDFium (it has to close the file to replace it); tiles and
+   previews are kept so nothing flashes, but on the heaviest drawings the first new render
+   after a save waits for the page to be parsed again (about 0.7 s on the aerial drawing).
+
+## Not verified (for Matt)
+
+- How it all looks and feels: tool icons, the floating properties strip, handles, the text
+  editor lining up with the saved text, cloud scallop size, line weights at different zooms.
+- The saved markups in Acrobat, Edge and Preview (the appearance streams are built the same way
+  as phase 0's samples, now from TypeScript).
+- Pen input with a real pen; touch.
+- Saving encrypted and signed files from the app (the writer is tested on them in phase 0 and
+  `tests/annot.rs`, but not through the app).
+- The quit prompt from the window's close button and "Install and restart" (the code path is
+  the same as the tab prompt, which was tried).
+

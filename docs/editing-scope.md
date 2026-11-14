@@ -1,7 +1,7 @@
 # Editing, markup and reading: scope
 
-Status: **phase 0 done (go with `lopdf`), phase 1 built and waiting for Matt's check**
-(13 November 2026). See "Phase 0 results" below and
+Status: **phases 0 and 1 done; phases 2 and 3 built and waiting for Matt's review**
+(14 November 2026). See "Phase 0 results" below and
 [editing-phase1-scope.md](editing-phase1-scope.md). This
 is the source of truth for the work; update it as phases land. "Matt" is the owner; "the
 builder" is whoever (person or session) is doing the work from this document.
@@ -279,6 +279,9 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    with the rectangle tool as its test case, so there is something to draw, save and reopen;
    nothing here is worth releasing until phase 3.
 3. **First five markup tools:** arrow, rectangle, cloud, text box, pen.
+   **Phases 2 and 3 built (14 November 2026), waiting for Matt's review:** see
+   [editing-phase2-scope.md](editing-phase2-scope.md). Not yet built from phase 2: the edit
+   lock's padlock (nothing to unlock until lifting or page operations exist).
 4. **Measuring** and calibration.
 5. **Stamps and signatures.**
 6. **Form filling.**
