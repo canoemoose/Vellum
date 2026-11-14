@@ -87,10 +87,16 @@ recovery). Opening and viewing must not get slower.
    fill. Scaled to the paper? No: points on paper, as agreed, so they look thin on A1 at fit.
 6. Canvas text uses Arial, which has Helvetica's widths, so text wraps the same on screen and in
    the file.
-7. Markups on image tabs are drawn but can't be saved into the image; "Save as PDF" is left for
-   later and the save says so.
-8. Editing annotations that were already in the file (lifting them) waits until after phase 3;
-   phase 2's lock is built and gates nothing else yet.
+7. Markup tools are off on image tabs (their tooltip says why): a markup there couldn't be
+   saved, and "Save as PDF" for images is left for later.
+8. Editing annotations that were already in the file (lifting them) waits until after phase 3.
+   **The edit lock's padlock is not built yet:** with nothing to unlock (no lifting, no page
+   operations), it would be a button that does nothing. It comes with the first thing it guards;
+   the rule (adding and this session's markups are free) is how the tool already behaves.
+9. Crash recovery offers markups back only if the file hasn't changed since (same size and
+   time); otherwise the recovery record is dropped, since the markups may not fit the file.
+10. "Save" in the menu is disabled while nothing is unsaved; Ctrl+S then does nothing.
+11. Arrow keys nudge the selection by a screen pixel (Shift: 10).
 
 ## Files in play
 
@@ -123,4 +129,11 @@ settings (tool styles, confirmed files, author).
 - Step 2 done (09d5165): `src/lib/markup/` (`types`, `helvetica`, `ops`, `pdf`, `spec`,
   `geometry`, `history`), 18 Vitest tests. Text in page coordinates needs no rotation handling;
   `pdf.ts` carries the reading direction into user space, so it stays upright on rotated pages.
-- Next: step 3, the viewer painter hook and `reopen`, `engine/markupTool.ts`, input routing.
+- Step 3 done (2f87893): `Viewer.setPainter`, `Viewer.reopen` (keeps tiles and previews: only
+  annotations change, and ours are hidden in PDFium again before anything renders),
+  `engine/markupDoc.ts`, `markupPainter.ts`, `markupTool.ts` (all five tools, select, handles,
+  marquee, nudge, delete, copy and paste, text editing state), 12 Vitest tests.
+- Step 4 done (241b12f, 6241bc4): markup preferences in the settings, `shell/save.ts` (wording,
+  recovery key), toolbar tools, properties strip, text editor overlay, Save / Save a copy with
+  the first-save confirmation, prompts on closing a tab, quitting and updating, an unsaved dot
+  on tabs, crash recovery. The phase 3 tools came with step 3: they share the machinery.
