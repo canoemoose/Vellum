@@ -29,7 +29,7 @@ Those are phase 5 proper, after phases 2 and 3.
 | Library list | `src/lib/components/signature/SignatureLibrary.svelte` | Previews and names; pick, rename, delete; unreadable files. |
 | Dev page | `signature-pad.html`, `src/dev/`, `src-tauri/tauri.signature-pad.conf.json` | Both components in the app's window, with a preview of the picked signature. |
 
-Merging into `editing` (checked against 6241bc4 with `git merge-tree`): clean, no conflicts.
+Merging into `editing` (checked against fcd5720 with `git merge-tree`): clean, no conflicts.
 Neither component is in `App.svelte`. Shared files touched: `src-tauri/src/lib.rs` (one `pub mod`
 line and seven command names in `generate_handler!`, between `// Signatures` and
 `// End signatures`), `src-tauri/Cargo.toml` (one `windows-sys` feature,
