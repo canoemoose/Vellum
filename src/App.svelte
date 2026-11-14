@@ -1253,6 +1253,8 @@
         onChange: onMarkupsChanged,
       });
       markupTool = mt;
+      // With --debug, scripted checks (DevTools) can reach the engine. Never in a normal launch.
+      if (args.debug) (window as unknown as { __vellum: unknown }).__vellum = { viewer: v, markupTool: mt, textTool: tt, tabs: () => tabs };
       invoke<string>("user_display_name").then((n) => (author = n)).catch(() => {});
       // Closing the window: settle unsaved markups first (the title bar's close calls close()).
       win
@@ -1502,9 +1504,7 @@
         />
       {/snippet}
     </Toolbar>
-    {#if strip}
-      <PropertiesStrip kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label} onStyle={stripStyle} onText={stripText} />
-    {/if}
+
   {/if}
 
   <div class="body">
@@ -1603,6 +1603,11 @@
       {/if}
       {#if chrome && hasDoc && viewer && ui.navMode === "document"}
         <CanvasScrollbars view={ui.viewWorld} bounds={ui.bounds} unitsPerPx={1 / (ui.zoom * PT_TO_CSS)} onPan={(dx, dy) => viewer?.panBy(dx, dy)} />
+      {/if}
+      {#if chrome && strip}
+        <!-- Floats over the top of the canvas: showing or hiding it never resizes the canvas,
+             so the drawing doesn't move under the pointer. -->
+        <PropertiesStrip kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label} onStyle={stripStyle} onText={stripText} />
       {/if}
       {#if editor}
         {#key editor.id}

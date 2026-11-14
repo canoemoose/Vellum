@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Under the toolbar while a drawing tool or a markup is selected: colour, line weight, dash,
+  // Over the top of the canvas while a drawing tool or a markup is selected: colour, line weight, dash,
   // fill, opacity, and for text boxes the text size and colour. With a tool, it sets what the
   // tool draws next (remembered per tool); with markups selected, it changes them.
   import type { MarkupKind, Rgb, Style, TextStyle } from "../markup/types";
@@ -99,16 +99,24 @@
 </div>
 
 <style>
+  /* A floating bar at the top of the canvas (App.svelte puts it in the stage). */
   .strip {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    max-width: calc(100% - 24px);
     min-height: 36px;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 16px;
     padding: 4px 12px;
-    background: var(--app);
-    border-bottom: 1px solid var(--bd);
-    flex-shrink: 0;
+    background: var(--ctl);
+    border: 1px solid var(--bd-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow-pop);
     font-size: 12px;
   }
   .label {
