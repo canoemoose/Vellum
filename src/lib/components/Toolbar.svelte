@@ -248,8 +248,7 @@
     <button type="button" class="icon-btn" aria-label="Zoom in" title="Zoom in (+)" disabled={!p.hasDoc} onclick={() => p.onZoomStep(1)}>
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
     </button>
-  </div>
-  <div class="group">
+    <span class="vsep" aria-hidden="true"></span>
     <button type="button" class="icon-btn" aria-label="Fit page" title="Fit page (Ctrl+0)" disabled={!p.hasDoc} onclick={() => p.onFit("page")}>
       <!-- a page inside corner brackets -->
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
@@ -314,6 +313,14 @@
     background: var(--ctl);
     border: 1px solid var(--bd-ctl);
     border-radius: 8px;
+  }
+  /* Between zoom and the fits, inside one group. */
+  .vsep {
+    width: 1px;
+    height: 20px;
+    margin: 0 4px;
+    background: var(--bd-strong);
+    flex-shrink: 0;
   }
   .sr {
     position: absolute;
