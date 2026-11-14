@@ -10,10 +10,13 @@ It is a standalone crate (its own `[workspace]`), not part of the app build.
 - `src/ocr.rs`: the WinRT calls. Languages, the engine, recognising an 8-bit grey image.
 - `src/pipeline.rs`: one page: render tiles through PDFium on one thread, recognise them on
   `jobs` threads, keep each word from the tile that owns it, map boxes to page points, merge the
-  passes.
+  passes, re-read misread clusters.
 - `src/geom.rs` (pure): tiling, which tile owns a word, mapping boxes back from renders turned a
   quarter turn, merging the upright and turned passes.
-- `src/score.rs` (pure): scoring OCR words against a page's own text layer.
+- `src/score.rs` (pure): scoring OCR words against a page's own text layer, word for word and
+  as searches would find them.
+- `src/search.rs` (pure): searching OCR words, strict or forgiving (look-alikes folded, spaces
+  ignored).
 - `src/image.rs` (pure): inverting light-on-dark tiles.
 - `src/fixture.rs` (pure) and `src/pdf.rs`: the drawing-like fixture with known text, and
   image-only "scans" of any page; PDFium rendering and the ground truth.
@@ -52,6 +55,13 @@ and optionally a rendered region as PNG to look at). Options: `--turns 0,1,3` (p
 `--tile 1600 --overlap 300`, `--jobs n`, `--lang en-GB`, `--no-invert`, `--missed` (list
 horizontal truth words not found), `--tag name` (labels the JSON line). `OCR_SPIKE_DEBUG=1` logs
 each tile's word count and the skew the engine detected.
+
+Second-round options: `--reread off|suspect|all` (read misread clusters again on their own;
+default `suspect`), `--clean-pass 8` (also OCR a copy of the page with paths over 8 pt removed,
+and merge), `--region x0,y0,x1,y1` (page points: OCR only that area, as a marquee would, and
+score only the words in it), `--no-paths` / `--max-path N` (remove all paths, or paths over N
+pt, from the page before OCR), `--path-stats` (a histogram of path sizes). Every run also
+reports search recall, strict and forgiving (`src/search.rs`).
 
 ## The fixtures
 

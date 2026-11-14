@@ -1,6 +1,7 @@
 # OCR search on pages without text: scope
 
-Status: **spike done, waiting for Matt's review** (14 November 2026). Listed under "Later phases"
+Status: **spike done, second round of improvements measured, waiting for Matt's review**
+(14 November 2026). Listed under "Later phases"
 in [editing-scope.md](editing-scope.md) as "Windows' built-in OCR; search only, nothing written
 back". Worked autonomously (Matt's call); assumptions are listed for correction in one pass.
 Spike: [spikes/ocr/](../spikes/ocr/README.md). Nothing is wired into the app.
@@ -15,7 +16,8 @@ PDFium workers, and on real files finds most of the words people would search fo
   case nobody had listed. Pages 2 to 12 of the MMA Curtis Hall set are like this. Page 3 (a code
   summary) reads almost word for word; page 1 (which does have a text layer, so can be scored)
   reads 86% at 300 dpi.
-- **A stage plan** (Xero, scored against its own text): 70% at 300 dpi.
+- **A stage plan** (Xero, scored against its own text): 70% at 300 dpi on the first round;
+  **81% found, 88% by search** with the improvements in "Improvements, second round".
 - **A hand-lettered 1960s survey scan** (Bayou pages 2 to 13, no ground truth): the main
   labels and most elevations by eye (GAS MAIN, WATER MAIN, AVENUE, SIDEWALK, HYDRANT, 10.23'),
   with gaps.
@@ -23,7 +25,7 @@ PDFium workers, and on real files finds most of the words people would search fo
 It is weak on: text under about 3 pt, text crossed by line work, text at angles other than 0, 90
 and 270 degrees (none found), upside-down text (none found), and light text on a dark ground
 unless inverted. So search on these pages will find most labels, not all, and the UI must say
-so. A fuzzy or space-insensitive match would add 5 to 10 points (the "near" counts below).
+so. The second round (below) recovers much of what line work and fragmenting cost.
 
 ## What was settled
 
@@ -163,10 +165,16 @@ is an alternate.
   priority), merge, synthesise the text layer, store it. Cancelled when the document closes.
 - **Settings**: 300 dpi (for an image-only page, the image's own resolution clamped to 200 to
   300 dpi: not built or measured), 1600 px tiles with 300 px overlap, passes at 0, 90 and 270
-  degrees, invert dark tiles, upright reading wins clashes, alternates kept for search.
-- **When**: when a search reaches a page whose text layer is empty (see questions). The results
-  card says "Reading 4 of 13 scanned pages" and adds hits as pages finish; hits from OCR carry a
-  small marker and the card notes that text read from images may be incomplete.
+  degrees, invert dark tiles, upright reading wins clashes, alternates kept for search; then
+  re-read suspect clusters; and on vector pages (outline text) a second, "clean" pass with paths
+  longer than 8 pt removed, merged in. Forgiving matching on OCR pages, exact matches first.
+- **When** (Matt, 14 November): opening the search box starts OCR of every page without text,
+  in the background, current page first. The results card says "Reading 4 of 13 scanned pages"
+  and adds hits as pages finish; hits from OCR carry a small marker and the card notes that
+  text read from images may be incomplete. Drawing a **selection marquee** on a page without
+  text OCRs just that area at once (0.1 to 0.2 s on a vector page, about 1 s on a scan), then
+  selects what it found. A later full-page run replaces the marquee's words. Never on opening
+  a file.
 - **Selection and copy** on OCR pages through the synthesised layer; the text cursor appears
   there like anywhere else.
 - **Nothing written back** to the file, ever.
@@ -181,34 +189,37 @@ BGRA tile render callable from `run_on_worker`; `render_strip` already does the 
 
 ## Phases
 
-1. **OCR-1, backend** (2 to 3 days): the module, cache, commands; search falls back to OCR
-   layers; port the spike's tests to `src-tauri/tests`, including the fixture-based end-to-end
-   test. After editing phases 2 and 3 land, since it touches `lib.rs`, `text.rs` and `pdfium.rs`.
-2. **OCR-2, front end** (1 to 2 days): progress and the marker in the results card, selection and
-   copy on OCR pages, a setting to turn OCR off, the "OCR not installed" message.
+1. **OCR-1, backend** (3 to 4 days): the module, cache, commands (page and region), re-reading
+   suspect clusters, the clean pass on vector pages, forgiving matching; search falls back to
+   OCR layers; port the spike's tests to `src-tauri/tests`, including the fixture-based
+   end-to-end ones. After editing phases 2 and 3 land, since it touches `lib.rs`, `text.rs`
+   and `pdfium.rs`.
+2. **OCR-2, front end** (2 days): OCR when the search box opens, progress and the marker in the
+   results card, the marquee on pages without text, selection and copy on OCR pages, a setting
+   to turn OCR off, the "OCR not installed" message. Ships together with OCR-1 (selection and
+   copy are as important as search).
 3. **OCR-3, quality, only if wanted** (each a day or so, each measurable with the spike):
-   re-run tiles the engine found skewed, in quarters; angled text (render at the angle with
-   `FPDF_RenderPageBitmapWithMatrix`); space-insensitive and one-typo matching; removing long
-   straight lines before OCR.
+   removing line work from **scans** (image processing on long straight runs: the clean pass
+   only works on vector pages); re-running tiles the engine found skewed, in quarters; angled
+   text (render at the angle with `FPDF_RenderPageBitmapWithMatrix`).
 
 ## Assumed (Matt to correct)
 
 1. Search, selection and copy (selection and copy confirmed by Matt, 14 November). No OCR text
    is ever saved into the file.
-2. OCR runs when a search needs it, not on opening a file (opening must stay free).
+2. OCR runs when the search box opens or a marquee is drawn (confirmed by Matt), never on
+   opening a file.
 3. OCR hits are shown like other hits but marked, with a note that recognition may miss words.
 4. 300 dpi rather than 200: about twice the time, 10 to 15 points better on small text.
 5. English only, from the user's own Windows languages; no language picker.
 
-## Questions for Matt
+## Matt's answers
 
-1. Should OCR start on its own in the background as soon as a file with scanned pages opens
-   (searches are then instant, at the cost of a busy CPU for a minute or two on a big scanned
-   set), or only when you search (as assumed)?
-
-Answered 14 November: **70% is useful** ("better than nothing"), and **selection and copy are
+14 November: **70% is useful** ("better than nothing"), and **selection and copy are
 as important as search**, so they belong in the first cut (OCR-1 and OCR-2 together), not as
-an extra.
+an extra. **When:** OCR starts when the search box opens (the whole document, in the
+background), or when a selection marquee is drawn on a page without text (that area only,
+straight away). Never on opening a file.
 
 ### Where the rest is lost (Xero plan, 300 dpi)
 
@@ -219,15 +230,55 @@ often with 0 read as O. Resolution doesn't fix it: 400, 500 and 600 dpi give 69%
 (4 to 6 pt text stays at 42 to 46%), for 2 to 4 times the time. So the levers are after
 recognition, not before it:
 
-1. **Re-read fragmented lines on their own**: crop the line, pad it with white, enlarge it and
-   OCR that crop alone, away from the door swings and symbols around it. Probably the biggest
-   gain; unmeasured.
-2. **Forgiving matching**: fold look-alikes (O/0, I/l/1, S/5, B/8, Z/2) on both sides of a
-   search, and join fragments that sit next to each other on one line. Worth about 5 points
-   on the measured "near" counts alone.
-3. **Re-run skewed tiles in quarters** (helps vertical text under line work, not the Xero plan).
+Three fixes were then tried (next section).
+
+## Improvements, second round (14 November)
+
+Matt asked to try the fixes. All are built in the spike and measured; a third (removing line
+work) came out of looking at why the first two did so little on the Xero plan.
+
+| | Xero plan: found / strict search / forgiving search | MMA page 1 | Line-work fixture |
+|---|---|---|---|
+| First round | 69.7% / 75.0% / 75.3% | 85.7% / 84.8% / 89.9% | 21.0% / 23.7% / 25.9% |
+| + re-read suspect clusters | 70.8% / 75.9% / 76.0% | 87.8% / 87.4% / 93.5% | 22.5% / 25.3% / 26.8% |
+| + clean pass (paths over 8 pt removed), merged | **80.7% / 88.3% / 88.6%** | 87.2% / 87.7% / 93.7% | **44.1% / 48.3% / 50.6%** |
+| Upper bound: every path removed | 84.5% / 90.7% / 90.7% | 86.4% / 86.0% / 92.3% | 43.9% / 47.5% / 49.8% |
+
+"Found" is the strict word-for-word measure used above. "Search" is what a user gets: every
+truth word of two or more characters searched for, counted when a hit lands on it.
+
+- **Forgiving matching** (look-alikes folded, spaces ignored, so fragments on one line join):
+  +6 points on MMA page 1, almost nothing on the Xero plan (its fragments lose characters, not
+  just spaces). It roughly triples the false hits a user sees (MMA: 49 to 138 stray hits over
+  1,743 searches), so the proposal is forgiving matching on OCR pages only, with exact matches
+  listed first.
+- **Re-reading suspect clusters** (a cluster cropped on its own, padded with white, enlarged
+  until its text is 40 px high; kept only if no less plausible and no shorter): +1 to 2 points,
+  for 10 to 70% more OCR time (MMA: +2 s of CPU on a 3 s page). Re-reading every cluster is no
+  better. Looking at the misses showed why: the Xero door codes sit **on** the door swings, and
+  a crop can't separate an arc from the letters it crosses.
+- **The clean pass** is the big one. On a vector page, line work is paths, and outline text is
+  paths too, but small ones: on MMA's outline pages almost every glyph is a path no larger than
+  4 pt, while walls, door swings and dimension lines are longer. So a second render of the page
+  with every path longer than 8 pt removed (in memory, never saved) shows the text without the
+  clutter. Its words win where both passes read the same place; the normal pass keeps
+  everything else, including text taller than 8 pt that the filter removes. On the Xero plan
+  that gets most of the way to removing all line work. It doubles the OCR time on those pages
+  (Xero: 1.6 s to 2.8 s wall-clock on 8 threads).
+- **Caveats on the clean pass.** The Xero plan and MMA page 1 have real text layers (needed to
+  score them), so they stand in for outline-text pages with similar line work; Vellum would
+  never OCR them. On MMA's real outline pages (3, 5, 7) the word counts barely move with the
+  filter (996 to 989, 379 to 359, 374 to 355): their line work is exported as many tiny pieces
+  that the size filter keeps, and there's no ground truth to tell whether the readings got
+  better. Text drawn as one path per string (rather than per glyph) would be removed by the
+  filter and read only by the normal pass. And it does nothing for scans, which are one image.
+- **Marquee** (OCR of one area: three passes plus re-reading): a 300 x 200 pt area of the Xero
+  plan in 0.12 to 0.17 s (79% of its words found); a 650 x 360 pt area of a Bayou scan in 0.9 to
+  1.1 s, half of it the first decode of the scan image, which the app has usually done already.
 
 ## Not verified
+
+- Whether the clean pass helps on real outline-text pages (no ground truth; see its caveats).
 
 - The MSVC build (expected to need nothing; see section 1).
 - A machine without an OCR language pack, other Windows editions, Windows 10.
