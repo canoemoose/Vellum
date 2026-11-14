@@ -279,5 +279,5 @@ signatures get a colour picker, HEIC is in. Still open:
 
 1. **Tried by hand (Matt, 14 November 2026):** the framing view (turnable box, rotate handle,
    settle on release) works, and a faded blue signature comes out whole and in its own colour.
-2. **iPhone HEIC orientation:** import one taken in portrait. If it comes in sideways, send the
-   `[signature] decoded with WIC` line from the terminal.
+2. **iPhone HEIC orientation:** checked by Matt, 14 November 2026: a portrait HEIC comes in
+   the right way up.
