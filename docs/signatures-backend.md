@@ -60,7 +60,8 @@ alone, so the page never ships. What to look at:
   signature (corners and edges resize it, drag inside to move it, drag outside for a new box),
   turn the photo a quarter with the two page-and-arrow buttons, and turn the box to lie along a
   slanted signature by dragging the round handle above it (a fine grid and the angle show
-  while you drag; it snaps level near 0, and double-clicking the handle levels it). When you
+  while you drag; it turns any way round and snaps within 2 degrees of level or a quarter turn,
+  Alt stops the snap, and double-clicking the handle levels it). When you
   let go of the box or the handle, the view settles on the box with room round it. There's no
   manual zoom or pan.
   Enter or "Remove the paper" applies, Esc or Cancel goes back. The result should come back as
@@ -213,8 +214,8 @@ For tuning the import by eye, an ignored test writes each synthetic photo and it
   on the box (centred, room round it, within limits), the in-between views of the settle, zoom
   about the pointer, screen and frame mapping, what the pointer grabs on a level or turned box,
   and the resize cursor following the turn, and the rotate handle (where it sits, the angle from
-  dragging it round the centre, the 45 degree limit, no jump across the left of the circle,
-  the snap to level).
+  dragging it round the centre, any way round, no jump across the left of the circle, the
+  snap to level or a quarter turn and Alt turning it off).
 - *Ink* (4 tests): hex colours, recolouring (alpha kept), APCA contrast, which inks count as
   pale (black, blue, mid grey and red pass; yellow, sky blue and pale grey are flagged).
 - *Stroke model* (20 tests): thinning, smoothing (ends pinned, jitter gone, straight stays
@@ -261,7 +262,7 @@ Answered 14 November 2026: ink for imports is an option (Original or another ink
 signatures get a colour picker, HEIC is in. Still open:
 
 1. **The framing view** is untried by hand since the box became turnable: does the turned box
-   feel right (the handles, the rotate handle with its 45 degrees each way, the settle after
+   feel right (the handles, the rotate handle and its 2 degree snap (Alt for none), the settle after
    letting go), and does
    the result match what was in the box?
 2. **iPhone HEIC orientation:** import one taken in portrait. If it comes in sideways, send the
