@@ -7,7 +7,7 @@ decisions not in the brief are recorded under "Assumed" for Matt to correct in o
 ## Objective
 
 Ctrl+F searches the whole document in the background, with hits highlighted on the page and
-listed in a sidebar tab; left drag selects text and Ctrl+C copies it; links in the file (and
+listed in a card under the search box; left drag selects text and Ctrl+C copies it; links in the file (and
 web addresses written in its text) can be clicked. None of it may slow down opening or
 rendering a heavy drawing.
 
@@ -40,7 +40,7 @@ rendering a heavy drawing.
 - `src/lib/engine/search.ts` (Svelte-free): a background search session per document.
 - `Viewer` gets highlight layers (`setHighlights`), drawn by the compositor on top of the tiles
   with a multiply blend so the drawing shows through, and `revealRect` to bring a hit into view.
-- UI: a search field at the right of the toolbar, a Search tab in the sidebar, Edit menu
+- UI: a search field at the right of the toolbar with a results card under it, Edit menu
   (Copy, Select all, Find), link targets in the status bar.
 
 ## Behaviour
@@ -80,14 +80,14 @@ New: `src-tauri/src/text.rs`, `src-tauri/tests/text.rs`, `src/lib/text/*`,
 `src/lib/engine/textTool.ts`, `src/lib/engine/search.ts`, `src/lib/components/SearchField.svelte`,
 `src/lib/components/SearchResults.svelte`. Changed: `pdfium.rs`, `docs.rs`, `lib.rs`,
 `viewer.ts`, `input.ts`, `render/types.ts`, `backendRenderer.ts`, `Toolbar.svelte`,
-`Sidebar.svelte`, `StatusBar.svelte`, `App.svelte`, `settings.ts` (sidebar tab), shortcuts.
+`StatusBar.svelte`, `App.svelte`, shortcuts.
 
 ## Steps
 
 1. Backend: frame conversion (tested), text layer, links, page search, open_url.
 2. Pure text logic with tests.
 3. Viewer highlight layers and revealRect; textTool; input routing.
-4. Search session; toolbar field; sidebar tab; menus and shortcuts; status bar.
+4. Search session; toolbar field and results card; menus and shortcuts; status bar.
 5. Tests, `npm run check`, cargo tests, release build, run it on the synthetic files.
 
 ## Progress
@@ -99,7 +99,7 @@ New: `src-tauri/src/text.rs`, `src-tauri/tests/text.rs`, `src/lib/text/*`,
   box; links; search options) and `tests/shell.rs` (which URLs are followed).
 - Steps 2 to 4 done: `src/lib/text/` (Vitest), `view/reveal.ts`, viewer highlights,
   `engine/textTool.ts`, `engine/search.ts` (tested against a stub renderer in
-  `engine/reading.test.ts`), search field, Search tab, Edit menu, keys, status bar.
+  `engine/reading.test.ts`), search field, Edit menu, keys, status bar.
 - Step 5 done: `npm run check` clean, `npm test` (all Vitest files) and the new cargo tests pass;
   release build run on the synthetic files and the aerial drawing (read-only) through a
   throwaway DevTools script: search, the count, F3 / Shift+F3, the results tab, the text cursor
@@ -133,10 +133,26 @@ New: `src-tauri/src/text.rs`, `src-tauri/tests/text.rs`, `src/lib/text/*`,
 ## Not verified (for Matt)
 
 - How it looks and feels: the highlight colours on a busy drawing, the search box's place in the
-  toolbar (it wraps when narrow), the Search tab, the I-beam and hand cursors.
+  toolbar (it wraps when narrow), the I-beam and hand cursors.
 - Clicking a real link: none of the test files has links. The command and the URL check are
   tested; opening the browser isn't.
 - Selection by drag in the real app on text I aimed at: the script dragged where it could
   without knowing the view, and copied what it covered. Word and line selection are tested in
   Vitest only.
 - Vertical text (CAD dimension text) selection: tested in Vitest, not by hand.
+
+## Matt's first look (14 November 2026)
+
+Changed on his feedback:
+
+- The count and results moved out of the toolbar and the sidebar into a card under the search
+  box (the inline count made the toolbar shift as it changed). The card stays open while you
+  work; Esc in the box or its close button clears the search. No Search tab in the sidebar.
+- Typing while a search ran could put the old query back: fixed (the box takes the query from
+  the search only when the tab changes).
+- The search box now sits inside its group like the zoom box; Fit page and Fit width joined the
+  zoom group behind a divider.
+- Selection bands reach halfway into the gap to the neighbouring line (at most half their
+  height), or a quarter of their height with no line that close, and a tenth past their ends;
+  overlaps are filled once. Search hits get a small fixed margin.
+
