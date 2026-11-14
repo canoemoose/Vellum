@@ -193,8 +193,8 @@ BGRA tile render callable from `run_on_worker`; `render_strip` already does the 
 
 ## Assumed (Matt to correct)
 
-1. Search only, as the brief says, plus selection and copy because the synthesised layer makes
-   them nearly free. No OCR text is ever saved into the file.
+1. Search, selection and copy (selection and copy confirmed by Matt, 14 November). No OCR text
+   is ever saved into the file.
 2. OCR runs when a search needs it, not on opening a file (opening must stay free).
 3. OCR hits are shown like other hits but marked, with a note that recognition may miss words.
 4. 300 dpi rather than 200: about twice the time, 10 to 15 points better on small text.
@@ -205,9 +205,27 @@ BGRA tile render callable from `run_on_worker`; `render_strip` already does the 
 1. Should OCR start on its own in the background as soon as a file with scanned pages opens
    (searches are then instant, at the cost of a busy CPU for a minute or two on a big scanned
    set), or only when you search (as assumed)?
-2. Is about 70% of words on a stage plan, and most labels on a hand-lettered scan, useful enough
-   for you, given that some searches will come back empty when the word is on the sheet?
-3. Selection and copy on OCR pages in the first cut, or search alone?
+
+Answered 14 November: **70% is useful** ("better than nothing"), and **selection and copy are
+as important as search**, so they belong in the first cut (OCR-1 and OCR-2 together), not as
+an extra.
+
+### Where the rest is lost (Xero plan, 300 dpi)
+
+Of the 184 words missed on the Xero plan (178 of them horizontal), 140 have OCR text on top of
+them and 38 have nothing. The dominant pattern is short codes at about 4 pt (door and room tags
+such as "D2.29A"): the engine reads them **in fragments** ("D2.1" then "0A", or just "D2.O"),
+often with 0 read as O. Resolution doesn't fix it: 400, 500 and 600 dpi give 69%, 68% and 69%
+(4 to 6 pt text stays at 42 to 46%), for 2 to 4 times the time. So the levers are after
+recognition, not before it:
+
+1. **Re-read fragmented lines on their own**: crop the line, pad it with white, enlarge it and
+   OCR that crop alone, away from the door swings and symbols around it. Probably the biggest
+   gain; unmeasured.
+2. **Forgiving matching**: fold look-alikes (O/0, I/l/1, S/5, B/8, Z/2) on both sides of a
+   search, and join fragments that sit next to each other on one line. Worth about 5 points
+   on the measured "near" counts alone.
+3. **Re-run skewed tiles in quarters** (helps vertical text under line work, not the Xero plan).
 
 ## Not verified
 
