@@ -1,18 +1,21 @@
 <script lang="ts">
-  // Make a signature: draw it with a mouse or pen, or import a photo or scan (the paper is
-  // knocked out in Rust), name it and save it to the library. Standalone: not wired into the
-  // app yet (placing a signature needs the markup foundation). Try it with
-  // `npm run dev:signatures` (docs/signatures-backend.md).
+  // Make a signature: draw it with a mouse or pen, or import a photo or scan (framed first in
+  // SignatureFrame, then the paper is knocked out in Rust), name it and save it to the library.
+  // Standalone: not wired into the app yet (placing a signature needs the markup foundation).
+  // Try it with `npm run dev:signatures` (docs/signatures-backend.md).
   import { onMount, untrack } from "svelte";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import SignatureFrame from "./SignatureFrame.svelte";
   import { Drawing, drawStrokes, INK, PEN_WIDTH, type Pt } from "../../signature/strokes";
   import { INKS, parseHex, tooLight } from "../../signature/ink";
+  import { initialAdjust, type Adjust } from "../../signature/frame";
   import {
     addSignature,
     drawingToPng,
     IMPORT_EXTENSIONS,
     importSignature,
     pngUrl,
+    previewSignature,
     recolourPng,
     signatureMessage,
     type SignatureItem,
@@ -30,6 +33,12 @@
   /** An imported signature: as the importer made it, and as shown (recoloured, maybe). */
   let imported = $state<{ png: Uint8Array; url: string } | null>(null);
   let shown = $state<{ png: Uint8Array; url: string } | null>(null);
+  /** A photo: its path, its preview and how it's framed. */
+  type Photo = { path: string; image: ImageBitmap; adjust: Adjust };
+  /** The photo the current import came from (to adjust it again). */
+  let source = $state.raw<Photo | null>(null);
+  /** The photo being framed: a new one, or `source` again. */
+  let framing = $state.raw<Photo | null>(null);
   /** The ink: "original" (an import's own colour), a ready-made ink's id, or "custom". */
   let choice = $state<string>("black");
   let custom = $state("#7a1f2b");
@@ -38,7 +47,7 @@
   let error = $state("");
 
   let canvas = $state<HTMLCanvasElement>();
-  let surface: HTMLDivElement;
+  let surface = $state<HTMLDivElement>();
   let dpr = 1;
   let pointer: number | null = null;
 
@@ -104,19 +113,26 @@
   function fit() {
     if (!canvas) return;
     dpr = window.devicePixelRatio || 1;
+    if (!surface) return;
     const r = surface.getBoundingClientRect();
     canvas.width = Math.max(1, Math.round(r.width * dpr));
     canvas.height = Math.max(1, Math.round(r.height * dpr));
     redraw();
   }
 
-  onMount(() => {
+  // The surface comes and goes with the framing view: watch whichever is there.
+  $effect(() => {
+    if (!surface) return;
     const ro = new ResizeObserver(fit);
     ro.observe(surface);
+    return () => ro.disconnect();
+  });
+
+  onMount(() => {
     return () => {
-      ro.disconnect();
       setShown(null);
       if (imported) URL.revokeObjectURL(imported.url);
+      dropPhotos();
     };
   });
 
@@ -171,11 +187,23 @@
     }
   }
 
-  function clearAll() {
-    drawing.clear();
+  /** Forget the imported result (not the photo it came from). */
+  function dropImported() {
     setShown(null);
     if (imported) URL.revokeObjectURL(imported.url);
     imported = null;
+  }
+
+  function dropPhotos() {
+    if (framing && framing !== source) framing.image.close();
+    source?.image.close();
+    source = framing = null;
+  }
+
+  function clearAll() {
+    drawing.clear();
+    dropImported();
+    dropPhotos();
     if (choice === "original") choice = "black";
     error = "";
     version++;
@@ -201,16 +229,47 @@
     busy = true;
     error = "";
     try {
-      const png = await importSignature(path);
-      clearAll();
+      const jpeg = await previewSignature(path);
+      const image = await createImageBitmap(new Blob([jpeg as BlobPart], { type: "image/jpeg" }));
+      // Whatever was on the pad stays until the new photo is applied (Cancel goes back to it).
+      framing = { path, image, adjust: initialAdjust() };
+    } catch (e) {
+      console.error("[signature] preview failed:", e);
+      error = signatureMessage(e, "open this picture");
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** Knock the paper out of the photo as framed. On failure, stay framing so it can be tried again. */
+  async function applyFrame(adjust: Adjust) {
+    const photo = framing;
+    if (!photo) return;
+    busy = true;
+    error = "";
+    try {
+      const png = await importSignature(photo.path, adjust);
+      drawing.clear();
+      dropImported();
       imported = { png, url: pngUrl(png) };
       choice = "original";
+      if (source && source !== photo) source.image.close();
+      source = { ...photo, adjust };
+      framing = null;
+      version++;
     } catch (e) {
       console.error("[signature] import failed:", e);
       error = signatureMessage(e, "import this picture");
     } finally {
       busy = false;
     }
+  }
+
+  /** Back to what was on the pad before; a new photo that wasn't applied is dropped. */
+  function cancelFrame() {
+    error = "";
+    if (framing && framing !== source) framing.image.close();
+    framing = null;
   }
 
   async function save() {
@@ -243,6 +302,11 @@
 <!-- Ctrl+Z undoes a stroke while focus is anywhere in the pad (its buttons, the name). -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div class="pad" role="group" aria-label="Signature pad" tabindex="-1" onkeydown={onKey}>
+  {#if framing}
+    {#key framing}
+      <SignatureFrame image={framing.image} adjust={framing.adjust} {busy} onapply={applyFrame} oncancel={cancelFrame} />
+    {/key}
+  {:else}
   <div class="surface" class:imported={imported !== null} bind:this={surface}>
     {#if imported}
       <img src={(shown ?? imported).url} alt="Imported signature" />
@@ -267,6 +331,10 @@
     <button class="btn small" onclick={undo} disabled={!canUndo || busy} title="Undo the last stroke (Ctrl+Z)">Undo</button>
     <button class="btn small" onclick={clearAll} disabled={empty || busy}>Clear</button>
     <button class="btn small" onclick={importFile} disabled={busy}>Import a picture…</button>
+    {#if imported && source}
+      <button class="btn small" onclick={() => (framing = source)} disabled={busy}
+        title="Crop, turn or straighten the photo again">Adjust the photo…</button>
+    {/if}
     <span class="spacer"></span>
     <span class="inks" role="radiogroup" aria-label="Ink">
       <span class="label">Ink</span>
@@ -291,13 +359,16 @@
       onkeydown={(e) => e.key === "Enter" && save()} />
     <button class="btn primary" onclick={save} disabled={empty || busy}>Save</button>
   </div>
+  {/if}
 
   {#if error}
     <p class="error" role="alert">{error}</p>
+  {:else if framing}
+    <!-- nothing: the framing view has its own hint -->
   {:else if pale}
     <p class="note">That ink is pale: it may be hard to read on white paper.</p>
   {:else if imported}
-    <p class="note">The paper has been removed. Check the edges look clean, then save it, or Clear to try another picture.</p>
+    <p class="note">The paper has been removed. Check the edges look clean, then save it, or adjust the photo and try again.</p>
   {/if}
 </div>
 

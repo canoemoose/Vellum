@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { parseError, userMessage } from "../shell/messages";
+import { toCommand, type Adjust } from "./frame";
 import { recolour, type Rgb } from "./ink";
 import { drawStrokes, exportPlan, INK, serialise, type Stroke } from "./strokes";
 
@@ -31,9 +32,14 @@ export interface SignatureListing {
 /** Image types the importer reads. HEIC and HEIF go through Windows' own codecs. */
 export const IMPORT_EXTENSIONS = ["jpg", "jpeg", "heic", "heif", "png", "webp", "tif", "tiff", "bmp", "gif"];
 
-/** Knock the paper out of a photo or scan: PNG bytes with transparency. */
-export async function importSignature(path: string): Promise<Uint8Array> {
-  return new Uint8Array(await invoke<ArrayBuffer>("signature_import", { path }));
+/** The picture upright, as a JPEG at most 2048 px, to choose the framing on. */
+export async function previewSignature(path: string): Promise<Uint8Array> {
+  return new Uint8Array(await invoke<ArrayBuffer>("signature_preview", { path }));
+}
+
+/** Knock the paper out of a photo or scan, framed as chosen: PNG bytes with transparency. */
+export async function importSignature(path: string, adjust?: Adjust): Promise<Uint8Array> {
+  return new Uint8Array(await invoke<ArrayBuffer>("signature_import", { path, adjust: adjust ? toCommand(adjust) : null }));
 }
 
 export const listSignatures = () => invoke<SignatureListing>("signature_list");
@@ -99,7 +105,7 @@ export async function recolourPng(png: Uint8Array, rgb: Rgb): Promise<Uint8Array
 }
 
 const MESSAGES: Record<string, string> = {
-  signature_no_ink: "Couldn't find a signature in that picture. Sign in dark ink on plain paper and fill the frame with it.",
+  signature_no_ink: "Couldn't find a signature there. Crop closer round it, or try a photo in dark ink on plain paper.",
   heic_codec_missing:
     "Windows can't read this HEIC photo. Install HEIF Image Extensions and HEVC Video Extensions from the Microsoft Store, or save the photo as a JPEG.",
   signature_too_small: "That picture is too small to use.",
