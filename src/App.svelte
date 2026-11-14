@@ -16,7 +16,6 @@
   import { TextTool } from "./lib/engine/textTool";
   import { SearchController } from "./lib/engine/search";
   import { linkLabel } from "./lib/text/links";
-  import { countLabel } from "./lib/text/searchModel";
   import MiniMap from "./lib/components/MiniMap.svelte";
   import { type MapMode, rememberDoc } from "./lib/shell/docMemory";
   import { hasCode, userMessage } from "./lib/shell/messages";
@@ -154,11 +153,6 @@
 
   function runSearch(q: string) {
     search?.search(q, { ...searchOpts });
-    // Show the results as they come in, if the sidebar is open.
-    if (q.trim() && settings.sidebarOpen && settings.sidebarTab !== "search") {
-      settings.sidebarTab = "search";
-      save();
-    }
   }
 
   function toggleSearchOption(o: "matchCase" | "wholeWord") {
@@ -1079,13 +1073,13 @@
         <SearchField
           bind:this={searchField}
           disabled={!textDoc}
-          query={searchView?.query ?? ""}
+          view={searchView}
           docKey={ui.docId}
-          label={searchView ? countLabel(searchView.current, searchView.hits.length, searchView.running, searchView.truncated) : ""}
           matchCase={searchOpts.matchCase}
           wholeWord={searchOpts.wholeWord}
           onSearch={runSearch}
           onStep={(d) => search?.step(d)}
+          onSelect={(i) => search?.select(i)}
           onOption={toggleSearchOption}
         />
       {/snippet}
@@ -1114,8 +1108,6 @@
         }}
         onGoto={(p) => viewer?.gotoPage(p)}
         onGotoPoint={(p, y) => viewer?.gotoPagePoint(p, y)}
-        search={searchView}
-        onSearchSelect={(i) => search?.select(i)}
       />
     {/if}
 

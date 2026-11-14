@@ -1,7 +1,7 @@
 <script lang="ts" module>
   import type { SearchHit } from "../text/searchModel";
 
-  /** What the sidebar shows of the active document's search (a snapshot, see App.svelte). */
+  /** What the search card shows of the active document's search (a snapshot, see App.svelte). */
   export interface SearchView {
     query: string;
     hits: SearchHit[];
@@ -16,7 +16,7 @@
 </script>
 
 <script lang="ts">
-  // The sidebar's Search tab: results by page, with a little context; click one to go there.
+  // The search card's list: results by page, with a little context; click one to go there.
   interface Props {
     view: SearchView | null;
     onSelect: (i: number) => void;
@@ -77,7 +77,7 @@
     flex-direction: column;
   }
   .status {
-    margin: 6px 12px 8px;
+    margin: 4px 12px 8px;
     color: var(--tx3);
     font-size: 12px;
   }
