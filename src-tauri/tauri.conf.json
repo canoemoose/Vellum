@@ -62,7 +62,7 @@
         "https://github.com/canoemoose/Vellum/releases/latest/download/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   }
