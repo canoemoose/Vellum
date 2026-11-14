@@ -223,3 +223,13 @@ fn the_fixture_is_deterministic_and_complete() {
         assert!(it.x > 0.0 && it.x < fixture::PAGE_W && it.y > 0.0 && it.y < fixture::PAGE_H, "{it:?}");
     }
 }
+
+#[test]
+fn an_upright_reading_wins_a_clash() {
+    // A square box (either direction fits) read by both: the turned pass's capitals don't beat the
+    // upright pass.
+    let words = vec![word("IO", [10.0, 10.0, 22.0, 22.0], 0, 0), word("OI", [10.0, 10.0, 22.0, 22.0], 1, 1)];
+    let m = merge_passes(words);
+    assert!(m.iter().any(|w| w.text == "IO" && !w.alt));
+    assert!(m.iter().any(|w| w.text == "OI" && w.alt));
+}

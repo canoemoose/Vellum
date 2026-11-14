@@ -165,6 +165,16 @@ pub fn plausibility(s: &str) -> i32 {
     score
 }
 
+/// Added to the rank of words from the upright pass: most drawing text is horizontal, and a
+/// turned pass reading horizontal text sideways can still produce plausible capitals. At 4
+/// (the most a rank can otherwise differ by) an upright reading always wins a clash: measured
+/// best (bias 0: 64.9% on the Xero plan; 4: 69.7%; no change on the fixture's vertical text).
+/// Overridden by OCR_SPIKE_BIAS for experiments.
+fn upright_bias() -> f32 {
+    std::env::var("OCR_SPIKE_BIAS").ok().and_then(|v| v.parse().ok()).unwrap_or(UPRIGHT_BIAS)
+}
+pub const UPRIGHT_BIAS: f32 = 4.0;
+
 /// Plausibility per character, over a set of words.
 fn quality<'a>(ws: impl Iterator<Item = &'a PageWord>) -> f32 {
     let (mut p, mut n) = (0i32, 0usize);
@@ -186,9 +196,10 @@ pub fn merge_passes(mut words: Vec<PageWord>) -> Vec<PageWord> {
     for (i, w) in words.iter().enumerate() {
         lines.entry(w.line).or_default().push(i);
     }
+    let bias = upright_bias();
     let rank: Vec<f32> = words
         .iter()
-        .map(|w| quality(lines[&w.line].iter().map(|&i| &words[i])) + quality(std::iter::once(w)))
+        .map(|w| quality(lines[&w.line].iter().map(|&i| &words[i])) + quality(std::iter::once(w)) + if w.turns == 0 { bias } else { 0.0 })
         .collect();
     let mut order: Vec<usize> = (0..words.len()).collect();
     order.sort_by(|&a, &b| {
