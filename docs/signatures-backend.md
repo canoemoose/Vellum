@@ -120,15 +120,17 @@ alone, so the page never ships. What to look at:
   changing it recolours every stroke. Under APCA Lc 45 against white the pad warns the ink is
   pale; it doesn't stop you. An import is recoloured in the browser (pixels' colour set, alpha
   kept); a drawn one is drawn in the ink, and the colour is stored with its strokes.
-- **What "Original" means: one clean colour, keeping the ink's hue.** Each pixel is painted the same ink
+- **What "Original" means: one clean colour, the ink's own.** Each pixel is painted the same ink
   colour; only the alpha varies. The colour is the ink's measured against its local paper (so a
-  warm photo doesn't tint it), darkened to a solid ink: blue biro stays dark blue, black or grey
-  ink becomes near-black (`#18181c`). Why: keeping each pixel's own colour carries paper texture,
+  warm photo doesn't tint it): how it would look on white paper, not darkened (Matt, 14 November
+  2026: "original doesn't keep the original colour"; it used to be darkened to a solid tone, so
+  a faded blue came out navy). Black and Blue on the pad are there for a solid ink. Why one colour: keeping each pixel's own colour carries paper texture,
   noise and shading into the strokes and fringes when scaled, and people often sign in blue on
   purpose, so turning everything black would lose something.
 - **The knock-out**, in brief: the paper's brightness is estimated everywhere with a grey-scale
   closing (wipes out pen strokes, keeps a shadow's edge where it is), each pixel's darkness is
-  measured against it, the paper's noise is read off the histogram, and alpha ramps from just
+  measured against it as the most any one colour channel has lost (luminance gives blue 7% of
+  its weight, so a faded blue was nearly paper and broke up), the paper's noise is read off the histogram, and alpha ramps from just
   above the noise to the ink's typical darkness (edges stay anti-aliased). Marks that are specks
   (smaller than a dot from the same pen), faint, or thick (a desk, the paper's edge) are dropped,
   and anything far darker than the sheet (a desk beyond the paper) is ignored. Full notes in the
@@ -189,8 +191,11 @@ For tuning the import by eye, an ignored test writes each synthetic photo and it
   edge) with a known wavy stroke and the dot of an "i" drawn on them, as PNG and JPEG, in black and
   in blue ink. Checked numerically: the stroke's centre line is opaque all along (in the shadow
   too), the dot survives, no paper pixel more than 3 px outside the pen is visible, the crop
-  matches the stroke's bounds plus margin to within 4 px, neutral ink comes out near-black and
-  blue stays blue and dark, every pixel is the ink colour. Also: blank paper (with specks) is
+  matches the stroke's bounds plus margin to within 4 px, the ink comes out as photographed
+  (black, blue, and a faded blue that's kept whole, dot and all), every pixel is the ink colour.
+  The speck filter measures marks on their solid core and errs towards keeping a small mark: a
+  faint dot of an "i" and dark dust are close in size, and a kept speck is cropped out in the
+  framing. Also: blank paper (with specks) is
   "no ink", a non-image and a missing file give the right codes, tiny images are refused, a large
   photo is capped at 1600 px, EXIF orientation 6 turns the picture (checked by pixel and through
   a full import), and a PNG that's already a cut-out (transparent black) is read as on white.

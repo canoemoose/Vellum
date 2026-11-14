@@ -10,15 +10,16 @@
 //!    interpolated between block centres. Phone photos light paper unevenly (a gradient, the
 //!    shadow of the phone), so a single threshold would either eat the ink in the shadow or keep
 //!    the shadow as ink. Measured against its local paper, ink is dark everywhere.
-//! 3. "Darkness" per pixel is 1 - luminance / paper luminance. The paper's noise level is read
+//! 3. "Darkness" per pixel is the most any one colour channel has lost against the paper (not
+//!    luminance, which gives blue so little weight that a faded blue ink is nearly paper). The paper's noise level is read
 //!    from the darkness histogram (median and median absolute deviation: most of the picture is
 //!    paper), and alpha ramps from just above the noise to the ink's typical darkness, so stroke
 //!    edges stay anti-aliased.
 //! 4. Connected marks that are specks (tiny) or blobs (thick: a desk or the paper's edge, a
-//!    smudge) are dropped. Ink is thin.
+//!    smudge) are dropped, measured on their solid core so soft edges don't count. Ink is thin.
 //! 5. Every pixel is painted one ink colour, with the alpha from step 3: the ink's own hue (a
 //!    blue biro stays blue) measured against the paper, so a warm or cool photo doesn't tint it,
-//!    then darkened to a clean, solid ink. Neutral ink becomes near-black. One colour means no
+//!    and kept as it is: how the ink would look on white paper. One colour means no
 //!    paper texture, noise or shading inside the strokes, and no fringes when it is scaled.
 //! 6. Crop to the ink with a small margin and cap the size.
 
@@ -284,11 +285,6 @@ fn on_white(img: &DynamicImage) -> RgbImage {
     out
 }
 
-/// Rec. 709 luma of an sRGB pixel, 0..255 (good enough for "how dark is this").
-fn luma(p: &Rgb<u8>) -> f32 {
-    0.2126 * p[0] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[2] as f32
-}
-
 /// The paper's colour everywhere, on a grid of small cells (each the average of `block` x
 /// `block` pixels), interpolated between cell centres.
 ///
@@ -467,25 +463,31 @@ fn knock_out_with(img: &RgbImage, reach: f32) -> Result<Imported, String> {
     let n = w * h;
     let paper = Paper::estimate(img, reach);
 
-    // Darkness against the local paper, on a 3x3-smoothed luminance (takes the edge off
-    // sensor noise; a pen stroke is several pixels wide in any usable photo).
-    let mut lum = vec![0f32; n];
+    // Darkness against the local paper: the most any one channel has lost (on 3x3-smoothed
+    // channels, which takes the edge off sensor noise; a pen stroke is several pixels wide in
+    // any usable photo). Not luminance: that gives blue 7% of its weight, so a faded blue ink
+    // is nearly as bright as the paper, though it takes out most of the red.
+    let mut chans = [vec![0f32; n], vec![0f32; n], vec![0f32; n]];
     for y in 0..h {
         for x in 0..w {
-            lum[y * w + x] = luma(img.get_pixel(x as u32, y as u32));
+            let p = img.get_pixel(x as u32, y as u32);
+            for c in 0..3 {
+                chans[c][y * w + x] = p[c] as f32;
+            }
         }
     }
-    let lum = box3(&lum, w, h);
-    let mut paper_lum = vec![0f32; n];
+    let chans = chans.map(|ch| box3(&ch, w, h));
     let mut dark = vec![0f32; n];
     let mut hist = vec![0u32; DBINS];
     for y in 0..h {
         for x in 0..w {
-            let p = paper.at(x, y);
-            let pl = (0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]).max(1.0);
             let i = y * w + x;
-            paper_lum[i] = pl;
-            let d = if paper.on_sheet(x, y) { 1.0 - lum[i] / pl } else { 0.0 };
+            let d = if paper.on_sheet(x, y) {
+                let p = paper.at(x, y);
+                (0..3).map(|c| 1.0 - chans[c][i] / p[c].max(1.0)).fold(f32::MIN, f32::max)
+            } else {
+                0.0
+            };
             dark[i] = d;
             hist[dbin(d)] += 1;
         }
@@ -611,7 +613,11 @@ struct Mark {
     first: usize,
     area: usize,
     max_alpha: f32,
-    /// 2 * area / boundary pixels: a line's width, half a solid square's side.
+    /// Pixels at least half opaque: the mark's solid core. Soft edges (and a JPEG's colour
+    /// bleeding past a coloured stroke) don't count, so a dot and a speck of dust are told
+    /// apart by what's really there.
+    core: usize,
+    /// 2 * core / the core's boundary pixels: a line's width, half a solid square's side.
     thick: f32,
 }
 
@@ -637,18 +643,22 @@ fn filter_marks(alpha: &mut [f32], w: usize, h: usize) -> bool {
         stack.push(start);
         let first = members.len();
         let mut max_alpha = 0f32;
-        let mut boundary = 0usize;
+        let (mut core, mut boundary) = (0usize, 0usize);
         while let Some(i) = stack.pop() {
             members.push(i);
             max_alpha = max_alpha.max(alpha[i]);
+            let solid = alpha[i] >= 0.5;
+            core += solid as usize;
             let (x, y) = ((i % w) as i64, (i / w) as i64);
             let mut edge = false;
             for (dx, dy) in [(-1i64, -1i64), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
                 let (nx, ny) = (x + dx, y + dy);
                 let inside = nx >= 0 && ny >= 0 && nx < w as i64 && ny < h as i64;
                 let j = if inside { ny as usize * w + nx as usize } else { 0 };
-                if !inside || alpha[j] <= 0.0 {
+                if !inside || alpha[j] < 0.5 {
                     edge |= dx == 0 || dy == 0;
+                }
+                if !inside || alpha[j] <= 0.0 {
                     continue;
                 }
                 if !seen[j] {
@@ -656,20 +666,23 @@ fn filter_marks(alpha: &mut [f32], w: usize, h: usize) -> bool {
                     stack.push(j);
                 }
             }
-            boundary += edge as usize;
+            boundary += (solid && edge) as usize;
         }
         let area = members.len() - first;
-        marks.push(Mark { first, area, max_alpha, thick: 2.0 * area as f32 / boundary.max(1) as f32 });
+        marks.push(Mark { first, area, max_alpha, core, thick: 2.0 * core as f32 / boundary.max(1) as f32 });
     }
 
     // Which marks to keep, with blobs over `max_thick` dropped.
     let choose = |max_thick: f32| -> (Vec<bool>, usize) {
         let inky = |m: &Mark| m.max_alpha >= 0.6 && m.thick <= max_thick;
         // The pen's width, from the biggest mark that looks like ink (the signature's main
-        // stroke). A dot from that pen is at least about its width squared; dust is smaller.
-        let pen = marks.iter().filter(|m| inky(m)).max_by_key(|m| m.area).map(|m| m.thick).unwrap_or(0.0);
-        let min_area = ((0.6 * pen * pen) as usize).max(20);
-        let keep: Vec<bool> = marks.iter().map(|m| inky(m) && m.area >= min_area).collect();
+        // stroke), measured on its solid core. A dot from that pen has a core of about half its
+        // width squared or more (a round dot is 0.785 times it, and the stroke measures wide on
+        // its curves); dust is smaller. Erring towards keeping: a lost dot spoils a signature,
+        // a kept speck is cropped out in the framing.
+        let pen = marks.iter().filter(|m| inky(m)).max_by_key(|m| m.core).map(|m| m.thick).unwrap_or(0.0);
+        let min_core = ((0.4 * pen * pen) as usize).max(12);
+        let keep: Vec<bool> = marks.iter().map(|m| inky(m) && m.core >= min_core).collect();
         let kept = marks.iter().zip(&keep).filter(|(_, k)| **k).map(|(m, _)| m.area).sum();
         (keep, kept)
     };
@@ -690,9 +703,9 @@ fn filter_marks(alpha: &mut [f32], w: usize, h: usize) -> bool {
     kept >= enough
 }
 
-/// The ink's colour: the per-channel median of the core ink's reflectance (pixel over paper,
-/// so lighting and white balance cancel), darkened to a solid ink. Neutral ink becomes
-/// near-black.
+/// The ink's colour as it is: the per-channel median of the core ink's reflectance (pixel over
+/// paper, so lighting and white balance cancel), which is how it would look on white paper. Not
+/// darkened: a faded ink stays faded (the pad offers solid Black and Blue for that).
 fn ink_colour(img: &RgbImage, paper: &Paper, alpha: &[f32], w: usize, h: usize) -> [u8; 3] {
     let mut hists = [vec![0u32; 256], vec![0u32; 256], vec![0u32; 256]];
     let mut count = 0;
@@ -714,19 +727,5 @@ fn ink_colour(img: &RgbImage, paper: &Paper, alpha: &[f32], w: usize, h: usize) 
             break;
         }
     }
-    let refl: Vec<f32> = hists.iter().map(|hh| hist_quantile(hh, 0.0, 1.0, 0.5)).collect();
-    let (r, g, b) = (refl[0], refl[1], refl[2]);
-    let maxc = r.max(g).max(b);
-    let minc = r.min(g).min(b);
-    // Neutral: the channels within 6% of each other.
-    if maxc - minc < 0.06 {
-        return [24, 24, 28];
-    }
-    let l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    let k = if l > 0.18 { 0.18 / l } else { 1.0 };
-    [
-        (r * k * 255.0).round().clamp(0.0, 255.0) as u8,
-        (g * k * 255.0).round().clamp(0.0, 255.0) as u8,
-        (b * k * 255.0).round().clamp(0.0, 255.0) as u8,
-    ]
+    hists.map(|hh| (hist_quantile(&hh, 0.0, 1.0, 0.5) * 255.0).round().clamp(0.0, 255.0) as u8)
 }

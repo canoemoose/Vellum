@@ -239,7 +239,7 @@ export function drawStrokes(ctx: Ctx, strokes: Stroke[], o: DrawOpts): void {
   }
 }
 
-/** The default ink for drawn signatures: near-black, like the importer's neutral ink. */
+/** The default ink for drawn signatures: near-black. */
 export const INK = "#18181c";
 /** The longest side of a drawn signature's PNG. */
 export const MAX_EXPORT_SIDE = 1600;

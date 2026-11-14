@@ -238,9 +238,30 @@ fn a_blue_biro_stays_blue() {
     check_photo(&p, &r);
     let [cr, cg, cb] = r.ink.map(|c| c as i32);
     assert!(cb > cr + 40 && cb > cg + 30, "ink {:?} should be blue", r.ink);
-    // And dark enough to read as ink, not pale blue.
-    let l = 0.2126 * cr as f32 + 0.7152 * cg as f32 + 0.0722 * cb as f32;
-    assert!(l < 60.0, "ink {:?} luminance {l}", r.ink);
+    // The ink as it is, on white paper: ink over paper per channel (the cast cancels).
+    assert_original(&r, [0.18, 0.24, 0.62]);
+}
+
+/// The result's ink is the photographed ink against white paper, not darkened or changed.
+fn assert_original(r: &Imported, ink: [f32; 3]) {
+    for c in 0..3 {
+        // The photo's paper is [0.92, 0.89, 0.80] with the ink cast [1, 0.97, 0.87] on the ink.
+        let want = ink[c] * [1.0f32, 0.97, 0.87][c] / [0.92f32, 0.89, 0.80][c] * 255.0;
+        assert!((r.ink[c] as f32 - want).abs() <= 14.0, "ink {:?}, channel {c} should be about {want}", r.ink);
+    }
+}
+
+#[test]
+fn faded_blue_ink_is_kept_whole_and_stays_faded() {
+    // A washed-out blue (a fountain pen or an old biro): nearly as bright as the paper, but it
+    // takes out most of the red.
+    let ink = [0.62, 0.72, 0.92];
+    // No dust: specks darker than so faint an ink look as big as its dot, and are kept with
+    // it (cropped out in the framing). The black and blue cases check dust is dropped.
+    let p = photo(&Opts { ink, specks: false, ..Opts::default() });
+    let r = import::import_bytes(&to_jpeg(&p.img)).expect("imports");
+    check_photo(&p, &r);
+    assert_original(&r, ink);
 }
 
 #[test]
