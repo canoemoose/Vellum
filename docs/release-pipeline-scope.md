@@ -1,8 +1,9 @@
 # Release pipeline: GitHub Actions build and in-app updates
 
-Status: **phases 1 to 3 built and green in CI** on branch `release-pipeline` (13 November
-2026). Not merged. Phase 4 (the real releases) and phase 5 (docs) remain; the steps for phase 4
-are under "Phase 4, step by step". This is the source of truth for the work.
+Status: **phases 1 to 4 done and merged to `main`** (14 November 2026). 0.1.1 and 0.1.2 are
+published, and an installed 0.1.1 updated itself to 0.1.2 and came back with its tabs. 0.1.3
+and 0.1.4 follow to prove the quiet install (below). Phase 5 (docs) remains. This is the
+source of truth for the work.
 
 ## Objective
 
@@ -52,6 +53,11 @@ scoped; this section wins where they disagree.
   not in the WebView's storage: the install step ends the process at once and that storage
   isn't certain to be on disk. The note is read once, removed, and ignored if it is more than
   ten minutes old. Tabs that had failed to open aren't carried over.
+- **The install is quiet, not passive** (Matt, 14 November 2026, after seeing the installer's
+  progress window during the 0.1.1 to 0.1.2 update). No installer window: Vellum says
+  "Installing Vellum x. Vellum will restart.", closes, and reopens a few seconds later. The
+  cost is that a failed install shows nothing; Vellum just doesn't come back. The mode is read
+  by the copy doing the updating, so it first shows when 0.1.3 updates to 0.1.4.
 - **Order of the install:** download (with progress), then ask the shell to close
   (`closeForUpdate` in `App.svelte`, where the unsaved-changes prompt goes), then install. So
   the prompt appears at the moment it matters, and cancelling it keeps the download.
@@ -84,7 +90,12 @@ Proved:
 - **The app starts** with the updater plugin (release build, run locally), and a local
   installer build signs its update artefact.
 
-Not proved until phase 4, because it needs a published release and an installed copy:
+Proved in phase 4 (Matt, on his machine): 0.1.1 installed over 0.1.0, found 0.1.2 once it was
+published, installed it and came back with the same tabs. One thing learnt: a check made in
+the first moments after publishing can still be told the previous version; a minute later it
+finds the new one.
+
+What phase 4 was needed for, because it takes a published release and an installed copy:
 
 - A real check finding a real update, the download, the signature check and the install.
 - The restart, and the tabs coming back.
