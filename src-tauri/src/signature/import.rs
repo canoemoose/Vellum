@@ -2,7 +2,10 @@
 //! crop to the ink and return a PNG with alpha.
 //!
 //! The steps:
-//! 1. Decode, turn upright from the EXIF orientation, and shrink anything huge to a working size.
+//! 1. Decode, turn upright from the EXIF orientation, apply the user's framing (quarter turns,
+//!    straightening, crop: `Adjust`, chosen on a preview first), and shrink anything huge to a
+//!    working size. Cropping comes before the shrink, so a small signature in a big photo keeps
+//!    its full resolution.
 //! 2. Estimate the paper's colour everywhere: per block, the brightest tenth of pixels, then
 //!    interpolated between block centres. Phone photos light paper unevenly (a gradient, the
 //!    shadow of the phone), so a single threshold would either eat the ink in the shadow or keep
@@ -20,7 +23,7 @@
 //! 6. Crop to the ink with a small margin and cap the size.
 
 use crate::errcode;
-use image::{DynamicImage, ImageDecoder, ImageReader, Rgb, RgbImage, Rgba, RgbaImage};
+use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageReader, Rgb, RgbImage, Rgba, RgbaImage};
 use std::io::Cursor;
 
 /// Photos are shrunk to this longest side before the knock-out (a 48 MP photo is no better a
@@ -45,10 +48,36 @@ pub struct Imported {
     /// tests and diagnostics.
     pub origin: (i64, i64),
     pub scale: f64,
-    /// The working image's scale against the decoded (oriented) original: 1 unless the
-    /// original was larger than `MAX_WORK_SIDE`.
+    /// The working image's scale against the framed image (oriented, turned, straightened and
+    /// cropped): 1 unless that was larger than `MAX_WORK_SIDE`.
     pub work_scale: f64,
 }
+
+/// How the user framed the photo before the paper is knocked out. All of it happens on the
+/// upright (EXIF-oriented) image, in this order: quarter turns, straightening, crop.
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Adjust {
+    /// Quarter turns clockwise (larger values wrap).
+    pub turns: u8,
+    /// Straightening, in degrees clockwise, about the centre of the turned image. The frame
+    /// keeps the turned image's size: what turns out of it is lost, and what turns in from
+    /// beyond the photo's edge repeats the edge (paper, usually, which knocks out).
+    pub angle: f64,
+    /// The part to keep, as fractions of the frame (0 to 1). None keeps all of it.
+    pub crop: Option<Crop>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+pub struct Crop {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// The longest side of the preview the framing is chosen on.
+pub const PREVIEW_SIDE: u32 = 2048;
 
 /// Import a file from disk.
 pub fn import_file(path: &str) -> Result<Imported, String> {
@@ -56,9 +85,21 @@ pub fn import_file(path: &str) -> Result<Imported, String> {
     import_bytes(&bytes)
 }
 
-/// Import an encoded image (JPEG, PNG, WebP, TIFF, BMP, GIF).
+/// Import a file from disk, framed as the user chose.
+pub fn import_file_adjusted(path: &str, adjust: &Adjust) -> Result<Imported, String> {
+    let bytes = std::fs::read(path).map_err(|e| errcode::io(&e, format!("{path}: {e}")))?;
+    import_bytes_adjusted(&bytes, adjust)
+}
+
+/// Import an encoded image (JPEG, PNG, WebP, TIFF, BMP, GIF; HEIC through WIC), all of it.
 pub fn import_bytes(bytes: &[u8]) -> Result<Imported, String> {
+    import_bytes_adjusted(bytes, &Adjust::default())
+}
+
+/// Import an encoded image, framed as the user chose.
+pub fn import_bytes_adjusted(bytes: &[u8], adjust: &Adjust) -> Result<Imported, String> {
     let img = load_oriented(bytes)?;
+    let img = DynamicImage::ImageRgb8(frame(&on_white(&img), adjust));
     let (w, h) = (img.width(), img.height());
     if w < MIN_SIDE || h < MIN_SIDE {
         return Err(errcode::coded("signature_too_small", format!("image is {w} x {h}")));
@@ -72,10 +113,98 @@ pub fn import_bytes(bytes: &[u8]) -> Result<Imported, String> {
     } else {
         (img, 1.0)
     };
-    let work = on_white(&img);
+    let work = img.to_rgb8();
     let mut out = knock_out(&work)?;
     out.work_scale = work_scale;
     Ok(out)
+}
+
+/// The upright picture, shrunk to `PREVIEW_SIDE` and encoded as JPEG, for choosing the framing
+/// on (the webview can't show HEIC, and a 48 MP photo is a lot to send). Returns the JPEG and
+/// the full-size picture's width and height.
+pub fn preview_file(path: &str) -> Result<(Vec<u8>, u32, u32), String> {
+    let bytes = std::fs::read(path).map_err(|e| errcode::io(&e, format!("{path}: {e}")))?;
+    preview_bytes(&bytes)
+}
+
+pub fn preview_bytes(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
+    let img = load_oriented(bytes)?;
+    let (w, h) = (img.width(), img.height());
+    if w < MIN_SIDE || h < MIN_SIDE {
+        return Err(errcode::coded("signature_too_small", format!("image is {w} x {h}")));
+    }
+    let rgb = on_white(&img);
+    let rgb = if w.max(h) > PREVIEW_SIDE {
+        let s = PREVIEW_SIDE as f64 / w.max(h) as f64;
+        let nw = ((w as f64 * s).round() as u32).max(1);
+        let nh = ((h as f64 * s).round() as u32).max(1);
+        image::imageops::resize(&rgb, nw, nh, image::imageops::FilterType::Triangle)
+    } else {
+        rgb
+    };
+    let mut buf = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut Cursor::new(&mut buf), 88)
+        .write_image(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
+        .map_err(|e| format!("JPEG encode failed: {e}"))?;
+    Ok((buf, w, h))
+}
+
+/// Apply the user's framing (see `Adjust`) to an upright image.
+pub fn frame(img: &RgbImage, a: &Adjust) -> RgbImage {
+    let turned = match a.turns % 4 {
+        1 => image::imageops::rotate90(img),
+        2 => image::imageops::rotate180(img),
+        3 => image::imageops::rotate270(img),
+        _ => img.clone(),
+    };
+    let (fw, fh) = (turned.width() as f64, turned.height() as f64);
+    // The crop in whole pixels, inside the frame, at least a pixel each way.
+    let (cx, cy, cw, ch) = match a.crop {
+        Some(c) if [c.x, c.y, c.w, c.h].iter().all(|v| v.is_finite()) => {
+            let x0 = (c.x.clamp(0.0, 1.0) * fw).round().min(fw - 1.0);
+            let y0 = (c.y.clamp(0.0, 1.0) * fh).round().min(fh - 1.0);
+            let x1 = ((c.x + c.w).clamp(0.0, 1.0) * fw).round();
+            let y1 = ((c.y + c.h).clamp(0.0, 1.0) * fh).round();
+            (x0, y0, (x1 - x0).max(1.0), (y1 - y0).max(1.0))
+        }
+        _ => (0.0, 0.0, fw, fh),
+    };
+    let angle = if a.angle.is_finite() { a.angle } else { 0.0 };
+    if angle.abs() < 1e-3 {
+        if (cx, cy, cw, ch) == (0.0, 0.0, fw, fh) {
+            return turned;
+        }
+        return image::imageops::crop_imm(&turned, cx as u32, cy as u32, cw as u32, ch as u32).to_image();
+    }
+    // Straighten: each output pixel's centre, in the frame, turned back by the angle about the
+    // frame's centre, is where it comes from in the turned image (sampled bilinearly, edges
+    // repeated).
+    let (sin, cos) = (-angle.to_radians()).sin_cos();
+    let (mx, my) = (fw / 2.0, fh / 2.0);
+    let (ow, oh) = (cw as u32, ch as u32);
+    let (tw, th) = (turned.width() as i64, turned.height() as i64);
+    let px = |x: i64, y: i64| turned.get_pixel(x.clamp(0, tw - 1) as u32, y.clamp(0, th - 1) as u32);
+    let mut out = RgbImage::new(ow, oh);
+    for oy in 0..oh {
+        for ox in 0..ow {
+            let dx = cx + ox as f64 + 0.5 - mx;
+            let dy = cy + oy as f64 + 0.5 - my;
+            let sx = mx + dx * cos - dy * sin - 0.5;
+            let sy = my + dx * sin + dy * cos - 0.5;
+            let (fx, fy) = (sx.floor(), sy.floor());
+            let (tx, ty) = ((sx - fx) as f32, (sy - fy) as f32);
+            let (x0, y0) = (fx as i64, fy as i64);
+            let (a, b, c, d) = (px(x0, y0), px(x0 + 1, y0), px(x0, y0 + 1), px(x0 + 1, y0 + 1));
+            let mut v = [0u8; 3];
+            for i in 0..3 {
+                let top = a[i] as f32 + (b[i] as f32 - a[i] as f32) * tx;
+                let bot = c[i] as f32 + (d[i] as f32 - c[i] as f32) * tx;
+                v[i] = (top + (bot - top) * ty).round() as u8;
+            }
+            out.put_pixel(ox, oy, Rgb(v));
+        }
+    }
+    out
 }
 
 /// Decode an image and turn it upright from its EXIF orientation (phone photos are stored
@@ -167,16 +296,16 @@ struct Paper {
 }
 
 impl Paper {
-    fn estimate(img: &RgbImage) -> Paper {
+    /// `reach`: the closing radius as a fraction of the long side (see `REACH`).
+    fn estimate(img: &RgbImage, reach: f32) -> Paper {
         let (w, h) = (img.width() as usize, img.height() as usize);
         let long = w.max(h);
         // Cells: at most ~600 along the long side.
         let block = long.div_ceil(600).max(1);
         let gw = w.div_ceil(block);
         let gh = h.div_ceil(block);
-        // The closing radius: 0.8% of the long side, so strokes up to ~1.6% of it wide (a
-        // felt tip) vanish, and at least 4 pixels.
-        let radius_px = (long as f32 * 0.008).max(4.0);
+        // The closing radius: strokes up to twice it wide vanish; at least 4 pixels.
+        let radius_px = (long as f32 * reach).max(4.0);
         let r = (radius_px / block as f32).ceil() as usize;
         let mut chans = [vec![0f32; gw * gh], vec![0f32; gw * gh], vec![0f32; gw * gh]];
         let mut counts = vec![0u32; gw * gh];
@@ -300,11 +429,31 @@ fn dbin(d: f32) -> usize {
     (((d - DLO) / (DHI - DLO)) * DBINS as f32).clamp(0.0, (DBINS - 1) as f32) as usize
 }
 
+/// The paper estimate's closing radius, as a fraction of the picture's long side, tried in
+/// turn. 0.8% erases strokes up to ~1.6% of the long side wide (a felt tip on a whole photo)
+/// and follows a phone's shadow closely. A picture cropped tight round a signature in marker
+/// has strokes wider than that, which the first pass takes for paper and finds no ink; the
+/// second, wider pass catches those (a tight crop has little shadow to follow).
+const REACH: [f32; 2] = [0.008, 0.03];
+
 /// Knock the paper out of an upright RGB image. See the module comment for the method.
 pub fn knock_out(img: &RgbImage) -> Result<Imported, String> {
+    let mut first_err = None;
+    for reach in REACH {
+        match knock_out_with(img, reach) {
+            Ok(out) => return Ok(out),
+            Err(e) => {
+                first_err.get_or_insert(e);
+            }
+        }
+    }
+    Err(first_err.unwrap())
+}
+
+fn knock_out_with(img: &RgbImage, reach: f32) -> Result<Imported, String> {
     let (w, h) = (img.width() as usize, img.height() as usize);
     let n = w * h;
-    let paper = Paper::estimate(img);
+    let paper = Paper::estimate(img, reach);
 
     // Darkness against the local paper, on a 3x3-smoothed luminance (takes the edge off
     // sensor noise; a pen stroke is several pixels wide in any usable photo).
@@ -460,8 +609,10 @@ struct Mark {
 /// little to be a signature.
 fn filter_marks(alpha: &mut [f32], w: usize, h: usize) -> bool {
     let n = w * h;
-    // A pen stroke is well under 3% of the photo's short side (a felt tip is about 1.5%).
-    let max_thick = (w.min(h) as f32 * 0.03).max(10.0);
+    // A pen stroke is well under 3% of the photo's short side (a felt tip is about 1.5%) or 2%
+    // of its long side (a picture cropped to a signature is short: a felt tip on one 60 mm
+    // wide is about 1.5% of that). Curves and diagonals measure up to ~1.5 times their width.
+    let max_thick = (w.min(h) as f32 * 0.03).max(w.max(h) as f32 * 0.02).max(10.0);
     let mut seen = vec![false; n];
     let mut stack = Vec::new();
     let mut members = Vec::new();
@@ -499,25 +650,32 @@ fn filter_marks(alpha: &mut [f32], w: usize, h: usize) -> bool {
         marks.push(Mark { first, area, max_alpha, thick: 2.0 * area as f32 / boundary.max(1) as f32 });
     }
 
-    let inky = |m: &Mark| m.max_alpha >= 0.6 && m.thick <= max_thick;
-    // The pen's width, from the biggest mark that looks like ink (the signature's main
-    // stroke). A dot from that pen is at least about its width squared; dust is smaller.
-    let pen = marks.iter().filter(|m| inky(m)).max_by_key(|m| m.area).map(|m| m.thick).unwrap_or(0.0);
-    let min_area = ((0.6 * pen * pen) as usize).max(20);
-    let mut kept = 0;
-    for m in &marks {
-        let keep = inky(m) && m.area >= min_area;
-        if keep {
-            kept += m.area;
-        } else {
-            for &i in &members[m.first..m.first + m.area] {
-                alpha[i] = 0.0;
-            }
-        }
-    }
+    // Which marks to keep, with blobs over `max_thick` dropped.
+    let choose = |max_thick: f32| -> (Vec<bool>, usize) {
+        let inky = |m: &Mark| m.max_alpha >= 0.6 && m.thick <= max_thick;
+        // The pen's width, from the biggest mark that looks like ink (the signature's main
+        // stroke). A dot from that pen is at least about its width squared; dust is smaller.
+        let pen = marks.iter().filter(|m| inky(m)).max_by_key(|m| m.area).map(|m| m.thick).unwrap_or(0.0);
+        let min_area = ((0.6 * pen * pen) as usize).max(20);
+        let keep: Vec<bool> = marks.iter().map(|m| inky(m) && m.area >= min_area).collect();
+        let kept = marks.iter().zip(&keep).filter(|(_, k)| **k).map(|(m, _)| m.area).sum();
+        (keep, kept)
+    };
     // A signature is more than a few dots: at least 1/5000 of the picture (a 1200 x 800 photo
     // needs ~190 px of ink; a pen line 6 px wide and 32 px long).
-    kept >= (n / 5000).max(100)
+    let enough = (n / 5000).max(100);
+    let (mut keep, mut kept) = choose(max_thick);
+    if kept < enough {
+        // Nothing thin enough: a picture cropped tight round a signature in thick marker, where
+        // the pen is large against the picture. What's dark is the signature, however thick.
+        (keep, kept) = choose(f32::INFINITY);
+    }
+    for (m, _) in marks.iter().zip(&keep).filter(|(_, k)| !**k) {
+        for &i in &members[m.first..m.first + m.area] {
+            alpha[i] = 0.0;
+        }
+    }
+    kept >= enough
 }
 
 /// The ink's colour: the per-channel median of the core ink's reflectance (pixel over paper,

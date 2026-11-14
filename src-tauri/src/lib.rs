@@ -474,6 +474,7 @@ pub fn run() {
             print::print_cancel,
             // End WP-Print
             // Signatures
+            signature::signature_preview,
             signature::signature_import,
             signature::signature_list,
             signature::signature_add,

@@ -17,11 +17,32 @@ fn library(app: &tauri::AppHandle) -> Result<Library, String> {
     Ok(Library::new(dir.join("signatures")))
 }
 
-/// Knock the paper out of a photo or scan. Returns the PNG (binary, not JSON).
+/// The upright picture as a JPEG, for choosing the framing on (binary, not JSON).
 #[tauri::command]
-pub async fn signature_import(path: String) -> Result<tauri::ipc::Response, String> {
+pub async fn signature_preview(path: String) -> Result<tauri::ipc::Response, String> {
     let t = Instant::now();
-    let r = tauri::async_runtime::spawn_blocking(move || import::import_file(&path))
+    let r = tauri::async_runtime::spawn_blocking(move || import::preview_file(&path))
+        .await
+        .map_err(|e| e.to_string())?;
+    match &r {
+        Ok((jpeg, w, h)) => eprintln!(
+            "[signature] preview of {w}x{h}: {} KB in {} ms",
+            jpeg.len() / 1024,
+            t.elapsed().as_millis()
+        ),
+        Err(e) => eprintln!("[signature] preview failed: {e}"),
+    }
+    r.map(|(jpeg, _, _)| tauri::ipc::Response::new(jpeg))
+}
+
+/// Knock the paper out of a photo or scan, framed as chosen on the preview (none: the whole
+/// picture). Returns the PNG (binary, not JSON).
+#[tauri::command]
+pub async fn signature_import(path: String, adjust: Option<import::Adjust>) -> Result<tauri::ipc::Response, String> {
+    let t = Instant::now();
+    let adjust = adjust.unwrap_or_default();
+    eprintln!("[signature] import with {adjust:?}");
+    let r = tauri::async_runtime::spawn_blocking(move || import::import_file_adjusted(&path, &adjust))
         .await
         .map_err(|e| e.to_string())?;
     match &r {

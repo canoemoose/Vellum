@@ -264,6 +264,10 @@ fn blank_paper_is_no_ink() {
     let p = photo(&Opts { stroke: false, ..Opts::default() });
     let e = import::import_bytes(&to_png(&p.img)).unwrap_err();
     assert!(e.starts_with("[signature_no_ink]"), "{e}");
+    // Nor is a desk at the edge taken for a signature when there's nothing else.
+    let p = photo(&Opts { stroke: false, desk: true, ..Opts::default() });
+    let e = import::import_bytes(&to_png(&p.img)).unwrap_err();
+    assert!(e.starts_with("[signature_no_ink]"), "{e}");
 }
 
 #[test]
