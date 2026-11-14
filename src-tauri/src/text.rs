@@ -53,6 +53,22 @@ impl PageFrame {
     }
 }
 
+/// A page's frame as the front end gets it (`doc_page_frame`).
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameInfo {
+    /// /Rotate in quarter turns clockwise.
+    pub quarter_turns: i32,
+    /// The visible page box in user space: left, bottom, right, top.
+    pub bbox: [f64; 4],
+}
+
+impl From<PageFrame> for FrameInfo {
+    fn from(f: PageFrame) -> Self {
+        Self { quarter_turns: f.quarter_turns, bbox: f.bbox }
+    }
+}
+
 /// The frame of a loaded page.
 pub fn page_frame(b: &dyn PdfiumLibraryBindings, page: FPDF_PAGE) -> PageFrame {
     let mut r = FS_RECTF { left: 0.0, top: 0.0, right: 0.0, bottom: 0.0 };
@@ -254,6 +270,20 @@ fn web_links(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, frame: &PageFrame
     out
 }
 
+/// An annotation's string value (UTF-16 from PDFium).
+fn annot_string(b: &dyn PdfiumLibraryBindings, a: FPDF_ANNOTATION, key: &str) -> String {
+    let need = unsafe { b.FPDFAnnot_GetStringValue(a, key, std::ptr::null_mut(), 0) } as usize;
+    if need <= 2 {
+        return String::new();
+    }
+    let mut buf = vec![0u16; need / 2];
+    unsafe { b.FPDFAnnot_GetStringValue(a, key, buf.as_mut_ptr(), need as c_ulong) };
+    while buf.last() == Some(&0) {
+        buf.pop();
+    }
+    String::from_utf16_lossy(&buf)
+}
+
 /// Text on one line for the results list.
 fn one_line(s: String) -> String {
     s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
@@ -273,6 +303,72 @@ fn text_range(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, start: i32, coun
 }
 
 impl PdfiumState {
+    /// A page's frame (rotation and page box).
+    pub fn page_frame(&self, doc_id: u64, page: usize) -> Result<FrameInfo, String> {
+        let w = self.page_worker(page)?;
+        self.run_on_worker_index(w, move |ctx| {
+            let b = ctx.bindings();
+            let p = ctx.page(doc_id, page)?;
+            Ok(page_frame(b, p).into())
+        })?
+    }
+
+    /// Set or clear the Hidden flag on the annotations with these /NM values, on every worker's
+    /// copy of the document. A parsed page picks the flag up on its next render. Returns how
+    /// many annotations matched on one worker.
+    pub fn hide_annots(&self, doc_id: u64, page: usize, nms: Vec<String>, hidden: bool) -> Result<usize, String> {
+        const HIDDEN: i32 = 2;
+        let mut matched = 0;
+        for w in 0..self.worker_count()? {
+            let nms = nms.clone();
+            matched = self.run_on_worker_index(w, move |ctx| -> Result<usize, String> {
+                let b = ctx.bindings();
+                let p = ctx.page(doc_id, page)?;
+                let mut n = 0;
+                let count = unsafe { b.FPDFPage_GetAnnotCount(p) }.max(0);
+                for i in 0..count {
+                    let a = unsafe { b.FPDFPage_GetAnnot(p, i) };
+                    if a.is_null() {
+                        continue;
+                    }
+                    let nm = annot_string(b, a, "NM");
+                    if nms.iter().any(|x| *x == nm) {
+                        let f = unsafe { b.FPDFAnnot_GetFlags(a) };
+                        let f = if hidden { f | HIDDEN } else { f & !HIDDEN };
+                        unsafe { b.FPDFAnnot_SetFlags(a, f) };
+                        n += 1;
+                    }
+                    unsafe { b.FPDFPage_CloseAnnot(a) };
+                }
+                Ok(n)
+            })??;
+        }
+        Ok(matched)
+    }
+
+    /// Wait until every worker has finished what was queued before this call (e.g. a Close).
+    pub fn wait_idle(&self) -> Result<(), String> {
+        for w in 0..self.worker_count()? {
+            self.run_on_worker_index(w, |_| ())?;
+        }
+        Ok(())
+    }
+
+    /// Rewrite a PDF through PDFium (open from memory, save as a whole new file): repairs
+    /// broken cross-reference data so an update can be appended to the result.
+    pub fn rewrite(&self, bytes: Vec<u8>, password: Option<String>) -> Result<Vec<u8>, String> {
+        self.run_on_worker(move |ctx| {
+            let b = ctx.bindings();
+            let doc = unsafe { b.FPDF_LoadMemDocument64(&bytes, password.as_deref()) };
+            if doc.is_null() {
+                return Err(crate::errcode::coded("read_failed", "PDFium couldn't read the file to repair it"));
+            }
+            let out = crate::print::compose::save(b, doc);
+            unsafe { b.FPDF_CloseDocument(doc) };
+            out
+        })?
+    }
+
     /// The worker that renders this page's small regions, so its parsed page is reused.
     fn page_worker(&self, page: usize) -> Result<usize, String> {
         Ok(page % self.worker_count()?.max(1))

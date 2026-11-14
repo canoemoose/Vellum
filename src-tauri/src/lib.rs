@@ -1,3 +1,4 @@
+pub mod annot; // editing: markups saved as annotations
 pub mod docs;
 pub mod errcode;
 pub mod imagedoc;
@@ -453,6 +454,19 @@ pub fn run() {
             shell::shell_take_pending,
             shell::reveal_in_explorer,
             shell::open_url,
+            // editing: saving markups
+            annot::commands::annot_inspect,
+            annot::commands::annot_prepare,
+            annot::commands::annot_commit,
+            annot::commands::annot_discard,
+            annot::commands::file_stamp,
+            annot::commands::doc_close_wait,
+            annot::commands::doc_page_frame,
+            annot::commands::doc_hide_annots,
+            annot::commands::recovery_write,
+            annot::commands::recovery_read,
+            annot::commands::recovery_delete,
+            annot::commands::user_display_name,
             shell::open_notices,
             snap::snap_max_button,
             // WP-Shell end

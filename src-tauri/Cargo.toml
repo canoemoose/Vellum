@@ -35,6 +35,10 @@ jpeg-decoder = { version = "0.3", default-features = false }
 moxcms = { version = "0.8", features = ["options"] }
 # WP-Shell: a second launch hands its file to the running window (Explorer "Open with").
 tauri-plugin-single-instance = "2"
+# Editing: appends markups to PDFs as annotations (incremental update). Chosen and proven in
+# phase 0 (docs/editing-scope.md). Pinned to the minor version: the writer relies on its
+# incremental-save and re-encryption behaviour; re-run tests/annot.rs on any upgrade.
+lopdf = { version = "~0.47", default-features = false }
 # In-app updates from GitHub Releases (docs/release-pipeline-scope.md).
 tauri-plugin-updater = "2"
 
@@ -51,6 +55,9 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_WindowsAndMessaging",
   # text.rs links: ShellExecuteW hands a web address to the default browser.
   "Win32_UI_Shell",
+  # annot/commands.rs: the account's display name for markups' author (GetUserNameExW).
+  "Win32_Security",
+  "Win32_Security_Authentication_Identity",
 ] }
 
 # WP-Print: printer enumeration, capabilities and GDI output (StartDoc / StretchDIBits), and

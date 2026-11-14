@@ -261,6 +261,22 @@ impl Docs {
         }
     }
 
+    /// A page's frame (images: their own size, no rotation).
+    pub fn page_frame(&self, pdf: &PdfiumState, doc_id: u64, page: usize) -> Result<crate::text::FrameInfo, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.page_frame(doc_id, page),
+            EntryRef::Image(_) => Err("images have no PDF page".into()),
+        }
+    }
+
+    /// Hide or show annotations by /NM (PDFs only).
+    pub fn hide_annots(&self, pdf: &PdfiumState, doc_id: u64, page: usize, nms: Vec<String>, hidden: bool) -> Result<usize, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.hide_annots(doc_id, page, nms, hidden),
+            EntryRef::Image(_) => Ok(0),
+        }
+    }
+
     /// Search hits on one page (none for images).
     pub fn search_page(
         &self, pdf: &PdfiumState, doc_id: u64, page: usize, query: String, match_case: bool, whole_word: bool,
