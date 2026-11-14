@@ -121,7 +121,7 @@
 
   // Redraw whenever the framing or the view changes.
   $effect(() => {
-    void [adj.turns, adj.angle, adj.crop.x, adj.crop.y, adj.crop.w, adj.crop.h, view.scale, view.x, view.y, straightening];
+    void [adj.turns, adj.angle, adj.crop.x, adj.crop.y, adj.crop.w, adj.crop.h, view.scale, view.rot, view.x, view.y, straightening];
     draw();
   });
 
