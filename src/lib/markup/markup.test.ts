@@ -4,7 +4,7 @@ import { pdfString, textWidth, wrap } from "./helvetica";
 import { opsBounds, opsFor, signedArea, textLines, type PathOp, type TextOp } from "./ops";
 import { type Frame, toContent, toPage, toUser, n } from "./pdf";
 import { pdfDate, toSpec } from "./spec";
-import { dragHandle, handleAt, handles, hits, insideMarquee, moveBy, shapeBounds, simplify, snapAngle } from "./geometry";
+import { dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, shapeBounds, simplify, snapAngle } from "./geometry";
 import { History, changesFor, isDirty } from "./history";
 
 const meta = { author: "Matt James", created: "2026-11-14T12:00:00.000Z", modified: "2026-11-14T12:30:00.000Z" };
@@ -245,6 +245,19 @@ describe("geometry", () => {
     // Shift keeps the 2:1 proportions.
     const prop = dragHandle(rect(), "se", [300, 160], true) as Extract<Markup, { kind: "rect" }>;
     expect((prop.rect[2] - prop.rect[0]) / (prop.rect[3] - prop.rect[1])).toBeCloseTo(2);
+  });
+
+  it("gives handles arrow cursors along their direction on screen, never a hand", () => {
+    expect(handleCursor("n", 0)).toBe("ns-resize");
+    expect(handleCursor("e", 0)).toBe("ew-resize");
+    expect(handleCursor("nw", 0)).toBe("nwse-resize");
+    expect(handleCursor("ne", 0)).toBe("nesw-resize");
+    // A quarter turn swaps them.
+    expect(handleCursor("n", 90)).toBe("ew-resize");
+    expect(handleCursor("nw", 270)).toBe("nesw-resize");
+    expect(handleCursor("se", 180)).toBe("nwse-resize");
+    expect(handleCursor("to", 0)).toBe("move");
+    expect(handleCursor("v3", 90)).toBe("move");
   });
 
   it("moves, snaps lines to 15 degrees and scales ink", () => {

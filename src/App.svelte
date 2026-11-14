@@ -23,6 +23,7 @@
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, MarkupKind, Style, TextStyle } from "./lib/markup/types";
   import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unsavedMessage } from "./lib/shell/save";
+  import type { Dock } from "./lib/shell/dock";
   import { invoke } from "@tauri-apps/api/core";
   import type { SearchView } from "./lib/components/SearchResults.svelte";
   import { TextTool } from "./lib/engine/textTool";
@@ -251,15 +252,24 @@
     return { kinds, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? KIND_LABEL[sel[0].kind] : `${sel.length} markups selected` };
   });
 
-  function stripStyle(patch: Partial<Style>) {
+  /** The properties bar's dock while it's being dragged (saved when let go). */
+  let liveDock = $state<Dock | null>(null);
+
+  function stripStyle(patch: Partial<Style>, live = false) {
     const mt = markupTool;
     if (!mt || !strip) return;
+    // A slider being dragged: show it on the markups, but remember nothing until it's let go.
+    if (live) {
+      mt.preview(patch);
+      return;
+    }
     // Each tool remembers its last style; restyling a markup also sets it for its tool.
     const next = { ...settings.markup.styles };
     for (const k of strip.kinds) next[k] = { ...styleFor(settings.markup, k), ...patch };
     settings.markup = { ...settings.markup, styles: next };
     save();
-    if (mt.tool === "select") mt.restyle(patch);
+    // The selection: what is picked out, or with a drawing tool, the shape just drawn.
+    mt.restyle(patch);
     markVersion++;
   }
 
@@ -268,7 +278,7 @@
     if (!mt) return;
     settings.markup = { ...settings.markup, text: { ...settings.markup.text, ...patch } };
     save();
-    if (mt.tool === "select") mt.restyle({}, patch);
+    mt.restyle({}, patch);
     markVersion++;
   }
 
@@ -1607,7 +1617,18 @@
       {#if chrome && strip}
         <!-- Floats over the top of the canvas: showing or hiding it never resizes the canvas,
              so the drawing doesn't move under the pointer. -->
-        <PropertiesStrip kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label} onStyle={stripStyle} onText={stripText} />
+        <PropertiesStrip
+          kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label}
+          dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
+          onStyle={stripStyle} onText={stripText}
+          onDock={(d, done) => {
+            liveDock = done ? null : d;
+            if (done) {
+              settings.markup = { ...settings.markup, dock: d };
+              save();
+            }
+          }}
+        />
       {/if}
       {#if editor}
         {#key editor.id}

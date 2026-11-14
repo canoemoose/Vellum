@@ -227,3 +227,17 @@ export function simplify(pts: Pt[], tol: number): Pt[] {
   const b = simplify(pts.slice(idx), tol);
   return [...a.slice(0, -1), ...b];
 }
+
+/**
+ * The cursor for a handle: the resize arrows along its direction on screen (swapped when the
+ * view is turned a quarter turn), or the four-way move arrows for a point (an arrow's end, a
+ * cloud's corner). Never a hand: that means panning.
+ */
+export function handleCursor(h: HandleId, viewRotation: number): string {
+  if (!/^(nw|ne|se|sw|n|s|e|w)$/.test(h)) return "move";
+  const quarter = (((Math.round(viewRotation / 90) % 4) + 4) % 4) % 2 === 1;
+  if (h === "n" || h === "s") return quarter ? "ew-resize" : "ns-resize";
+  if (h === "e" || h === "w") return quarter ? "ns-resize" : "ew-resize";
+  const diagonal = h === "nw" || h === "se";
+  return diagonal !== quarter ? "nwse-resize" : "nesw-resize";
+}

@@ -198,6 +198,31 @@ describe("selecting and editing", () => {
     expect(only(doc, "rect").style.width).toBe(3);
   });
 
+  it("restyles the shape just drawn, not markups picked out before the tool", async () => {
+    const { v, doc, t } = await withRect();
+    click(t, v, [100, 120]); // the rectangle is picked out
+    t.setTool("arrow");
+    expect(t.restyle({ width: 5 })).toBe(false);
+    expect(only(doc, "rect").style.width).not.toBe(5);
+    drag(t, v, [100, 200], [200, 200]);
+    expect(t.restyle({ stroke: [0, 0, 1] })).toBe(true);
+    expect(only(doc, "arrow").style.stroke).toEqual([0, 0, 1]);
+    expect(only(doc, "rect").style.stroke).not.toEqual([0, 0, 1]);
+  });
+
+  it("previews a style live and makes it one undo step when it's set", async () => {
+    const { v, doc, t } = await withRect();
+    click(t, v, [100, 120]);
+    const before = only(doc, "rect").style.opacity;
+    t.preview({ opacity: 0.8 });
+    t.preview({ opacity: 0.6 });
+    expect(only(doc, "rect").style.opacity).toBe(0.6);
+    t.restyle({ opacity: 0.5 });
+    expect(only(doc, "rect").style.opacity).toBe(0.5);
+    t.undo();
+    expect(only(doc, "rect").style.opacity).toBe(before);
+  });
+
   it("paints without errors, selection and drafts included", async () => {
     const { v, t } = await withRect();
     click(t, v, [100, 120]);

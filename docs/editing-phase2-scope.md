@@ -54,8 +54,9 @@ recovery). Opening and viewing must not get slower.
   work in Select where no markup is under the pointer.
 - History per tab: undo / redo (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z) over the tab's markups as
   snapshots.
-- Properties strip under the toolbar while a tool or markup is selected: colour, line weight
-  (points on paper), fill, opacity, dash; text size and colour. Each tool remembers its last style.
+- Properties bar, floating over the canvas while a tool or markup is selected: line colour and
+  opacity, line weight (points on paper), line pattern, fill colour and opacity; text size and
+  colour. Each tool remembers its last style. See "Properties bar" under Progress.
 - Edit lock: a padlock per tab, locked on every open. Adding and editing this session's markups
   are free; editing annotations already in the file and (later) page operations need it. On
   unlock, warn if the file is signed or forbids changes.
@@ -149,14 +150,38 @@ settings (tool styles, confirmed files, author).
   it resized the canvas and, at a fit zoom, the drawing jumped under the pointer. It now floats
   over the top of the canvas.
 
+- Properties bar, polished with Matt interactively after the run above:
+  - It floats over the canvas and docks against any edge, anywhere along it, snapping to the
+    middle; dragged by its 6-dot grip, which stays under the pointer. The dock is remembered
+    (`markup.dock` in the settings; `shell/dock.ts`).
+  - On a side it is a thin column (one swatch wide, no words) when the drawing area is tall
+    enough for the largest bar (a text box's, measured from a hidden copy), otherwise a stack of
+    labelled sections. Decided by the area, never by the tool, so it doesn't jump between tools.
+  - Every palette has the same number of swatches and ends with a custom colour
+    (`ColourPicker.svelte`: saturation and brightness, hue, hex, eyedropper).
+  - Line and fill have separate opacities (Matt's choice), each a slider under its palette
+    (beside it in the column). Fills are drawn only inside the line's inner edge, so a
+    see-through line and fill don't overlap; on clouds the fill follows each scallop. In the
+    file, `/GS0` carries both (`/CA` line, `/ca` fill) and there's no annotation-wide `/CA`.
+  - Line weight is a box that drops a slider out of the bar at right angles (quarter points
+    below 1 pt, halves to 4 pt, wholes to 20 pt; `markup/weight.ts`); the pattern is a box that
+    drops a list of six patterns the same way (`markup/dash.ts`, `shell/popout.ts`).
+  - Sliders show their value live while dragged and make one undo step when let go
+    (`MarkupTool.preview`).
+  - With a drawing tool active, a change restyles the shape just drawn as well as the next ones;
+    picking a drawing tool clears an earlier selection, so it isn't restyled by mistake.
+  - The canvas no longer takes presses on overlays (the bar, the text editor) (`input.ts`).
+
 ## Tests (for Matt)
 
 - `npm test`: the markup model (`src/lib/markup/markup.test.ts`: drawing operations, the page
   frame at every rotation, upright text on rotated pages, specs for each kind, hit-testing,
   handles, resizing, Shift constraints, simplifying pen strokes, undo, what a save changes),
   the markup tool against a stub viewer (`engine/markupTool.test.ts`: every tool, selecting,
-  moving, resizing, marquee, nudge, delete, copy and paste, text boxes), the save wording and
-  preferences (`shell/save.test.ts`).
+  moving, resizing, marquee, nudge, delete, copy and paste, text boxes, live previews, restyling
+  the shape just drawn), the save wording and preferences (`shell/save.test.ts`), the
+  properties bar's maths (`shell/dock.test.ts`, `shell/popout.test.ts`, `markup/weight.test.ts`,
+  `markup/dash.test.ts`), and colour conversion.
 - `cd src-tauri && cargo test`: `tests/annot.rs` (appending, replacing, deleting, preparing and
   renaming, changed-on-disk, hiding in PDFium, malformed files, recovery names).
 - Not covered by automated tests: the Svelte components (toolbar tools, properties strip, text
@@ -183,7 +208,9 @@ settings (tool styles, confirmed files, author).
 
 ## Not verified (for Matt)
 
-- How it all looks and feels: tool icons, the floating properties strip, handles, the text
+- Saved markups with separate line and fill opacity, and the dotted patterns, in Acrobat and
+  Edge: written to the PDF specification but not yet opened there.
+- How it all looks and feels: tool icons, the floating properties bar, handles, the text
   editor lining up with the saved text, cloud scallop size, line weights at different zooms.
 - The saved markups in Acrobat, Edge and Preview (the appearance streams are built the same way
   as phase 0's samples, now from TypeScript).

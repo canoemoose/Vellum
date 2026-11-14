@@ -7,7 +7,7 @@ import type { Viewer } from "./viewer";
 import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor, textHeight, textLines } from "../markup/ops";
-import { type HandleId, dragHandle, handleAt, handles, hits, insideMarquee, moveBy, simplify, snapAngle, squareFrom } from "../markup/geometry";
+import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, simplify, snapAngle, squareFrom } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
 
 export type Tool = "select" | MarkupKind;
@@ -71,6 +71,7 @@ export class MarkupTool {
     this.finishText();
     this.gesture = null;
     this.cloud = null;
+    this.previewBase = null;
     this.doc = doc;
     this.redraw();
   }
@@ -78,6 +79,10 @@ export class MarkupTool {
   setTool(t: Tool): void {
     this.finishText();
     this.finishCloud(false);
+    // With a drawing tool, the selection is only ever the shape just drawn (each new shape is
+    // selected), so the properties bar restyles it as well as what's drawn next. Markups picked
+    // out before switching mustn't be restyled by it.
+    if (t !== "select" && t !== this.tool) this.doc?.selection.clear();
     this.tool = t;
     this.redraw();
   }
@@ -190,18 +195,40 @@ export class MarkupTool {
     return true;
   }
 
+  /** The markups as they were before a live preview (a slider being dragged), if one is showing. */
+  private previewBase: Markup[] | null = null;
+
+  private styled(from: Markup[], sel: Set<string>, patch: Partial<Style>, text?: Partial<TextStyle>): Markup[] {
+    return from.map((m) => {
+      if (!sel.has(m.id)) return m;
+      const next = { ...m, style: { ...m.style, ...patch } } as Markup;
+      if (text && next.kind === "text") return touch(fitText({ ...next, textStyle: { ...next.textStyle, ...text } }));
+      return touch(next);
+    });
+  }
+
+  /**
+   * Show a style on the selected markups without an undo step (while a slider is dragged).
+   * The next restyle() makes it one step from where the preview started.
+   */
+  preview(patch: Partial<Style>): boolean {
+    const d = this.doc;
+    if (!d?.selection.size) return false;
+    this.previewBase ??= this.markups;
+    d.history.replace(this.styled(this.previewBase, d.selection, patch));
+    this.redraw();
+    return true;
+  }
+
   /** Change the style of the selected markups. */
   restyle(patch: Partial<Style>, text?: Partial<TextStyle>): boolean {
     const d = this.doc;
+    if (this.previewBase && d) {
+      d.history.replace(this.previewBase);
+      this.previewBase = null;
+    }
     if (!d?.selection.size) return false;
-    this.commit(
-      this.markups.map((m) => {
-        if (!d.selection.has(m.id)) return m;
-        const next = { ...m, style: { ...m.style, ...patch } } as Markup;
-        if (text && next.kind === "text") return touch(fitText({ ...next, textStyle: { ...next.textStyle, ...text } }));
-        return touch(next);
-      }),
-    );
+    this.commit(this.styled(this.markups, d.selection, patch, text));
     return true;
   }
 
@@ -363,7 +390,7 @@ export class MarkupTool {
     if (this.tool !== "select") return "crosshair";
     const g = this.gesture;
     if (g?.kind === "move") return "move";
-    if (g?.kind === "handle") return "grabbing";
+    if (g?.kind === "handle") return handleCursor(g.handle, this.viewer.rotation);
     return this.hoverCursor;
   }
 
@@ -372,8 +399,9 @@ export class MarkupTool {
     if (this.tool === "select" && this.doc) {
       const at = this.pointOn(sx, sy);
       if (at) {
-        const onHandle = this.selected().some((m) => m.page === at.page && handleAt(m, at.p, this.tolPt(HANDLE_PX)));
-        if (onHandle) c = "grab";
+        let h: HandleId | null = null;
+        for (const m of this.selected()) if (!h && m.page === at.page) h = handleAt(m, at.p, this.tolPt(HANDLE_PX));
+        if (h) c = handleCursor(h, this.viewer.rotation);
         else if (this.topAt(at.page, at.p)) c = "move";
       }
     }

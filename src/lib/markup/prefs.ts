@@ -3,6 +3,7 @@
 // if one was set by hand. Validated field by field, like the rest of the settings. Pure.
 
 import { type MarkupKind, type Rgb, type Style, type TextStyle, DEFAULT_TEXT, defaultStyle } from "./types";
+import { type Dock, DEFAULT_DOCK, sanitiseDock } from "../shell/dock";
 
 export interface MarkupPrefs {
   styles: Partial<Record<MarkupKind, Style>>;
@@ -11,13 +12,15 @@ export interface MarkupPrefs {
   confirmed: string[];
   /** Author written into markups; null means the account's display name. */
   author: string | null;
+  /** Where the floating properties bar is docked. */
+  dock: Dock;
 }
 
 export const KINDS: MarkupKind[] = ["rect", "arrow", "cloud", "text", "ink"];
 const MAX_CONFIRMED = 500;
 
 export function defaultPrefs(): MarkupPrefs {
-  return { styles: {}, text: { ...DEFAULT_TEXT }, confirmed: [], author: null };
+  return { styles: {}, text: { ...DEFAULT_TEXT }, confirmed: [], author: null, dock: { ...DEFAULT_DOCK } };
 }
 
 const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
@@ -55,6 +58,7 @@ export function sanitisePrefs(raw: unknown): MarkupPrefs {
     text: { size: num(t.size, 4, 144) ?? DEFAULT_TEXT.size, colour: rgb(t.colour) ?? DEFAULT_TEXT.colour },
     confirmed: Array.isArray(p.confirmed) ? p.confirmed.filter((x): x is string => typeof x === "string").slice(-MAX_CONFIRMED) : [],
     author: typeof p.author === "string" && p.author.trim() ? p.author.trim().slice(0, 100) : null,
+    dock: sanitiseDock(p.dock),
   };
 }
 

@@ -105,6 +105,9 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   const onPointerDown = (e: PointerEvent) => {
     const middle = e.button === 1;
     const spaceLeft = e.button === 0 && spaceHeld;
+    // Something floating over the drawing (the properties strip, a text box being typed in) takes
+    // its own presses: only presses on the canvas itself are the drawing's.
+    if (e.button === 0 && e.target !== el && !(e.target instanceof HTMLCanvasElement)) return;
     if (e.button === 0 && !spaceHeld && cb.left && (cb.hasDoc?.() ?? true)) {
       const now = performance.now();
       const again = now - lastLeft.t < DOUBLE_CLICK_MS && Math.hypot(e.clientX - lastLeft.x, e.clientY - lastLeft.y) < DOUBLE_CLICK_PX;
