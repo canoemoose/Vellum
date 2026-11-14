@@ -2,6 +2,7 @@
 // %LOCALAPPDATA%\io.github.canoemoose.vellum (the app identifier), so it survives restarts. Print presets and last
 // print settings are WP-Print's, under their own vellum.print.* keys.
 
+import { type MarkupPrefs, defaultPrefs, sanitisePrefs } from "./markup/prefs";
 import { type LayoutMode, MAX_COLUMNS, MIN_COLUMNS } from "./view/layout";
 import { type DocMemory, sanitiseDocs } from "./shell/docMemory";
 import type { Units } from "./shell/paper";
@@ -34,6 +35,8 @@ export interface Settings {
   window: WindowState | null;
   /** Look for a new version on start, at most once a day (shell/update.ts). */
   updateCheck: boolean;
+  /** Tool styles, confirmed saves, author (markup/prefs.ts). */
+  markup: MarkupPrefs;
 }
 
 export const SIDEBAR_MIN = 160;
@@ -53,6 +56,7 @@ export const DEFAULTS: Settings = {
   docs: {},
   window: null,
   updateCheck: true,
+  markup: defaultPrefs(),
 };
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -81,6 +85,7 @@ export function sanitiseSettings(raw: unknown): Settings {
         ? { x: w.x, y: w.y, w: w.w, h: w.h, maximised: w.maximised === true }
         : null,
     updateCheck: s.updateCheck !== false,
+    markup: sanitisePrefs(s.markup),
   };
 }
 
