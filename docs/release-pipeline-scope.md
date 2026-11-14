@@ -31,6 +31,10 @@ merges, so 0.2.0 reaches installed copies through the updater.
 Where the build differs from, or adds to, the design below. The design sections are left as
 scoped; this section wins where they disagree.
 
+- **CI runs on demand, not on every push** (Matt, 14 November 2026: it isn't needed unless a
+  release is being built). `ci.yml` has only a manual trigger; the Release workflow runs the
+  same type check and tests before it builds. The cost: a break is found when a tag is
+  pushed rather than when the commit is, and the tag then has to be deleted and pushed again.
 - **A shared setup step.** `.github/actions/setup` (Volta, caches, Rust, `npm ci`, PDFium) is
   used by both workflows so they can't drift. Rust comes from the runner's own rustup, not a
   third-party action.

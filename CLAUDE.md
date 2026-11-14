@@ -38,9 +38,11 @@ A `v*` tag on `main` becomes a draft GitHub Release (`.github/workflows/release.
 publishing the draft is what makes installed copies offer the update. In order:
 
 1. `node tools/set-version.mjs 0.2.0`: writes the version to every file that carries it.
-2. Commit ("Release 0.2.0"), push `main`, wait for CI.
+2. Commit ("Release 0.2.0") and push `main`.
 3. `git tag v0.2.0`, then `git push origin v0.2.0`. The Release workflow takes about 16 minutes
-   and fails at once if the tag and the version files disagree.
+   and fails at once if the tag and the version files disagree. It runs the type check and
+   every test before building, so a failure there means no draft: fix it, then delete the tag
+   (`git push origin :refs/tags/v0.2.0`, `git tag -d v0.2.0`) and tag again.
 4. On GitHub, open the draft, write the notes ("What's new" in the app opens this page), and
    publish. Or: `gh release edit v0.2.0 --draft=false --latest --notes "..."`.
 5. GitHub serves the previous version's update file for up to a minute after publishing, so
@@ -56,6 +58,8 @@ Notes:
   `src-tauri/tauri.conf.json`; changing it strands every installed copy.
 - A local `npm run tauri build` builds the installer and then fails at the signing step
   without the key. Use `-- --no-bundle` for the exe.
+- CI (`.github/workflows/ci.yml`: the same checks, no installer) runs only when asked:
+  `gh workflow run ci.yml --ref <branch>`. Pushes don't trigger it.
 - Third-party actions are pinned to commits. To update one, change the commit and the version
   comment together.
 - After changing the PDFium version in `tools/fetch-pdfium.mjs`, update `SHA256` beside it

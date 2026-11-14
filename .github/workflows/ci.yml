@@ -1,11 +1,10 @@
-# Every push to a branch and every pull request: type check, tests, and a release build
-# without bundling. See docs/release-pipeline-scope.md.
+# Type check, tests, and a release build without bundling, on demand: Actions > CI > Run
+# workflow, or `gh workflow run ci.yml --ref <branch>`. It does not run on pushes; the Release
+# workflow runs the same checks before it builds anything. See docs/release-pipeline-scope.md.
 name: CI
 
 on:
-  push:
-    branches: ["**"]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
