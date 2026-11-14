@@ -26,7 +26,8 @@ mod win {
     use ocr_spike::memory;
     use ocr_spike::ocr::Ocr;
     use ocr_spike::pdf::{Pdfium, drawing_pdf, image_only_pdf};
-    use ocr_spike::pipeline::{Options, ocr_page};
+    use ocr_spike::pipeline::{Options, Reread, ocr_region};
+    use ocr_spike::search::Mode;
     use ocr_spike::score::score;
     use ocr_spike::fixture;
     use std::io::Write;
@@ -140,6 +141,11 @@ mod win {
             jobs: a.flags.get("jobs").and_then(|v| v.parse().ok()).unwrap_or(1),
             lang: a.flags.get("lang").cloned(),
             auto_invert: !a.flags.contains_key("no-invert"),
+            reread: match a.flags.get("reread").map(|s| s.as_str()) {
+                Some("off") => Reread::Off,
+                Some("all") => Reread::All,
+                _ => Reread::Suspect,
+            },
         }
     }
 
@@ -160,11 +166,44 @@ mod win {
         println!("{name}: {} pages; turns {:?}, tile {}, overlap {}, jobs {}", doc.page_count(), base.turns, base.max_tile, base.overlap, base.jobs);
         for &pn in &pages {
             let page = doc.page(pn - 1)?;
+            if a.flags.contains_key("path-stats") {
+                let st = page.path_stats();
+                let mut hist = std::collections::BTreeMap::<u32, (usize, i64)>::new();
+                for (r, segs) in &st {
+                    let side = (r[2] - r[0]).max(r[3] - r[1]);
+                    let bucket = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 1e9].iter().position(|&b| side <= b).unwrap() as u32;
+                    let e = hist.entry(bucket).or_default();
+                    e.0 += 1;
+                    e.1 += *segs as i64;
+                }
+                let names = ["<=1", "<=2", "<=4", "<=8", "<=16", "<=32", "<=64", "<=128", ">128"];
+                for (k, (n, segs)) in hist {
+                    println!("  paths, longer side {:>5} pt: {:>6} objects, {:>8} segments", names[k as usize], n, segs);
+                }
+            }
+            if let Some(m) = a.flags.get("max-path").and_then(|v| v.parse::<f32>().ok()) {
+                let (r, k) = page.remove_large_paths(m);
+                println!("removed {r} paths longer than {m} pt, kept {k} (in memory)");
+            }
+            if a.flags.contains_key("no-paths") {
+                println!("removed {} path objects (in memory)", page.remove_paths());
+            }
             let (imgs, others) = page.object_counts();
-            let truth: Vec<TruthWord> = match &truth_doc {
+            let mut truth: Vec<TruthWord> = match &truth_doc {
                 Some(td) => td.page(pn - 1)?.truth_words(),
                 None => page.truth_words(),
             };
+            // --region x0,y0,x1,y1 (page points): OCR only that, as a marquee would.
+            let region: Option<[f32; 4]> = a.flags.get("region").map(|r| {
+                let v: Vec<f32> = list(Some(r), "");
+                [v[0], v[1], v[2], v[3]]
+            });
+            if let Some(r) = region {
+                truth.retain(|t| {
+                    let (cx, cy) = ((t.rect[0] + t.rect[2]) / 2.0, (t.rect[1] + t.rect[3]) / 2.0);
+                    cx >= r[0] && cx <= r[2] && cy >= r[1] && cy <= r[3]
+                });
+            }
             let (w, h) = page.size();
             println!(
                 "page {pn}: {:.0} x {:.0} pt, {} chars in its own text layer, {imgs} images + {others} other objects, {} truth words",
@@ -174,7 +213,20 @@ mod win {
                 let o = Options { dpi, ..base.clone() };
                 let m0 = memory::now();
                 let c0 = memory::cpu_ms();
-                let (words, st) = ocr_page(&page, &o)?;
+                let (mut words, mut st) = ocr_region(&page, region, &o)?;
+                // --clean-pass N: also OCR a second copy of the page with paths longer than N pt
+                // removed, and merge (geom::merge_clean).
+                if let Some(m) = a.flags.get("clean-pass").and_then(|v| v.parse::<f32>().ok()) {
+                    let doc2 = p.open(std::fs::read(path).map_err(|e| e.to_string())?)?;
+                    let page2 = doc2.page(pn - 1)?;
+                    let (removed, _) = page2.remove_large_paths(m);
+                    let (clean, st2) = ocr_region(&page2, region, &o)?;
+                    println!("    clean pass: removed {removed} paths over {m} pt, {} words, ocr {:.0} ms, wall {:.0} ms", clean.len(), st2.ocr_ms, st2.wall_ms);
+                    st.ocr_ms += st2.ocr_ms;
+                    st.render_ms += st2.render_ms;
+                    st.wall_ms += st2.wall_ms;
+                    words = ocr_spike::geom::merge_clean(words, clean);
+                }
                 let cpu = memory::cpu_ms() - c0;
                 let m1 = memory::now();
                 let primary: Vec<_> = words.iter().filter(|w| !w.alt).cloned().collect();
@@ -190,6 +242,15 @@ mod win {
                         "    found {}/{} ({:.1}%), near {}, ocr words {}, junk {}",
                         sc.all.found, sc.all.truth, 100.0 * sc.all.recall(), sc.all.near, sc.ocr_words, sc.junk
                     );
+                    let ss = ocr_spike::score::search_score(&truth, &words, Mode::Strict);
+                    let sf = ocr_spike::score::search_score(&truth, &words, Mode::Forgiving);
+                    println!(
+                        "    search: strict {}/{} ({:.1}%, {} stray), forgiving {}/{} ({:.1}%, {} stray)",
+                        ss.hit, ss.queries, 100.0 * ss.recall(), ss.stray, sf.hit, sf.queries, 100.0 * sf.recall(), sf.stray
+                    );
+                    if let Some(r) = &st.reread {
+                        println!("    reread: {} clusters, {} tried, {} replaced; ocr {:.0} ms, wall {:.0} ms", r.clusters, r.tried, r.replaced, r.ocr_ms, r.wall_ms);
+                    }
                     if sc_search.ocr_words != sc.ocr_words {
                         println!(
                             "    with alternates (search): found {}/{} ({:.1}%), ocr words {}, junk {}",
@@ -206,7 +267,9 @@ mod win {
                 }
                 let rec = serde_json::json!({
                     "file": name, "tag": tag, "page": pn, "dpi": dpi, "turns": o.turns, "tile": o.max_tile,
-                    "overlap": o.overlap, "jobs": o.jobs, "stats": st, "cpu_ms": cpu, "score": sc, "score_search": sc_search,
+                    "overlap": o.overlap, "jobs": o.jobs, "stats": st, "cpu_ms": cpu, "score": sc, "score_search": sc_search, "reread": format!("{:?}", o.reread), "region": region,
+                    "search_strict": ocr_spike::score::search_score(&truth, &words, Mode::Strict),
+                    "search_forgiving": ocr_spike::score::search_score(&truth, &words, Mode::Forgiving),
                     "ws_mb": m1.ws_mb, "peak_ws_mb": m1.peak_ws_mb,
                 });
                 writeln!(log, "{rec}").ok();
@@ -262,7 +325,7 @@ mod win {
             ocr_spike::pdf::save_png(&g, &out)?;
             println!("wrote {}", out.display());
         }
-        let (words, st) = ocr_page(&page, &o)?;
+        let (words, st) = ocr_region(&page, None, &o)?;
         println!("{} words, {:.0} ms", words.len(), st.wall_ms);
         for w in &words {
             println!("{:?} {:?} t{} l{}{}", w.text, w.rect.map(|v| v.round()), w.turns, w.line, if w.alt { " alt" } else { "" });

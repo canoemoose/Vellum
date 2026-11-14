@@ -218,3 +218,123 @@ pub fn merge_passes(mut words: Vec<PageWord>) -> Vec<PageWord> {
     }
     words
 }
+
+/// A word's extent along its reading direction (start, end) and across it (start, end), page
+/// points: x for the upright pass, y (reversed for text reading up) for the turned ones.
+pub fn along_across(r: &[f32; 4], turns: i32) -> ((f32, f32), (f32, f32)) {
+    match turns.rem_euclid(4) {
+        1 => ((-r[3], -r[1]), (r[0], r[2])),
+        3 => ((r[1], r[3]), (-r[2], -r[0])),
+        2 => ((-r[2], -r[0]), (-r[3], -r[1])),
+        _ => ((r[0], r[2]), (r[1], r[3])),
+    }
+}
+
+/// Runs of primary words on one line that sit close together (gaps under 1.5 times the text
+/// height): one label, dimension or code each. Indices into `words`, in reading order.
+pub fn clusters(words: &[PageWord]) -> Vec<Vec<usize>> {
+    let mut by_line: std::collections::BTreeMap<u32, Vec<usize>> = Default::default();
+    for (i, w) in words.iter().enumerate() {
+        if !w.alt {
+            by_line.entry(w.line).or_default().push(i);
+        }
+    }
+    let mut out = Vec::new();
+    for (_, mut idx) in by_line {
+        let t = words[idx[0]].turns;
+        idx.sort_by(|&a, &b| along_across(&words[a].rect, t).0.0.total_cmp(&along_across(&words[b].rect, t).0.0));
+        let mut cur: Vec<usize> = Vec::new();
+        for i in idx {
+            if let Some(&last) = cur.last() {
+                let (la, lx) = along_across(&words[last].rect, t);
+                let (a, x) = along_across(&words[i].rect, t);
+                let h = (lx.1 - lx.0).max(x.1 - x.0).max(0.1);
+                if a.0 - la.1 > 1.5 * h {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            cur.push(i);
+        }
+        if !cur.is_empty() {
+            out.push(cur);
+        }
+    }
+    out
+}
+
+/// Whether a cluster looks misread, worth reading again on its own: pieces closer than half the
+/// text height (one word read in fragments), a one- or two-character piece, an O or o touching
+/// a digit (the commonest confusion), or implausible text.
+pub fn suspect(words: &[PageWord], cluster: &[usize]) -> bool {
+    let t = words[cluster[0]].turns;
+    for k in 0..cluster.len() {
+        let w = &words[cluster[k]];
+        let chars: Vec<char> = w.text.chars().collect();
+        if chars.len() <= 2 {
+            return true;
+        }
+        for p in chars.windows(2) {
+            let o = |c: char| c == 'O' || c == 'o';
+            if (o(p[0]) && p[1].is_ascii_digit()) || (p[0].is_ascii_digit() && o(p[1])) {
+                return true;
+            }
+        }
+        if (plausibility(&w.text) as f32) < chars.len() as f32 {
+            return true;
+        }
+        if k > 0 {
+            let (la, lx) = along_across(&words[cluster[k - 1]].rect, t);
+            let (a, x) = along_across(&w.rect, t);
+            let h = (lx.1 - lx.0).max(x.1 - x.0).max(0.1);
+            if a.0 - la.1 < 0.5 * h {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The box around a set of words, page points.
+pub fn union(words: &[PageWord], idx: &[usize]) -> [f32; 4] {
+    let mut b = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+    for &i in idx {
+        let r = &words[i].rect;
+        b = [b[0].min(r[0]), b[1].min(r[1]), b[2].max(r[2]), b[3].max(r[3])];
+    }
+    b
+}
+
+/// Plausibility per character of some words (public twin of `quality`).
+pub fn text_quality(ws: &[&PageWord]) -> f32 {
+    quality(ws.iter().copied())
+}
+
+/// Whether a re-read should replace the original: it has text, it is no less plausible
+/// (within a quarter point per character), and it hasn't lost more than a quarter of the
+/// characters.
+pub fn better_reading(old: &[&PageWord], new: &[&PageWord]) -> bool {
+    if new.is_empty() {
+        return false;
+    }
+    let n = |ws: &[&PageWord]| ws.iter().map(|w| w.text.chars().count()).sum::<usize>();
+    text_quality(new) >= text_quality(old) - 0.25 && n(new) * 4 >= n(old) * 3
+}
+
+/// Merge a pass over the page with its line work removed (`clean`) into the normal pass
+/// (`base`): clean words win where they overlap a base word by more than half (the base
+/// reading becomes a search-only alternate), and base words elsewhere stay (large text and
+/// anything the filter removed). Line numbers of `clean` are shifted past `base`'s.
+pub fn merge_clean(mut base: Vec<PageWord>, mut clean: Vec<PageWord>) -> Vec<PageWord> {
+    let shift = base.iter().map(|w| w.line).max().map_or(0, |l| l + 1);
+    for w in &mut clean {
+        w.line += shift;
+    }
+    let grid_rects: Vec<[f32; 4]> = clean.iter().filter(|w| !w.alt).map(|w| w.rect).collect();
+    for b in &mut base {
+        if !b.alt && grid_rects.iter().any(|r| overlap_ratio(r, &b.rect) > 0.5) {
+            b.alt = true;
+        }
+    }
+    base.extend(clean);
+    base
+}

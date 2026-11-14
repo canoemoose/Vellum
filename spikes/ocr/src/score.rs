@@ -162,3 +162,53 @@ pub fn score(truth: &[TruthWord], ocr: &[PageWord]) -> Score {
     s.junk = ocr.iter().filter(|w| !tg.near(&w.rect).iter().any(|&i| overlap_ratio(&w.rect, &truth[i].rect) > 0.0)).count();
     s
 }
+
+/// What searching for each truth word would find.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
+pub struct SearchScore {
+    /// Truth words of two or more characters searched for.
+    pub queries: usize,
+    /// Searches with a hit on the word itself.
+    pub hit: usize,
+    /// Hits on no word of the page whose text (folded the same way) contains the query: false
+    /// hits a user would see.
+    pub stray: usize,
+}
+
+impl SearchScore {
+    pub fn recall(&self) -> f64 {
+        if self.queries == 0 { 0.0 } else { self.hit as f64 / self.queries as f64 }
+    }
+}
+
+/// Search for every truth word in the OCR words (primary and alternates, as the app would).
+pub fn search_score(truth: &[TruthWord], ocr: &[PageWord], mode: crate::search::Mode) -> SearchScore {
+    use crate::search::{fold, search};
+    let folded = |s: &str| -> String { s.chars().flat_map(|c| fold(c, mode)).collect() };
+    let tg = Grid::new(truth.iter().map(|t| &t.rect));
+    let mut s = SearchScore::default();
+    let mut seen = std::collections::HashMap::<String, Vec<[f32; 4]>>::new();
+    for t in truth {
+        let q = t.text.trim_matches(|c: char| ".,;:".contains(c));
+        if q.chars().count() < 2 {
+            continue;
+        }
+        s.queries += 1;
+        let fq = folded(q);
+        let first = !seen.contains_key(&fq);
+        let hits = seen.entry(fq.clone()).or_insert_with(|| search(ocr, q, mode)).clone();
+        if hits.iter().any(|h| crate::geom::intersection(h, &t.rect) > 0.0) {
+            s.hit += 1;
+        }
+        if first {
+            // Count false hits once per distinct query.
+            for h in &hits {
+                let real = tg.near(h).iter().any(|&i| crate::geom::intersection(h, &truth[i].rect) > 0.0 && folded(&truth[i].text).contains(&fq));
+                if !real {
+                    s.stray += 1;
+                }
+            }
+        }
+    }
+    s
+}

@@ -11,7 +11,7 @@ use ocr_spike::fixture::{self, Variant};
 use ocr_spike::geom::PageWord;
 use ocr_spike::ocr::Ocr;
 use ocr_spike::pdf::{Pdfium, drawing_pdf, image_only_pdf};
-use ocr_spike::pipeline::{Options, ocr_page};
+use ocr_spike::pipeline::{Options, Reread, ocr_page, ocr_region};
 use ocr_spike::score::{Score, score};
 
 /// PDFium is not thread-safe and the test harness runs tests on parallel threads: every test
@@ -157,4 +157,64 @@ fn parallel_ocr_finds_the_same_words() {
     let (_, a) = run(&p, bytes.clone(), None, &o1);
     let (_, b) = run(&p, bytes, None, &o4);
     assert_eq!(a.all.found, b.all.found);
+}
+
+#[test]
+fn a_marquee_reads_only_its_area() {
+    let _g = lock();
+    let Some(p) = setup() else { return };
+    let (items, lines) = fixture::layout(1, Variant::CLEAN);
+    let bytes = drawing_pdf(&p, &items, &lines, 0).unwrap();
+    let doc = p.open(bytes).unwrap();
+    let page = doc.page(0).unwrap();
+    // The title block, bottom right.
+    let (w, h) = (fixture::PAGE_W as f32, fixture::PAGE_H as f32);
+    let r = [w - 640.0, h - 140.0, w - 100.0, h - 20.0];
+    let (words, st) = ocr_region(&page, Some(r), &Options::default()).unwrap();
+    assert!(words.iter().any(|x| x.text == "FIXTURE" && !x.alt), "{words:?}");
+    for x in &words {
+        let (cx, cy) = ((x.rect[0] + x.rect[2]) / 2.0, (x.rect[1] + x.rect[3]) / 2.0);
+        assert!(cx >= r[0] - 1.0 && cx <= r[2] + 1.0 && cy >= r[1] - 1.0 && cy <= r[3] + 1.0, "{x:?} outside the marquee");
+    }
+    // 540 x 120 pt at 300 dpi is 2250 x 500 px: two tiles a pass, not the page's 48.
+    assert!(st.passes.iter().all(|p| p.tiles <= 2), "{:?}", st.passes);
+}
+
+#[test]
+fn rereading_does_not_lose_words() {
+    // Measured on the clean fixture: 41.2% without, 43.9% with.
+    let _g = lock();
+    let Some(p) = setup() else { return };
+    let (items, lines) = fixture::layout(1, Variant::CLEAN);
+    let bytes = drawing_pdf(&p, &items, &lines, 0).unwrap();
+    let off = Options { reread: Reread::Off, jobs: 4, ..Options::default() };
+    let on = Options { reread: Reread::Suspect, jobs: 4, ..Options::default() };
+    let (_, a) = run(&p, bytes.clone(), None, &off);
+    let (_, b) = run(&p, bytes, None, &on);
+    assert!(b.all.found >= a.all.found, "reread {} vs {}", b.all.found, a.all.found);
+}
+
+#[test]
+fn removing_line_work_finds_more() {
+    // Measured on the line-work fixture: 22.5% normally; 44% merged with a pass that has
+    // paths over 8 pt removed.
+    let _g = lock();
+    let Some(p) = setup() else { return };
+    let (items, lines) = fixture::layout(1, Variant::DRAWING);
+    let bytes = drawing_pdf(&p, &items, &lines, 0).unwrap();
+    let o = Options { jobs: 4, ..Options::default() };
+    let doc = p.open(bytes.clone()).unwrap();
+    let page = doc.page(0).unwrap();
+    let truth = page.truth_words();
+    let (base, _) = ocr_page(&page, &o).unwrap();
+    let doc2 = p.open(bytes).unwrap();
+    let page2 = doc2.page(0).unwrap();
+    let (removed, _) = page2.remove_large_paths(8.0);
+    assert!(removed > 2000, "removed {removed}");
+    let (clean, _) = ocr_page(&page2, &o).unwrap();
+    let prim = |ws: &[PageWord]| ws.iter().filter(|x| !x.alt).cloned().collect::<Vec<_>>();
+    let before = score(&truth, &prim(&base)).all.recall();
+    let merged = ocr_spike::geom::merge_clean(base, clean);
+    let after = score(&truth, &prim(&merged)).all.recall();
+    assert!(after > before + 0.1, "before {before:.2}, after {after:.2}");
 }

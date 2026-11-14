@@ -333,3 +333,69 @@ pub fn save_png(g: &Gray, path: &std::path::Path) -> Result<(), String> {
     }
     w.write_image_data(&packed).map_err(|e| e.to_string())
 }
+
+impl Page<'_> {
+    /// Remove every path object from this loaded page (in memory; never saved): what OCR sees
+    /// with all line work gone. Returns how many were removed.
+    pub fn remove_paths(&self) -> usize {
+        let b = self.b;
+        let mut n = 0;
+        let mut i = unsafe { b.FPDFPage_CountObjects(self.h) } - 1;
+        while i >= 0 {
+            let o = unsafe { b.FPDFPage_GetObject(self.h, i) };
+            if unsafe { b.FPDFPageObj_GetType(o) } == FPDF_PAGEOBJ_PATH as c_int && unsafe { b.FPDFPage_RemoveObject(self.h, o) } != 0 {
+                unsafe { b.FPDFPageObj_Destroy(o) };
+                n += 1;
+            }
+            i -= 1;
+        }
+        unsafe { b.FPDFPage_GenerateContent(self.h) };
+        n
+    }
+}
+
+impl Page<'_> {
+    /// Bounds (page user space, left/bottom/right/top) and segment count of every path object.
+    pub fn path_stats(&self) -> Vec<([f32; 4], i32)> {
+        let b = self.b;
+        let n = unsafe { b.FPDFPage_CountObjects(self.h) };
+        let mut out = Vec::new();
+        for i in 0..n {
+            let o = unsafe { b.FPDFPage_GetObject(self.h, i) };
+            if unsafe { b.FPDFPageObj_GetType(o) } != FPDF_PAGEOBJ_PATH as c_int {
+                continue;
+            }
+            let (mut l, mut bo, mut r, mut t) = (0f32, 0f32, 0f32, 0f32);
+            unsafe { b.FPDFPageObj_GetBounds(o, &mut l, &mut bo, &mut r, &mut t) };
+            let segs = unsafe { b.FPDFPath_CountSegments(o) };
+            out.push(([l, bo, r, t], segs));
+        }
+        out
+    }
+
+    /// Remove path objects whose longer side exceeds `max_pt` (in memory; never saved): line
+    /// work goes, glyph-sized paths (outline text) stay. Returns (removed, kept).
+    pub fn remove_large_paths(&self, max_pt: f32) -> (usize, usize) {
+        let b = self.b;
+        let (mut removed, mut kept) = (0, 0);
+        let mut i = unsafe { b.FPDFPage_CountObjects(self.h) } - 1;
+        while i >= 0 {
+            let o = unsafe { b.FPDFPage_GetObject(self.h, i) };
+            if unsafe { b.FPDFPageObj_GetType(o) } == FPDF_PAGEOBJ_PATH as c_int {
+                let (mut l, mut bo, mut r, mut t) = (0f32, 0f32, 0f32, 0f32);
+                unsafe { b.FPDFPageObj_GetBounds(o, &mut l, &mut bo, &mut r, &mut t) };
+                if (r - l).max(t - bo) > max_pt {
+                    if unsafe { b.FPDFPage_RemoveObject(self.h, o) } != 0 {
+                        unsafe { b.FPDFPageObj_Destroy(o) };
+                        removed += 1;
+                    }
+                } else {
+                    kept += 1;
+                }
+            }
+            i -= 1;
+        }
+        unsafe { b.FPDFPage_GenerateContent(self.h) };
+        (removed, kept)
+    }
+}

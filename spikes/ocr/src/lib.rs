@@ -6,6 +6,7 @@ pub mod frame;
 pub mod geom;
 pub mod image;
 pub mod score;
+pub mod search;
 
 #[cfg(windows)]
 pub mod memory;
