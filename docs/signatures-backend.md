@@ -18,12 +18,14 @@ Those are phase 5 proper, after phases 2 and 3.
 | Piece | Where | What it does |
 |---|---|---|
 | Import | `src-tauri/src/signature/import.rs` | Photo or scan in, PNG with alpha out: EXIF rotation, paper knocked out, one ink colour, cropped, capped at 1600 px. |
+| HEIC | `src-tauri/src/signature/wic.rs` | Pictures the `image` crate can't read (HEIC above all) decoded by Windows' own codecs. |
 | DPAPI | `src-tauri/src/signature/dpapi.rs` | `CryptProtectData` / `CryptUnprotectData` for the signed-in account. |
 | Library | `src-tauri/src/signature/library.rs` | One encrypted file per signature; list, add, rename, delete, get. |
 | Commands | `src-tauri/src/signature/mod.rs` | `signature_import`, `_list`, `_add`, `_rename`, `_delete`, `_get`, `_strokes`. |
 | Stroke model | `src/lib/signature/strokes.ts` | Capture, smoothing, simplification, drawing, PNG layout, SVG, stored form. Pure. |
-| IPC and PNG export | `src/lib/signature/api.ts` | Command wrappers, drawing to PNG, error messages. |
-| Pad | `src/lib/components/signature/SignaturePad.svelte` | Draw, undo, clear, import a picture, name, save. |
+| IPC and PNG export | `src/lib/signature/api.ts` | Command wrappers, drawing to PNG, recolouring an import, error messages. |
+| Ink | `src/lib/signature/ink.ts` | Ready-made inks, hex colours, recolouring pixels, the "too pale" check. Pure. |
+| Pad | `src/lib/components/signature/SignaturePad.svelte` | Draw, undo, clear, import a picture, choose the ink, name, save. |
 | Library list | `src/lib/components/signature/SignatureLibrary.svelte` | Previews and names; pick, rename, delete; unreadable files. |
 | Dev page | `signature-pad.html`, `src/dev/`, `src-tauri/tauri.signature-pad.conf.json` | Both components in the app's window, with a preview of the picked signature. |
 
@@ -31,7 +33,8 @@ Merging into `editing` (checked against 6241bc4 with `git merge-tree`): clean, n
 Neither component is in `App.svelte`. Shared files touched: `src-tauri/src/lib.rs` (one `pub mod`
 line and seven command names in `generate_handler!`, between `// Signatures` and
 `// End signatures`), `src-tauri/Cargo.toml` (one `windows-sys` feature,
-`Win32_Security_Cryptography`), `package.json` (the `dev:signatures` script).
+`Win32_Security_Cryptography`, and four `windows` features for WIC at the end of the print
+section's list), `package.json` (the `dev:signatures` script).
 
 ## How to try it (Matt)
 
@@ -52,7 +55,12 @@ alone, so the page never ships. What to look at:
   one, the vector form beside it, which should look identical.
 - **Import:** "Import a picture…" and pick a phone photo of a signature on paper (shadowed and
   uneven light is the point). It should come back as clean ink on the checkerboard, cropped
-  close. Blue biro should stay blue.
+  close. Blue biro should stay blue. Try a HEIC straight off an iPhone too: **does it come in
+  the right way up?** (See "Not covered" below.)
+- **Ink:** the swatches at the right of the pad's first row. Black and Blue, and the rainbow
+  ring is a colour picker for any other colour. The whole signature changes colour, drawn or
+  imported; an import also has "Original" (its own ink, the default). A pale colour gets a
+  warning under the pad. Saved signatures keep their colour (check the picked preview).
 - **Library:** Rename (Enter saves, Esc cancels), Delete (asks inline). Close and reopen the page:
   everything's still there.
 - **Encryption (optional):** the files are in `%APPDATA%\io.github.canoemoose.vellum\signatures\`.
@@ -61,7 +69,13 @@ alone, so the page never ships. What to look at:
 
 ## Decisions and assumptions
 
-- **Imported ink becomes one clean colour, keeping its hue.** Each pixel is painted the same ink
+- **Ink colour is a choice on the pad** (Matt, 14 November 2026: an option for imports, a
+  colour picker for drawn). One control for both: Black (default for drawn), Blue, and a colour
+  picker; an import also offers Original (its default). A signature is always one colour:
+  changing it recolours every stroke. Under APCA Lc 45 against white the pad warns the ink is
+  pale; it doesn't stop you. An import is recoloured in the browser (pixels' colour set, alpha
+  kept); a drawn one is drawn in the ink, and the colour is stored with its strokes.
+- **What "Original" means: one clean colour, keeping the ink's hue.** Each pixel is painted the same ink
   colour; only the alpha varies. The colour is the ink's measured against its local paper (so a
   warm photo doesn't tint it), darkened to a solid ink: blue biro stays dark blue, black or grey
   ink becomes near-black (`#18181c`). Why: keeping each pixel's own colour carries paper texture,
@@ -80,7 +94,7 @@ alone, so the page never ships. What to look at:
 - **Drawn signatures keep their strokes** alongside the PNG (JSON, 0.1 px precision), so phase 5
   can place them as vector paths in the Stamp's appearance stream (crisp at any zoom) rather than
   an image. The library doesn't care which is used.
-- **Pen:** one width (2.6 pad pixels, about a fine felt tip), one colour (near-black). Pressure
+- **Pen:** one width (2.6 pad pixels, about a fine felt tip). Pressure
   ignored (agreed default). Strokes are thinned (0.75 px), smoothed ([1 2 1], twice, ends
   pinned) and simplified (Ramer-Douglas-Peucker, 0.35 px), then drawn as curves through the
   midpoints: a 3000-sample loop becomes a few dozen points.
@@ -95,9 +109,14 @@ alone, so the page never ships. What to look at:
 - **Errors carry codes** (`[signature_no_ink]`, `[signature_unreadable]`, ...) like the rest of
   the app; `api.ts` maps them to messages and falls back to `shell/messages.ts`. When the pad is
   wired in, the codes can move into `messages.ts` with the others.
-- **Not in the import picker:** HEIC (iPhone's default). The `image` crate can't read it; an
-  iPhone set to "Most compatible" saves JPEG, and photos shared off the phone are usually JPEG
-  already.
+- **HEIC goes through Windows Imaging Component** (Matt: "why not?"), which uses the codecs
+  installed in Windows: no library added, nothing bundled. It needs Microsoft's "HEIF Image
+  Extensions" and "HEVC Video Extensions" (Store apps, often preinstalled; both are on this
+  machine). Without them, a HEIC import says which to install, or to save the photo as a JPEG.
+  WIC is only tried when the `image` crate can't read a file, so it also picks up JPEG XR and
+  anything else Windows has a codec for (AVIF with the AV1 extension), though only HEIC and HEIF
+  are offered in the file picker. Its orientation tag (System.Photo.Orientation) is read and
+  applied as for JPEG, and logged as a `[signature] decoded with WIC` line.
 
 ## Tests
 
@@ -108,7 +127,7 @@ npm test
 ```
 
 ```bash
-cd src-tauri && cargo test --test signature_import --test signature_library
+cd src-tauri && cargo test --test signature_import --test signature_library --test signature_wic
 ```
 
 (On the GNU-toolchain machine, `source ~/.vellum-toolchain/env.sh` first, and the build needs
@@ -138,24 +157,38 @@ For tuning the import by eye, an ignored test writes each synthetic photo and it
   list, and unreadable ones can still be deleted; ids that could escape the folder are refused;
   names are trimmed, cleaned and capped; non-PNG, oversized images and oversized strokes are
   refused.
+- *WIC and HEIC* (6 tests): a HEIC made with Windows' own encoder imports with the right crop
+  and ink (skipped, and says so, on a Windows without the HEIF/HEVC extensions); a JPEG XR
+  imports through WIC (every Windows has that codec); WIC reads a JPEG's orientation tag
+  without turning the pixels, so it's applied exactly once; a broken HEIF says what to install;
+  junk is still "not supported"; HEIF is recognised by its header.
+- *Ink* (4 tests): hex colours, recolouring (alpha kept), APCA contrast, which inks count as
+  pale (black, blue, mid grey and red pass; yellow, sky blue and pale grey are flagged).
 - *Stroke model* (20 tests): thinning, smoothing (ends pinned, jitter gone, straight stays
   straight), simplification (a straight run to its ends, a 4000-point circle to under 120 points
   within tolerance, a 100,000-point spiral without recursion), finishing (taps become dots),
   the drawing's undo and clear, bounds, the PNG layout and its caps, what gets drawn (curves,
-  lines, dots, mapping), SVG output, and the stored form's round trip and rejection of junk.
-- *Messages* (2 tests): codes to text, and the fallback.
+  lines, dots, mapping), SVG output, and the stored form's round trip (colour included; drawings stored without one read
+  as black) and rejection of junk.
+- *Messages* (2 tests): codes to text (HEIC's included), and the fallback.
 
 **Not covered by automated tests (Matt's look, above):** how drawing feels with a mouse and a
 pen, how the pad and library look, real phone photos (the fixtures are synthetic; a photo with
 glare, a crumpled sheet, ruled or squared paper, or a hard shadow edge across the signature may
 need tuning), and a file from a genuinely different Windows account (a test can't make one; DPAPI
-rejects it the same way as the other-entropy case that is tested). The Svelte components have no
+rejects it the same way as the other-entropy case that is tested), and whether a real iPhone
+HEIC comes in the right way up: the test HEIC has no rotation, and iPhones store some photos
+sideways with a rotation in the HEIF container. If Windows' decoder already turns those and also
+reports the orientation, the import would turn them twice. The log line above says what Windows
+reported, which settles it. Recolouring an import goes through a canvas, which can shift the
+colour of the faintest edge pixels by a step or two; not visible, but not exact. The Svelte components have no
 automated tests (the project has no component test set-up; their logic is in the tested
 modules).
 
 **Seen working:** `npm run dev:signatures` builds, starts, and its window comes up showing the
-dev page (the page's own script shows the window, and the title was the dev page's). Nothing was
-clicked or drawn in it: drawing, importing and the library in the real window are untried. The
+dev page (the page's own script shows the window, and the title was the dev page's), before and
+after the ink control was added. Nothing was clicked or drawn in it: drawing, importing, the ink
+control and the library in the real window are untried. The
 import's output was checked by eye on the synthetic photos: clean strokes, no shadow band, no
 specks, no desk edge.
 
@@ -171,8 +204,8 @@ specks, no desk edge.
 
 ## Open questions for Matt
 
-1. **Ink colour for imports:** keep the ink's hue (built: blue stays blue), or always make it
-   black?
-2. **Pen colour for drawn signatures:** black only (built), or offer blue as well?
-3. **HEIC:** worth adding (needs Windows' own decoder, or a library), or is "send it as JPEG"
-   enough?
+Answered 14 November 2026: ink for imports is an option (Original or another ink), drawn
+signatures get a colour picker, HEIC is in. Still open:
+
+1. **iPhone HEIC orientation:** import one taken in portrait. If it comes in sideways, send the
+   `[signature] decoded with WIC` line from the terminal.

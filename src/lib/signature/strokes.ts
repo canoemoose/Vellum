@@ -239,7 +239,7 @@ export function drawStrokes(ctx: Ctx, strokes: Stroke[], o: DrawOpts): void {
   }
 }
 
-/** Ink colour for drawn signatures: near-black, like the importer's neutral ink. */
+/** The default ink for drawn signatures: near-black, like the importer's neutral ink. */
 export const INK = "#18181c";
 /** The longest side of a drawn signature's PNG. */
 export const MAX_EXPORT_SIDE = 1600;
@@ -315,20 +315,27 @@ export function toSvg(strokes: Stroke[], penWidth = PEN_WIDTH, colour = INK): st
   );
 }
 
-/** The stored form: version, pen width, and each stroke as flat [x, y, x, y, ...] to 0.1 px. */
+/** The stored form: version, pen width, colour, and each stroke as flat [x, y, x, y, ...] to
+ * 0.1 px. `colour` is optional (absent means INK). */
 export interface StoredDrawing {
   v: 1;
   pen: number;
+  colour?: string;
   strokes: number[][];
 }
 
-export function serialise(strokes: Stroke[], penWidth = PEN_WIDTH): string {
-  const d: StoredDrawing = { v: 1, pen: penWidth, strokes: strokes.map((s) => s.flatMap((p) => [r1(p.x), r1(p.y)])) };
+export function serialise(strokes: Stroke[], penWidth = PEN_WIDTH, colour = INK): string {
+  const d: StoredDrawing = {
+    v: 1,
+    pen: penWidth,
+    colour,
+    strokes: strokes.map((s) => s.flatMap((p) => [r1(p.x), r1(p.y)])),
+  };
   return JSON.stringify(d);
 }
 
 /** Read the stored form back. Null for anything that isn't one. */
-export function parse(json: string): { strokes: Stroke[]; pen: number } | null {
+export function parse(json: string): { strokes: Stroke[]; pen: number; colour: string } | null {
   let d: unknown;
   try {
     d = JSON.parse(json);
@@ -338,6 +345,8 @@ export function parse(json: string): { strokes: Stroke[]; pen: number } | null {
   if (!d || typeof d !== "object") return null;
   const o = d as Partial<StoredDrawing>;
   if (o.v !== 1 || typeof o.pen !== "number" || !(o.pen > 0) || !Array.isArray(o.strokes)) return null;
+  const colour = o.colour === undefined ? INK : o.colour;
+  if (typeof colour !== "string" || !/^#[0-9a-f]{6}$/i.test(colour)) return null;
   const strokes: Stroke[] = [];
   for (const flat of o.strokes) {
     if (!Array.isArray(flat) || flat.length < 2 || flat.length % 2) return null;
@@ -346,5 +355,5 @@ export function parse(json: string): { strokes: Stroke[]; pen: number } | null {
     for (let i = 0; i < flat.length; i += 2) s.push({ x: flat[i], y: flat[i + 1] });
     strokes.push(s);
   }
-  return { strokes, pen: o.pen };
+  return { strokes, pen: o.pen, colour };
 }

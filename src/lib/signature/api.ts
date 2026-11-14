@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { parseError, userMessage } from "../shell/messages";
+import { recolour, type Rgb } from "./ink";
 import { drawStrokes, exportPlan, INK, serialise, type Stroke } from "./strokes";
 
 export type SignatureKind = "drawn" | "imported";
@@ -58,8 +59,13 @@ export function pngUrl(bytes: Uint8Array | number[]): string {
   return URL.createObjectURL(new Blob([b as BlobPart], { type: "image/png" }));
 }
 
+async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array | null> {
+  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/png"));
+  return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+}
+
 /** A drawing as PNG bytes (cropped to the ink, transparent background) plus its stored form. */
-export async function drawingToPng(strokes: Stroke[]): Promise<{ png: Uint8Array; json: string } | null> {
+export async function drawingToPng(strokes: Stroke[], colour = INK): Promise<{ png: Uint8Array; json: string } | null> {
   const plan = exportPlan(strokes);
   if (!plan) return null;
   const canvas = document.createElement("canvas");
@@ -67,10 +73,29 @@ export async function drawingToPng(strokes: Stroke[]): Promise<{ png: Uint8Array
   canvas.height = plan.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  drawStrokes(ctx, strokes, { colour: INK, width: plan.penWidth, map: plan.map });
-  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/png"));
-  if (!blob) return null;
-  return { png: new Uint8Array(await blob.arrayBuffer()), json: serialise(strokes) };
+  drawStrokes(ctx, strokes, { colour, width: plan.penWidth, map: plan.map });
+  const png = await canvasPng(canvas);
+  return png && { png, json: serialise(strokes, undefined, colour) };
+}
+
+/** A one-colour PNG (an imported signature) in another ink, alpha kept. */
+export async function recolourPng(png: Uint8Array, rgb: Rgb): Promise<Uint8Array> {
+  const bmp = await createImageBitmap(new Blob([png as BlobPart], { type: "image/png" }), {
+    premultiplyAlpha: "none",
+    colorSpaceConversion: "none",
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = bmp.width;
+  canvas.height = bmp.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  recolour(data.data, rgb);
+  ctx.putImageData(data, 0, 0);
+  const out = await canvasPng(canvas);
+  if (!out) throw new Error("Couldn't recolour the signature.");
+  return out;
 }
 
 const MESSAGES: Record<string, string> = {

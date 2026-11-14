@@ -6,6 +6,7 @@ import {
   drawStrokes,
   exportPlan,
   finishStroke,
+  INK,
   MAX_EXPORT_SCALE,
   MAX_EXPORT_SIDE,
   MIN_STEP,
@@ -259,8 +260,10 @@ describe("SVG and stored form", () => {
     expect(pathData([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toBe("M0 0L1 1");
   });
 
-  it("round-trips to 0.1 px", () => {
+  it("round-trips to 0.1 px, with its colour", () => {
+    expect(parse(serialise(strokes, PEN_WIDTH, "#1c3a94"))!.colour).toBe("#1c3a94");
     const back = parse(serialise(strokes))!;
+    expect(back.colour).toBe(INK);
     expect(back.pen).toBe(PEN_WIDTH);
     expect(back.strokes).toEqual([
       [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 10 }],
@@ -273,6 +276,8 @@ describe("SVG and stored form", () => {
       '{"v":1,"pen":1,"strokes":[[1]]}', '{"v":1,"pen":1,"strokes":[[1,"2"]]}', '{"v":1,"pen":1,"strokes":[[]]}']) {
       expect(parse(bad), bad).toBeNull();
     }
-    expect(parse('{"v":1,"pen":2,"strokes":[]}')).toEqual({ strokes: [], pen: 2 });
+    expect(parse('{"v":1,"pen":1,"colour":"blue","strokes":[]}')).toBeNull();
+    // Stored before colours: black.
+    expect(parse('{"v":1,"pen":2,"strokes":[]}')).toEqual({ strokes: [], pen: 2, colour: INK });
   });
 });

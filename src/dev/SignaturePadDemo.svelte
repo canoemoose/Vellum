@@ -35,7 +35,7 @@
         item,
         url: pngUrl(png),
         bytes: png.length,
-        svg: drawn ? toSvg(drawn.strokes, drawn.pen) : null,
+        svg: drawn ? toSvg(drawn.strokes, drawn.pen, drawn.colour) : null,
         points: drawn ? drawn.strokes.reduce((n, s) => n + s.length, 0) : 0,
       };
     } catch (e) {

@@ -3,15 +3,17 @@
   // knocked out in Rust), name it and save it to the library. Standalone: not wired into the
   // app yet (placing a signature needs the markup foundation). Try it with
   // `npm run dev:signatures` (docs/signatures-backend.md).
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { Drawing, drawStrokes, INK, PEN_WIDTH, type Pt } from "../../signature/strokes";
+  import { INKS, parseHex, tooLight } from "../../signature/ink";
   import {
     addSignature,
     drawingToPng,
     IMPORT_EXTENSIONS,
     importSignature,
     pngUrl,
+    recolourPng,
     signatureMessage,
     type SignatureItem,
   } from "../../signature/api";
@@ -25,7 +27,12 @@
   const drawing = new Drawing();
   /** Bumped whenever the finished strokes change, so derived state re-reads `drawing`. */
   let version = $state(0);
+  /** An imported signature: as the importer made it, and as shown (recoloured, maybe). */
   let imported = $state<{ png: Uint8Array; url: string } | null>(null);
+  let shown = $state<{ png: Uint8Array; url: string } | null>(null);
+  /** The ink: "original" (an import's own colour), a ready-made ink's id, or "custom". */
+  let choice = $state<string>("black");
+  let custom = $state("#7a1f2b");
   let name = $state("");
   let busy = $state(false);
   let error = $state("");
@@ -39,6 +46,12 @@
     void version;
     return imported === null && drawing.isEmpty;
   });
+  /** The ink in use, or null for an import's own colour. */
+  const inkHex = $derived(
+    choice === "original" ? null : choice === "custom" ? custom : (INKS.find((i) => i.id === choice)?.hex ?? INK),
+  );
+  const pale = $derived(inkHex !== null && tooLight(parseHex(inkHex) ?? [0, 0, 0]));
+
   const canUndo = $derived.by(() => {
     void version;
     return imported === null && drawing.strokes.length > 0;
@@ -51,7 +64,41 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const all = drawing.live ? [...drawing.strokes, drawing.live] : drawing.strokes;
-    drawStrokes(ctx, all, { colour: INK, width: PEN_WIDTH });
+    drawStrokes(ctx, all, { colour: inkHex ?? INK, width: PEN_WIDTH });
+  }
+
+  // The whole drawing takes the ink chosen (a signature is one colour).
+  $effect(() => {
+    void inkHex;
+    redraw();
+  });
+
+  // An import is shown, and saved, in the ink chosen. A result that's been overtaken by a
+  // later choice is dropped.
+  let recolourSeq = 0;
+  $effect(() => {
+    const src = imported;
+    const hex = inkHex;
+    const seq = ++recolourSeq;
+    if (!src) return;
+    if (hex === null) {
+      untrack(() => setShown(src)); // reads `shown`: not a dependency
+      return;
+    }
+    recolourPng(src.png, parseHex(hex)!)
+      .then((png) => {
+        if (seq === recolourSeq) setShown({ png, url: pngUrl(png) });
+      })
+      .catch((e) => {
+        console.error("[signature] recolour failed:", e);
+        if (seq === recolourSeq) error = signatureMessage(e, "change the ink");
+      });
+  });
+
+  /** Show an import's version; revokes the previous one's URL unless it's the original's. */
+  function setShown(next: { png: Uint8Array; url: string } | null) {
+    if (shown && shown !== imported && shown.url !== next?.url) URL.revokeObjectURL(shown.url);
+    shown = next;
   }
 
   function fit() {
@@ -68,6 +115,7 @@
     ro.observe(surface);
     return () => {
       ro.disconnect();
+      setShown(null);
       if (imported) URL.revokeObjectURL(imported.url);
     };
   });
@@ -125,8 +173,10 @@
 
   function clearAll() {
     drawing.clear();
+    setShown(null);
     if (imported) URL.revokeObjectURL(imported.url);
     imported = null;
+    if (choice === "original") choice = "black";
     error = "";
     version++;
     redraw();
@@ -154,6 +204,7 @@
       const png = await importSignature(path);
       clearAll();
       imported = { png, url: pngUrl(png) };
+      choice = "original";
     } catch (e) {
       console.error("[signature] import failed:", e);
       error = signatureMessage(e, "import this picture");
@@ -169,9 +220,11 @@
     try {
       let item: SignatureItem;
       if (imported) {
-        item = await addSignature(name, "imported", imported.png);
+        const png = inkHex === null ? imported.png : shown && shown !== imported ? shown.png : null;
+        if (!png) throw new Error("The ink is still being changed. Try again in a moment.");
+        item = await addSignature(name, "imported", png);
       } else {
-        const out = await drawingToPng(drawing.strokes);
+        const out = await drawingToPng(drawing.strokes, inkHex ?? INK);
         if (!out) throw new Error("Couldn't draw the signature.");
         item = await addSignature(name, "drawn", out.png, out.json);
       }
@@ -192,7 +245,7 @@
 <div class="pad" role="group" aria-label="Signature pad" tabindex="-1" onkeydown={onKey}>
   <div class="surface" class:imported={imported !== null} bind:this={surface}>
     {#if imported}
-      <img src={imported.url} alt="Imported signature" />
+      <img src={(shown ?? imported).url} alt="Imported signature" />
     {:else}
       <div class="line" aria-hidden="true"></div>
       {#if empty}
@@ -215,6 +268,25 @@
     <button class="btn small" onclick={clearAll} disabled={empty || busy}>Clear</button>
     <button class="btn small" onclick={importFile} disabled={busy}>Import a picture…</button>
     <span class="spacer"></span>
+    <span class="inks" role="radiogroup" aria-label="Ink">
+      <span class="label">Ink</span>
+      {#if imported}
+        <button class="chip" class:on={choice === "original"} role="radio" aria-checked={choice === "original"}
+          onclick={() => (choice = "original")} title="The ink's own colour, from the picture">Original</button>
+      {/if}
+      {#each INKS as ink (ink.id)}
+        <button class="swatch" class:on={choice === ink.id} role="radio" aria-checked={choice === ink.id}
+          aria-label={ink.label} title={ink.label} style:--ink={ink.hex} onclick={() => (choice = ink.id)}></button>
+      {/each}
+      <label class="swatch custom" class:on={choice === "custom"} title="Choose a colour" style:--ink={custom}>
+        <input type="color" aria-label="Choose a colour" bind:value={custom} oninput={() => (choice = "custom")}
+          onclick={() => (choice = "custom")} />
+      </label>
+    </span>
+  </div>
+
+  <div class="row">
+    <span class="spacer"></span>
     <input class="field" placeholder="Name" maxlength="80" bind:value={name} aria-label="Signature name"
       onkeydown={(e) => e.key === "Enter" && save()} />
     <button class="btn primary" onclick={save} disabled={empty || busy}>Save</button>
@@ -222,6 +294,8 @@
 
   {#if error}
     <p class="error" role="alert">{error}</p>
+  {:else if pale}
+    <p class="note">That ink is pale: it may be hard to read on white paper.</p>
   {:else if imported}
     <p class="note">The paper has been removed. Check the edges look clean, then save it, or Clear to try another picture.</p>
   {/if}
@@ -292,7 +366,56 @@
     flex: 1;
   }
   .field {
-    width: 180px;
+    width: 220px;
+  }
+  .inks {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .label {
+    color: var(--tx3);
+  }
+  /* Round ink swatches; the chosen one gets an accent ring with a gap. */
+  .swatch {
+    position: relative;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    background: var(--ink);
+    box-shadow: 0 0 0 1px var(--bd-strong);
+    cursor: pointer;
+  }
+  .swatch.on,
+  .chip.on {
+    box-shadow:
+      0 0 0 2px var(--app),
+      0 0 0 4px var(--accent);
+  }
+  /* The colour picker: the custom colour inside a small rainbow ring that says "any colour". */
+  .swatch.custom {
+    background:
+      radial-gradient(circle, var(--ink) 52%, transparent 55%),
+      conic-gradient(#e5484d, #f5a524, #46a758, #0d9488, #3e63dd, #8e4ec6, #e5484d);
+  }
+  .swatch.custom input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .chip {
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 11px;
+    border: 1px solid var(--bd-strong);
+    background: var(--ctl);
+    color: var(--tx2);
+    font-size: 12px;
   }
   .error {
     margin: 0;
