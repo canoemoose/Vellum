@@ -3,7 +3,7 @@ import {
   between,
   bounds,
   boxBetween,
-  clampAngle,
+  normAngle,
   corners,
   dragBox,
   fitView,
@@ -61,11 +61,12 @@ describe("frame", () => {
     close(turn(a, -1).crop, { x: 0, y: 0.5, w: 0.25, h: 0.5 });
   });
 
-  it("keeps the box's turn within 45 degrees", () => {
-    expect(clampAngle(60)).toBe(45);
-    expect(clampAngle(-50)).toBe(-45);
-    expect(clampAngle(2.5)).toBe(2.5);
-    expect(clampAngle(NaN)).toBe(0);
+  it("keeps the box's turn between -180 and 180 degrees", () => {
+    expect(normAngle(60)).toBe(60);
+    expect(normAngle(190)).toBe(-170);
+    expect(normAngle(-190)).toBe(170);
+    expect(normAngle(540)).toBe(180);
+    expect(normAngle(NaN)).toBe(0);
   });
 
   it("converts between fractions and frame pixels", () => {
@@ -153,7 +154,8 @@ describe("sending", () => {
     expect(isFull(FULL)).toBe(true);
     expect(toCommand(initialAdjust())).toEqual({ turns: 0, angle: 0, crop: null });
     const a = { turns: 1, angle: 70, crop: { x: 0.1, y: 0, w: 0.9, h: 1 } };
-    expect(toCommand(a)).toEqual({ turns: 1, angle: 45, crop: a.crop });
+    expect(toCommand(a)).toEqual({ turns: 1, angle: 70, crop: a.crop });
+    expect(toCommand({ ...a, angle: 400 }).angle).toBe(40);
   });
 });
 
@@ -203,11 +205,16 @@ describe("view", () => {
     const to = rotate(up, 20);
     expect(angleByDrag(0, c, up, to)).toBeCloseTo(20);
     expect(angleByDrag(10, c, up, rotate(up, -25))).toBeCloseTo(-15);
-    // Kept within 45 degrees, and across the left of the circle without a jump.
-    expect(angleByDrag(0, c, up, rotate(up, 80))).toBe(45);
-    expect(angleByDrag(0, c, { x: -100, y: 1 }, { x: -100, y: -1 })).toBeCloseTo(1.1, 1);
-    // Close to level snaps level.
-    expect(angleByDrag(0.4, c, up, rotate(up, 0.2))).toBe(0);
+    // Any way round, and across the left of the circle without a jump.
+    expect(angleByDrag(0, c, up, rotate(up, 80))).toBeCloseTo(80);
+    expect(angleByDrag(170, c, up, rotate(up, 30))).toBeCloseTo(-160);
+    expect(angleByDrag(0, c, { x: -100, y: 4 }, { x: -100, y: -4 })).toBeCloseTo(4.6, 1);
+    // Within 2 degrees of level or a quarter turn snaps there; Alt (snap false) doesn't.
+    expect(angleByDrag(5, c, up, rotate(up, -3.5))).toBe(0);
+    expect(angleByDrag(0, c, up, rotate(up, 91.5))).toBe(90);
+    expect(angleByDrag(178, c, up, rotate(up, 3))).toBe(180);
+    expect(angleByDrag(5, c, up, rotate(up, -3.5), false)).toBeCloseTo(1.5);
+    expect(angleByDrag(0, c, up, rotate(up, 2.5))).toBeCloseTo(2.5);
   });
 
   it("maps between the screen and the frame", () => {

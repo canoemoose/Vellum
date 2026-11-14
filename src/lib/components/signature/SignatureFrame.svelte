@@ -4,7 +4,7 @@
   // upright preview (signature_preview); the framing is applied to the full-size photo in
   // Rust. Drag the box's corners or edges to resize it, drag inside it to move it, drag outside
   // it to draw a new one, and drag the round handle above it to turn it along a slanted
-  // signature (double-click the handle to level it). When the box is let go, the view settles
+  // signature (it snaps level near 0 unless Alt is held; double-click the handle to level it). When the box is let go, the view settles
   // on it with room round it. Maths in src/lib/signature/frame.ts.
   import { onMount } from "svelte";
   import {
@@ -279,7 +279,7 @@
     }
     if (e.pointerId !== drag.id) return;
     if (drag.kind === "rotate") {
-      adj.angle = angleByDrag(drag.angle, toScreen(view, { x: box.cx, y: box.cy }), drag.from, p);
+      adj.angle = angleByDrag(drag.angle, toScreen(view, { x: box.cx, y: box.cy }), drag.from, p, !e.altKey);
     } else if (drag.kind === "box") {
       const d = { x: (p.x - drag.from.x) / view.scale, y: (p.y - drag.from.y) / view.scale };
       setBox(dragBox(drag.box, adj.angle, drag.handle, d, MIN_PX, frame));
@@ -367,7 +367,7 @@
   </div>
 
   <div class="row">
-    <span class="hint">Drag a box round the signature. Turn it with the round handle to lie along the writing.</span>
+    <span class="hint">Drag a box round the signature. Turn it with the round handle to lie along the writing (Alt stops it snapping level).</span>
     <span class="spacer"></span>
     <button class="btn small" onclick={reset} disabled={busy}>Reset</button>
     <button class="btn" onclick={oncancel} disabled={busy}>Cancel</button>

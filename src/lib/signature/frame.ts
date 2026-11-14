@@ -18,14 +18,13 @@ export interface Crop {
 export interface Adjust {
   /** Quarter turns clockwise, 0 to 3. */
   turns: number;
-  /** The crop box's turn in degrees clockwise about its centre, -45 to 45. */
+  /** The crop box's turn in degrees clockwise about its centre, -180 to 180. */
   angle: number;
   /** The box before it's turned, in fractions of the frame. */
   crop: Crop;
 }
 
 export const FULL: Crop = { x: 0, y: 0, w: 1, h: 1 };
-export const MAX_ANGLE = 45;
 
 export function initialAdjust(): Adjust {
   return { turns: 0, angle: 0, crop: { ...FULL } };
@@ -72,9 +71,11 @@ export function turn(a: Adjust, dir: 1 | -1): Adjust {
   return { turns: (((a.turns + dir) % 4) + 4) % 4, angle: a.angle, crop };
 }
 
-export function clampAngle(deg: number): number {
+/** An angle in degrees brought into (-180, 180]; anything not a number is level. */
+export function normAngle(deg: number): number {
   if (!Number.isFinite(deg)) return 0;
-  return Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, deg));
+  const a = ((deg % 360) + 360) % 360;
+  return a > 180 ? a - 360 : a;
 }
 
 /** Whether the box is level (then it's kept inside the frame). */
@@ -206,7 +207,7 @@ export function isFull(c: Crop): boolean {
 
 /** What the import command takes: the crop left out when it's the whole frame. */
 export function toCommand(a: Adjust): { turns: number; angle: number; crop: Crop | null } {
-  return { turns: a.turns, angle: clampAngle(a.angle), crop: isFull(a.crop) ? null : a.crop };
+  return { turns: a.turns, angle: normAngle(a.angle), crop: isFull(a.crop) ? null : a.crop };
 }
 
 // ---- The view: frame pixels to screen pixels, screen = frame * scale + (x, y). ----
@@ -250,8 +251,8 @@ export function between(a: View, b: View, t: number, stage: Size): View {
 
 /** How far the rotate handle sits above the box's top edge, in screen pixels. */
 export const KNOB_GAP = 28;
-/** Within this many degrees of level, the rotate handle snaps level. */
-export const SNAP_LEVEL = 0.75;
+/** Within this many degrees of level (or of a quarter turn), the rotate handle snaps to it. */
+export const SNAP = 2;
 
 /** Where the rotate handle is drawn: on a stalk out from the middle of the box's top edge. */
 export function knobAt(v: View, b: Box, angle: number): Pt {
@@ -263,15 +264,17 @@ export function knobAt(v: View, b: Box, angle: number): Pt {
 /**
  * The box's angle while the rotate handle is dragged from `from` to `to` (screen points) about
  * the box's centre `c` (on screen), starting at `start` degrees: turned as far as the pointer has
- * gone round the centre, to a tenth of a degree, kept within 45 degrees, and snapped level close to 0.
+ * gone round the centre, to a tenth of a degree, any way round. Within `SNAP` degrees of level
+ * or of a quarter turn it snaps there, unless `snap` is false (Alt held).
  */
-export function angleByDrag(start: number, c: Pt, from: Pt, to: Pt): number {
+export function angleByDrag(start: number, c: Pt, from: Pt, to: Pt, snap = true): number {
   const a0 = Math.atan2(from.y - c.y, from.x - c.x);
   const a1 = Math.atan2(to.y - c.y, to.x - c.x);
   let d = ((a1 - a0) * 180) / Math.PI;
   d = ((((d + 180) % 360) + 360) % 360) - 180;
-  const a = clampAngle(Math.round((start + d) * 10) / 10);
-  return Math.abs(a) < SNAP_LEVEL ? 0 : a;
+  const a = normAngle(Math.round((start + d) * 10) / 10);
+  const q = Math.round(a / 90) * 90;
+  return snap && Math.abs(a - q) <= SNAP ? normAngle(q) : a;
 }
 
 /** A screen point in frame pixels. */
