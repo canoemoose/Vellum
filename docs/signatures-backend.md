@@ -277,9 +277,7 @@ specks, no desk edge.
 Answered 14 November 2026: ink for imports is an option (Original or another ink), drawn
 signatures get a colour picker, HEIC is in. Still open:
 
-1. **The framing view** is untried by hand since the box became turnable: does the turned box
-   feel right (the handles, the rotate handle, the settle after
-   letting go), and does
-   the result match what was in the box?
+1. **Tried by hand (Matt, 14 November 2026):** the framing view (turnable box, rotate handle,
+   settle on release) works, and a faded blue signature comes out whole and in its own colour.
 2. **iPhone HEIC orientation:** import one taken in portrait. If it comes in sideways, send the
    `[signature] decoded with WIC` line from the terminal.
