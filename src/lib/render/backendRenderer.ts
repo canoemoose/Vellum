@@ -52,6 +52,10 @@ export abstract class BackendRenderer implements Renderer {
     await invoke("doc_close", { docId });
   }
 
+  async closeAndWait(docId: number): Promise<void> {
+    await invoke("doc_close_wait", { docId });
+  }
+
   /** Abort hook: cancel the backend request (skipped if it hasn't started yet). */
   private watch(signal: AbortSignal, id: number): () => void {
     const onAbort = () => {

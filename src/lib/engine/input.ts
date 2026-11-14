@@ -34,12 +34,19 @@ export interface InputCallbacks {
   contextMenu?(clientX: number, clientY: number): void;
 }
 
+/** Modifier keys held during a pointer event. */
+export interface PointerMods {
+  shift: boolean;
+  ctrl: boolean;
+  alt: boolean;
+}
+
 /** What the left button does on the canvas. Coordinates are CSS px in the viewport. */
 export interface LeftButton {
   /** Button down; `clicks` counts quick repeats (2 double, 3 triple). True takes the gesture. */
-  down(x: number, y: number, clicks: number): boolean;
-  move(x: number, y: number): void;
-  up(): void;
+  down(x: number, y: number, clicks: number, mods: PointerMods): boolean;
+  move(x: number, y: number, mods: PointerMods): void;
+  up(x: number, y: number, mods: PointerMods): void;
   leave(): void;
   /** The cursor to show, or null for the default. */
   cursor(): string | null;
@@ -56,6 +63,8 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   /** The pointer holding the left button for cb.left, if any. */
   let leftId: number | null = null;
   const wheel = new WheelClassifier();
+
+  const mods = (e: MouseEvent): PointerMods => ({ shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey });
 
   const local = (e: MouseEvent): [number, number] => {
     const r = el.getBoundingClientRect();
@@ -102,7 +111,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
       const clicks = again ? (lastLeft.clicks % 3) + 1 : 1;
       lastLeft = { t: now, x: e.clientX, y: e.clientY, clicks };
       const [x, y] = local(e);
-      if (cb.left.down(x, y, clicks)) {
+      if (cb.left.down(x, y, clicks, mods(e))) {
         e.preventDefault();
         leftId = e.pointerId;
         el.setPointerCapture(e.pointerId);
@@ -135,7 +144,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
       const [x, y] = local(e);
       viewer.setPointer(x, y);
       if (!dragging) {
-        cb.left?.move(x, y);
+        cb.left?.move(x, y, mods(e));
         setCursor();
       }
     }
@@ -150,7 +159,8 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
   const onPointerUp = (e: PointerEvent) => {
     if (leftId !== null && e.pointerId === leftId) {
       leftId = null;
-      cb.left?.up();
+      const [x, y] = local(e);
+      cb.left?.up(x, y, mods(e));
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       setCursor();
       return;
@@ -231,7 +241,7 @@ export function attachInput(el: HTMLElement, viewer: Viewer, cb: InputCallbacks)
 
   const onBlur = () => {
     spaceHeld = false;
-    if (leftId !== null) cb.left?.up();
+    if (leftId !== null) cb.left?.up(-1, -1, { shift: false, ctrl: false, alt: false });
     leftId = null;
     dragging = null;
     viewer.endDrag();

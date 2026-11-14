@@ -136,4 +136,6 @@ export interface Renderer {
   /** Store a page preview on disk for next time (best effort). */
   storePreview?(docId: number, page: number, bitmap: ImageBitmap): Promise<void>;
   close(docId: number): Promise<void>;
+  /** Close and wait until the backend has let go of the file (before replacing it). */
+  closeAndWait?(docId: number): Promise<void>;
 }
