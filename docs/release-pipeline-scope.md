@@ -2,7 +2,8 @@
 
 Status: **phases 1 to 4 done and merged to `main`** (14 November 2026). 0.1.1 and 0.1.2 are
 published, and an installed 0.1.1 updated itself to 0.1.2 and came back with its tabs. 0.1.3
-and 0.1.4 follow to prove the quiet install (below). Phase 5 (docs) remains. This is the
+and 0.1.4 then proved the quiet install (below): 0.1.3 updated to 0.1.4 with no installer
+window and came back with its tabs. Phase 5 (docs) remains. This is the
 source of truth for the work.
 
 ## Objective
@@ -91,9 +92,9 @@ Proved:
   installer build signs its update artefact.
 
 Proved in phase 4 (Matt, on his machine): 0.1.1 installed over 0.1.0, found 0.1.2 once it was
-published, installed it and came back with the same tabs. One thing learnt: a check made in
-the first moments after publishing can still be told the previous version; a minute later it
-finds the new one.
+published, installed it and came back with the same tabs. One thing learnt, and measured when 0.1.4 was published: GitHub goes on serving the previous
+`latest.json` for up to about a minute after a release is published (still the old file at
+32 seconds, the new one at 52). Wait a minute after publishing before testing an update.
 
 What phase 4 was needed for, because it takes a published release and an installed copy:
 
