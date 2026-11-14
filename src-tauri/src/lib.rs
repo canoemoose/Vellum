@@ -11,6 +11,7 @@ pub mod print;
 // End WP-Print
 pub mod scale;
 pub mod shell; // WP-Shell
+pub mod signature; // signatures: import and library
 pub mod snap;
 pub mod text; // reading: text layer, links, search
 pub mod update; // in-app updates
