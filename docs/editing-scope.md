@@ -274,7 +274,8 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    [editing-phase1-scope.md](editing-phase1-scope.md) for what was assumed, measured and not
    verified.
 2. **Foundation:** markup model, overlay, select tool, history, unsaved state, save / save a
-   copy / confirm once, close prompts, edit lock, toolbar centre and properties strip. Built
+   copy / confirm once, close prompts, crash recovery, edit lock, toolbar centre and
+   properties strip. Built
    with the rectangle tool as its test case, so there is something to draw, save and reopen;
    nothing here is worth releasing until phase 3.
 3. **First five markup tools:** arrow, rectangle, cloud, text box, pen.
@@ -436,18 +437,18 @@ A GitHub Actions build and an in-app updater are scoped in
   merge is set with `tools/set-version.mjs` (0.2.0 suggested), and the release is cut by
   pushing a `v0.2.0` tag, which needs Matt's say-so.
 
-## Defaults I've assumed (correct any in one pass)
+## Defaults (agreed with Matt, 14 November 2026)
 
 | Question | Assumed |
 |---|---|
-| Tool behaviour after drawing | Stays in the tool (CAD habit); Esc or V returns to select. |
+| Tool behaviour after drawing | Stays in the tool (CAD habit); Esc or V returns to select (left drag selects text and follows links, as phase 1 built). |
 | Navigation while a tool is active | Unchanged: middle-drag pans, wheel zooms, Space+drag pans. |
 | Line weights and text sizes | In points on paper, not screen pixels, so they print as drawn. |
-| Author on markups | Windows user name, editable in settings. It's written into the file, so recipients see it. |
+| Author on markups | The Windows account's display name ("Matt James", not the login "matt.james"), falling back to the login; editable in settings. It's written into the file, so recipients see it. |
 | Pen and touch | Pointer events work with a pen; pressure ignored (ink annotations have one width). |
 | Markups when printing | Printed by default, with a toggle in the print dialog. |
 | Existing annotations | Editable when unlocked; otherwise display only. |
-| Autosave | None. |
+| Autosave | None: the file is written only on Save. **Crash recovery** instead: unsaved markups are kept in Vellum's app data as you work and offered back the next time that file opens after an unexpected close. Part of phase 2. |
 
 ## Testing
 
@@ -494,10 +495,6 @@ in plain terms what's covered, what isn't, and the one command). Plan:
 
 ## Open questions for Matt
 
-The first round was answered on 13 November 2026 and is recorded under "Decisions made". The
-table of assumed defaults above is still unreviewed by Matt; treat it as provisional and
-raise it before phase 2. (Phase 1 note: with no tool active, left drag selects text and
-follows links, so "returns to select" in that table means back to that.)
-
-Raised by phase 0: answered by Matt on 14 November 2026 (recorded under "Decisions made").
-The table of assumed defaults is still unreviewed.
+None open. The first round was answered on 13 November 2026, the questions raised by phase 0
+on 14 November (both under "Decisions made"), and the defaults table was agreed on 14
+November.
