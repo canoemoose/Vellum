@@ -210,43 +210,56 @@ export function toCommand(a: Adjust): { turns: number; angle: number; crop: Crop
   return { turns: a.turns, angle: normAngle(a.angle), crop: isFull(a.crop) ? null : a.crop };
 }
 
-// ---- The view: frame pixels to screen pixels, screen = frame * scale + (x, y). ----
+// ---- The view: frame pixels to screen pixels, screen = rotate(frame, rot) * scale + (x, y). ----
+// The view turns too: settled on a turned box, it turns the other way so the box is level on
+// screen and the photo lies tilted under it.
 
 export interface View {
   scale: number;
+  /** The view's turn, degrees clockwise. */
+  rot: number;
   x: number;
   y: number;
 }
 
-/** The view that fits the frame in a box `box` with `pad` pixels round it, centred. */
-export function fitView(frame: Size, box: Size, pad: number): View {
-  const scale = Math.max(1e-6, Math.min((box.w - 2 * pad) / frame.w, (box.h - 2 * pad) / frame.h));
-  return { scale, x: (box.w - frame.w * scale) / 2, y: (box.h - frame.h * scale) / 2 };
+/** The view with frame point `p` at the stage's centre. */
+function centredOn(p: Pt, scale: number, rot: number, stage: Size): View {
+  const q = rotate(p, rot);
+  return { scale, rot, x: stage.w / 2 - q.x * scale, y: stage.h / 2 - q.y * scale };
+}
+
+/** The view that fits the frame, turned `rot`, in the stage with `pad` pixels round it, centred. */
+export function fitView(frame: Size, stage: Size, pad: number, rot = 0): View {
+  const b = bounds(corners({ cx: 0, cy: 0, w: frame.w, h: frame.h }, rot));
+  const scale = Math.max(1e-6, Math.min((stage.w - 2 * pad) / b.w, (stage.h - 2 * pad) / b.h));
+  return centredOn({ x: frame.w / 2, y: frame.h / 2 }, scale, rot, stage);
 }
 
 /**
- * The view to settle on once the box is placed: the box (its level bounds `target`, frame
- * pixels) centred and filling `fill` of the stage, so there's room round it to see the photo
- * and drag it bigger. Never further out than the whole photo fitted, nor in past `maxScale`.
+ * The view to settle on once the box is placed: turned so the box is level, the box centred
+ * and filling `fill` of the stage, so there's room round it to see the photo and drag it
+ * bigger. Never further out than the whole photo fitted (at that turn), nor in past `maxScale`.
  */
-export function settleView(frame: Size, target: Rect, stage: Size, pad: number, fill: number, maxScale: number): View {
-  const whole = fitView(frame, stage, pad);
-  const want = Math.min(((stage.w - 2 * pad) * fill) / target.w, ((stage.h - 2 * pad) * fill) / target.h);
+export function settleView(frame: Size, box: Box, angle: number, stage: Size, pad: number, fill: number, maxScale: number): View {
+  const rot = normAngle(-angle);
+  const whole = fitView(frame, stage, pad, rot);
+  const want = Math.min(((stage.w - 2 * pad) * fill) / box.w, ((stage.h - 2 * pad) * fill) / box.h);
   const scale = Math.min(want, Math.max(whole.scale, maxScale));
   if (!(scale > whole.scale)) return whole;
-  const cx = target.x + target.w / 2;
-  const cy = target.y + target.h / 2;
-  return { scale, x: stage.w / 2 - cx * scale, y: stage.h / 2 - cy * scale };
+  return centredOn({ x: box.cx, y: box.cy }, scale, rot, stage);
 }
 
-/** Part way (`t`, 0 to 1) from one view to another, zooming evenly and keeping the move straight. */
+/**
+ * Part way (`t`, 0 to 1) from one view to another: zooming evenly, turning the short way round,
+ * and the frame point at the stage's centre moving in a straight line.
+ */
 export function between(a: View, b: View, t: number, stage: Size): View {
   const scale = a.scale * Math.pow(b.scale / a.scale, t);
-  // The frame point at the stage's centre moves in a straight line.
-  const ca = toFrame(a, { x: stage.w / 2, y: stage.h / 2 });
-  const cb = toFrame(b, { x: stage.w / 2, y: stage.h / 2 });
-  const c = { x: ca.x + (cb.x - ca.x) * t, y: ca.y + (cb.y - ca.y) * t };
-  return { scale, x: stage.w / 2 - c.x * scale, y: stage.h / 2 - c.y * scale };
+  const rot = a.rot + normAngle(b.rot - a.rot) * t;
+  const mid = { x: stage.w / 2, y: stage.h / 2 };
+  const ca = toFrame(a, mid);
+  const cb = toFrame(b, mid);
+  return centredOn({ x: ca.x + (cb.x - ca.x) * t, y: ca.y + (cb.y - ca.y) * t }, scale, rot, stage);
 }
 
 /** How far the rotate handle sits above the box's top edge, in screen pixels. */
@@ -257,7 +270,7 @@ export const SNAP = 2;
 /** Where the rotate handle is drawn: on a stalk out from the middle of the box's top edge. */
 export function knobAt(v: View, b: Box, angle: number): Pt {
   const c = toScreen(v, { x: b.cx, y: b.cy });
-  const d = rotate({ x: 0, y: -((b.h * v.scale) / 2 + KNOB_GAP) }, angle);
+  const d = rotate({ x: 0, y: -((b.h * v.scale) / 2 + KNOB_GAP) }, angle + v.rot);
   return { x: c.x + d.x, y: c.y + d.y };
 }
 
@@ -279,12 +292,18 @@ export function angleByDrag(start: number, c: Pt, from: Pt, to: Pt, snap = true)
 
 /** A screen point in frame pixels. */
 export function toFrame(v: View, p: Pt): Pt {
-  return { x: (p.x - v.x) / v.scale, y: (p.y - v.y) / v.scale };
+  return rotate({ x: (p.x - v.x) / v.scale, y: (p.y - v.y) / v.scale }, -v.rot);
 }
 
 /** A frame point on screen. */
 export function toScreen(v: View, p: Pt): Pt {
-  return { x: v.x + p.x * v.scale, y: v.y + p.y * v.scale };
+  const q = rotate(p, v.rot);
+  return { x: v.x + q.x * v.scale, y: v.y + q.y * v.scale };
+}
+
+/** A movement on screen as a movement in frame pixels. */
+export function screenToFrameDelta(v: View, d: Pt): Pt {
+  return rotate({ x: d.x / v.scale, y: d.y / v.scale }, -v.rot);
 }
 
 /**
@@ -308,7 +327,7 @@ export function hitRect(r: Rect, p: Pt, tol: number): Handle | null {
 /** What a screen point grabs on the box, turned or not. */
 export function hitBox(v: View, b: Box, angle: number, p: Pt, tol: number): Handle | null {
   const c = toScreen(v, { x: b.cx, y: b.cy });
-  const l = rotate({ x: p.x - c.x, y: p.y - c.y }, -angle);
+  const l = rotate({ x: p.x - c.x, y: p.y - c.y }, -(angle + v.rot));
   const w = b.w * v.scale;
   const h = b.h * v.scale;
   return hitRect({ x: -w / 2, y: -h / 2, w, h }, l, tol);
@@ -317,7 +336,7 @@ export function hitBox(v: View, b: Box, angle: number, p: Pt, tol: number): Hand
 const HANDLE_DIRECTION: Record<Exclude<Handle, "move">, number> = { e: 0, se: 45, s: 90, sw: 135, w: 180, nw: 225, n: 270, ne: 315 };
 const RESIZE_CURSORS = ["ew-resize", "nwse-resize", "ns-resize", "nesw-resize"];
 
-/** The cursor for a handle on a box turned `angle`: the resize arrow nearest its direction. */
+/** The cursor for a handle on a box turned `angle` on screen: the resize arrow nearest its direction. */
 export function handleCursor(handle: Handle, angle: number): string {
   if (handle === "move") return "move";
   const deg = (((HANDLE_DIRECTION[handle] + angle) % 180) + 180) % 180;

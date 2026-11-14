@@ -62,7 +62,8 @@ alone, so the page never ships. What to look at:
   slanted signature by dragging the round handle above it (a fine grid and the angle show
   while you drag; it turns any way round and snaps within 2 degrees of level or a quarter turn,
   Alt stops the snap, and double-clicking the handle levels it). When you
-  let go of the box or the handle, the view settles on the box with room round it. There's no
+  let go of the box or the handle, the view settles on the box with room round it, turning
+  so the box is level on screen and the photo lies tilted under it. There's no
   manual zoom or pan.
   Enter or "Remove the paper" applies, Esc or Cancel goes back. The result should come back as
   clean ink on the checkerboard, cropped close; "Adjust the photo…" reopens the framing as you
@@ -94,7 +95,10 @@ alone, so the page never ships. What to look at:
   in the box comes out level. Level, the box stays inside the photo; turned, it may stick out
   (its centre stays on the photo), and what's beyond the photo repeats its edge in Rust, which
   is paper and knocks out. Drawing a new box while the box is turned draws it at the same turn.
-  The initial box is the whole photo.
+  When the view settles it also turns by the box's angle the other way, so the box always
+  ends up level on screen (Matt: "why doesn't it level after release like the zoom does?");
+  only the view turns, the framing sent to Rust is the same. The initial box is the whole
+  photo.
 - **Two importer changes the crop made necessary.** A tight crop makes the pen large against
   the picture, and two size rules were relative to the picture: (1) the "blob" filter dropped
   marks thicker than 3% of the short side, which a wavy biro line in a crop 400 px high exceeds;
@@ -206,12 +210,13 @@ For tuning the import by eye, an ignored test writes each synthetic photo and it
   the cropped one of two signatures, cropping first keeps a small signature in a big photo at
   full resolution, the preview is capped at 2048 px, and a tight crop round a wavy biro line or
   a thick marker is still found. A blank photo with a desk at the edge is still "no ink".
-- *Framing maths* (21 Vitest tests): the box turns with the picture, fractions to pixels and
+- *Framing maths* (23 Vitest tests): the box turns with the picture, fractions to pixels and
   back, turned corners, a level box's corners and edges stay in the frame and above the
   minimum, moving keeps the size, drawing a new box either way round; a turned box resizes
   along its own sides with the opposite side fixed, may stick out but keeps its centre on the
   photo, and draws new boxes at the same turn; the whole frame sends no crop; fitting, settling
-  on the box (centred, room round it, within limits), the in-between views of the settle, zoom
+  on the box (centred, room round it, within limits; a turned box comes out level on screen,
+  and the whole photo fits as it now lies), the view turning the short way round, the in-between views of the settle, zoom
   about the pointer, screen and frame mapping, what the pointer grabs on a level or turned box,
   and the resize cursor following the turn, and the rotate handle (where it sits, the angle from
   dragging it round the centre, any way round, no jump across the left of the circle, the

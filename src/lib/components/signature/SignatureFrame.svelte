@@ -4,12 +4,12 @@
   // upright preview (signature_preview); the framing is applied to the full-size photo in
   // Rust. Drag the box's corners or edges to resize it, drag inside it to move it, drag outside
   // it to draw a new one, and drag the round handle above it to turn it along a slanted
-  // signature (it snaps level near 0 unless Alt is held; double-click the handle to level it). When the box is let go, the view settles
+  // signature; on letting go the view turns with it, so the box is level and the photo tilts
+  // (it snaps level near 0 unless Alt is held; double-click the handle to level it). When the box is let go, the view settles
   // on it with room round it. Maths in src/lib/signature/frame.ts.
   import { onMount } from "svelte";
   import {
     between,
-    bounds,
     boxBetween,
     angleByDrag,
     corners,
@@ -20,6 +20,7 @@
     hitBox,
     knobAt,
     KNOB_GAP,
+    screenToFrameDelta,
     settleView,
     toBox,
     toCrop,
@@ -45,7 +46,7 @@
 
   // svelte-ignore state_referenced_locally
   let adj = $state<Adjust>({ ...start, crop: { ...start.crop } });
-  let view = $state<View>({ scale: 1, x: 0, y: 0 });
+  let view = $state<View>({ scale: 1, rot: 0, x: 0, y: 0 });
   let stage = { w: 1, h: 1 };
   let dpr = 1;
   let canvas: HTMLCanvasElement;
@@ -83,7 +84,7 @@
   /** Move the view onto the box: smoothly, unless `now` or the user prefers less motion. */
   function settle(now = false) {
     stopSettling();
-    const target = settleView(frame, bounds(corners(box, adj.angle)), stage, PAD, FILL, MAX_SCALE);
+    const target = settleView(frame, box, adj.angle, stage, PAD, FILL, MAX_SCALE);
     if (now || matchMedia("(prefers-reduced-motion: reduce)").matches) {
       view = target;
       return;
@@ -131,8 +132,12 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const f = frame;
 
-    // The photo, turned its quarter turns about the frame's centre.
-    ctx.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, dpr * view.x, dpr * view.y);
+    // The photo, turned its quarter turns about the frame's centre, in the view (which turns
+    // too, once settled on a turned box).
+    const vr = (view.rot * Math.PI) / 180;
+    const vc = Math.cos(vr) * view.scale * dpr;
+    const vs = Math.sin(vr) * view.scale * dpr;
+    ctx.setTransform(vc, vs, -vs, vc, dpr * view.x, dpr * view.y);
     ctx.save();
     ctx.translate(f.w / 2, f.h / 2);
     ctx.rotate((adj.turns * Math.PI) / 2);
@@ -142,11 +147,13 @@
 
     // Screen space from here: dim the photo outside the box.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const p0 = toScreen(view, { x: 0, y: 0 });
+    const photo = corners({ cx: f.w / 2, cy: f.h / 2, w: f.w, h: f.h }, 0).map((p) => toScreen(view, p));
     const pts = corners(box, adj.angle).map((p) => toScreen(view, p));
     ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
     ctx.beginPath();
-    ctx.rect(p0.x, p0.y, f.w * view.scale, f.h * view.scale);
+    ctx.moveTo(photo[0].x, photo[0].y);
+    for (const p of photo.slice(1)) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
     ctx.closePath();
@@ -155,7 +162,7 @@
     // The box, its grid and handles, drawn level about its centre and then turned.
     const c = toScreen(view, { x: box.cx, y: box.cy });
     ctx.translate(c.x, c.y);
-    ctx.rotate((adj.angle * Math.PI) / 180);
+    ctx.rotate(((adj.angle + view.rot) * Math.PI) / 180);
     const w = box.w * view.scale;
     const h = box.h * view.scale;
     const r = { x: -w / 2, y: -h / 2, w, h };
@@ -274,14 +281,14 @@
     const p = point(e);
     if (!drag) {
       const h = hitBox(view, box, adj.angle, p, HANDLE_TOL);
-      cursor = onKnob(p) ? "grab" : h ? handleCursor(h, adj.angle) : "crosshair";
+      cursor = onKnob(p) ? "grab" : h ? handleCursor(h, adj.angle + view.rot) : "crosshair";
       return;
     }
     if (e.pointerId !== drag.id) return;
     if (drag.kind === "rotate") {
       adj.angle = angleByDrag(drag.angle, toScreen(view, { x: box.cx, y: box.cy }), drag.from, p, !e.altKey);
     } else if (drag.kind === "box") {
-      const d = { x: (p.x - drag.from.x) / view.scale, y: (p.y - drag.from.y) / view.scale };
+      const d = screenToFrameDelta(view, { x: p.x - drag.from.x, y: p.y - drag.from.y });
       setBox(dragBox(drag.box, adj.angle, drag.handle, d, MIN_PX, frame));
     } else {
       setBox(boxBetween(drag.from, toFrame(view, p), adj.angle, MIN_PX, frame));

@@ -21,6 +21,7 @@ import {
   toCrop,
   toFrame,
   toScreen,
+  screenToFrameDelta,
   turn,
   knobAt,
   angleByDrag,
@@ -172,26 +173,45 @@ describe("view", () => {
 
   it("settles on the box: centred, with room round it, never further out than the whole photo", () => {
     // A small box: zoomed in so it fills 3/4 of the stage's width, centred.
-    const target = { x: 100, y: 50, w: 100, h: 20 };
-    const v = settleView(frame, target, stage, 50, 0.75, 8);
+    const target = rect(100, 50, 100, 20);
+    const v = settleView(frame, target, 0, stage, 50, 0.75, 8);
     expect(v.scale).toBeCloseTo(3);
     close(toScreen(v, { x: 150, y: 60 }), { x: 250, y: 250 });
     // The whole photo: just fitted.
-    expect(settleView(frame, { x: 0, y: 0, w: 400, h: 200 }, stage, 50, 0.75, 8)).toEqual(fitView(frame, stage, 50));
+    close(settleView(frame, rect(0, 0, 400, 200), 0, stage, 50, 0.75, 8), fitView(frame, stage, 50));
     // A tiny box: no closer than the limit.
-    expect(settleView(frame, { x: 0, y: 0, w: 1, h: 1 }, stage, 50, 0.75, 8).scale).toBe(8);
+    expect(settleView(frame, rect(0, 0, 1, 1), 0, stage, 50, 0.75, 8).scale).toBe(8);
+  });
+
+  it("settles on a turned box by turning the view back, so the box is level on screen", () => {
+    const b: Box = { cx: 200, cy: 100, w: 100, h: 20 };
+    const v = settleView(frame, b, 30, stage, 50, 0.75, 8);
+    expect(v.rot).toBeCloseTo(-30);
+    const c = corners(b, 30).map((p) => toScreen(v, p));
+    // Top edge level, the box centred and 3/4 of the stage wide.
+    expect(c[0].y).toBeCloseTo(c[1].y);
+    expect(c[1].x - c[0].x).toBeCloseTo(300);
+    close(toScreen(v, { x: 200, y: 100 }), { x: 250, y: 250 });
+    // The whole photo turned 90 degrees: fitted as it now lies (tall).
+    const w = settleView(frame, rect(0, 0, 400, 200), 90, stage, 50, 0.75, 8);
+    expect(w.rot).toBeCloseTo(-90);
+    expect(w.scale).toBeCloseTo(1);
   });
 
   it("goes from one view to another evenly", () => {
-    const a = { scale: 1, x: 0, y: 0 };
-    const b = { scale: 4, x: -300, y: -100 };
+    const a = { scale: 1, rot: 0, x: 0, y: 0 };
+    const b = { scale: 4, rot: 0, x: -300, y: -100 };
     expect(between(a, b, 0, stage)).toEqual(a);
     close(between(a, b, 1, stage), b);
     expect(between(a, b, 0.5, stage).scale).toBeCloseTo(2);
+    // Turning the short way round: 170 to -170 goes through 180, not through 0.
+    const p = { ...a, rot: 170 };
+    const q = { ...a, rot: -170 };
+    expect(between(p, q, 0.5, stage).rot).toBeCloseTo(180);
   });
 
   it("puts the rotate handle above the box's top edge, turning with it", () => {
-    const v = { scale: 2, x: 0, y: 0 };
+    const v = { scale: 2, rot: 0, x: 0, y: 0 };
     const b: Box = { cx: 50, cy: 50, w: 40, h: 20 };
     // Centre (100, 100) on screen, the top edge 20 px up, the handle KNOB_GAP beyond.
     close(knobAt(v, b, 0), { x: 100, y: 52 });
@@ -218,9 +238,14 @@ describe("view", () => {
   });
 
   it("maps between the screen and the frame", () => {
-    const v = { scale: 2, x: 10, y: 20 };
+    const v = { scale: 2, rot: 0, x: 10, y: 20 };
     expect(toFrame(v, { x: 410, y: 220 })).toEqual({ x: 200, y: 100 });
     expect(toScreen(v, { x: 200, y: 100 })).toEqual({ x: 410, y: 220 });
+    // Turned, both ways round, and a drag on screen as a movement on the photo.
+    const t = { scale: 2, rot: 90, x: 10, y: 20 };
+    close(toScreen(t, { x: 10, y: 0 }), { x: 10, y: 40 });
+    close(toFrame(t, toScreen(t, { x: 37, y: -5 })), { x: 37, y: -5 });
+    close(screenToFrameDelta(t, { x: 0, y: 20 }), { x: 10, y: 0 });
   });
 
   it("finds the corner, edge or middle under the pointer", () => {
@@ -235,7 +260,7 @@ describe("view", () => {
   });
 
   it("finds the handles of a turned box where they're drawn", () => {
-    const v = { scale: 2, x: 0, y: 0 };
+    const v = { scale: 2, rot: 0, x: 0, y: 0 };
     const b: Box = { cx: 50, cy: 50, w: 40, h: 20 };
     const c = corners(b, 90).map((p) => toScreen(v, p));
     expect(hitBox(v, b, 90, c[0], 6)).toBe("nw");
@@ -243,6 +268,17 @@ describe("view", () => {
     expect(hitBox(v, b, 90, { x: 100, y: 100 }, 6)).toBe("move");
     // Turned a quarter, the box is tall on screen: well left of the centre is outside it.
     expect(hitBox(v, b, 90, { x: 70, y: 100 }, 6)).toBeNull();
+  });
+
+  it("finds the handles where they're drawn in a turned view", () => {
+    // A box turned 30 in a view turned -30 is level on screen.
+    const v = { scale: 2, rot: -30, x: 0, y: 0 };
+    const b: Box = { cx: 50, cy: 50, w: 40, h: 20 };
+    const c = corners(b, 30).map((p) => toScreen(v, p));
+    expect(hitBox(v, b, 30, c[1], 6)).toBe("ne");
+    const k = knobAt(v, b, 30);
+    const m = toScreen(v, { x: 50, y: 50 });
+    close(k, { x: m.x, y: m.y - 20 - 28 });
   });
 
   it("points the resize cursor along the turned box", () => {
