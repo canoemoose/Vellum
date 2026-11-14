@@ -100,6 +100,11 @@ alone, so the page never ships. What to look at:
   only the view turns, the framing sent to Rust is the same. The initial box is the whole
   photo, so a photo that's already tight is one click; dragging inside it draws a new box,
   since a whole-photo box can't move.
+- **No control over how hard the edges are cut** (Matt, 14 November 2026: real photos came out
+  clean). The thresholds already adapt to each photo: alpha starts at 5 times the paper's noise
+  above the paper and is solid halfway to the ink's typical darkness. If faint pencil breaks up
+  or a hazy photo keeps a grey fringe, the fix is an "Edges: thinner / fuller" control under an
+  import that moves that 5 between about 3 and 8 and re-runs the knock-out.
 - **Two importer changes the crop made necessary.** A tight crop makes the pen large against
   the picture, and two size rules were relative to the picture: (1) the "blob" filter dropped
   marks thicker than 3% of the short side, which a wavy biro line in a crop 400 px high exceeds;
