@@ -1,0 +1,19 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vellum signatures (dev)",
+        "url": "signature-pad.html",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 720,
+        "minHeight": 480,
+        "visible": false,
+        "backgroundColor": "#141517",
+        "dragDropEnabled": true,
+        "decorations": false
+      }
+    ]
+  }
+}
