@@ -17,7 +17,6 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
     ctx.save();
     ctx.setTransform(...m);
     if (op.t === "path") {
-      ctx.globalAlpha = op.opacity;
       ctx.beginPath();
       for (const s of op.segs) {
         if (s[0] === "M") ctx.moveTo(s[1], s[2]);
@@ -26,10 +25,12 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
         else ctx.closePath();
       }
       if (op.fill) {
+        ctx.globalAlpha = op.fillOpacity;
         ctx.fillStyle = css(op.fill);
         ctx.fill();
       }
       if (op.stroke) {
+        ctx.globalAlpha = op.strokeOpacity;
         ctx.strokeStyle = css(op.stroke);
         ctx.lineWidth = op.width;
         ctx.lineCap = "round";

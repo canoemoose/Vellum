@@ -357,8 +357,10 @@ impl Writer {
 
     fn appearance_stream(&mut self, a: &Appearance) -> Result<ObjectId, String> {
         let mut res = Dictionary::new();
-        if let Some(op) = a.opacity {
-            res.set("ExtGState", dictionary! { "GS0" => dictionary! { "Type" => "ExtGState", "CA" => real(op), "ca" => real(op) } });
+        if a.opacity.is_some() || a.fill_opacity.is_some() {
+            let line = a.opacity.unwrap_or(1.0);
+            let fill = a.fill_opacity.or(a.opacity).unwrap_or(1.0);
+            res.set("ExtGState", dictionary! { "GS0" => dictionary! { "Type" => "ExtGState", "CA" => real(line), "ca" => real(fill) } });
         }
         if a.font {
             res.set(

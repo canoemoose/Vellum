@@ -3,7 +3,7 @@
 // same operations into the annotation's appearance stream, so the screen and the file agree.
 // Geometry ported from the phase 0 spike (spikes/annot-writer/src/appearance.rs). Pure.
 
-import { type Markup, type Pt, type Rect, type Rgb, type Style, normRect } from "./types";
+import { type Markup, type Pt, type Rect, type Rgb, type Style, fillOpacity, normRect } from "./types";
 import { textWidth, wrap } from "./helvetica";
 
 export type Seg = ["M", number, number] | ["L", number, number] | ["C", number, number, number, number, number, number] | ["Z"];
@@ -15,7 +15,9 @@ export interface PathOp {
   fill: Rgb | null;
   width: number;
   dash: number[] | null;
-  opacity: number;
+  /** Line and fill opacity, 0..1. */
+  strokeOpacity: number;
+  fillOpacity: number;
 }
 
 export interface TextOp {
@@ -48,7 +50,48 @@ const rot = (a: Pt, ang: number): Pt => {
 };
 
 function path(segs: Seg[], s: Style, fill: Rgb | null = s.fill, stroke: Rgb | null = s.stroke): PathOp {
-  return { t: "path", segs, stroke, fill, width: s.width, dash: s.dash, opacity: s.opacity };
+  return { t: "path", segs, stroke, fill, width: stroke ? s.width : 0, dash: s.dash, strokeOpacity: s.opacity, fillOpacity: fillOpacity(s) };
+}
+
+/**
+ * A filled, outlined shape as two operations: the fill, drawn only inside the line's inner edge
+ * (`inner`, the outline inset by half the line weight), then the line. So a see-through line
+ * and fill don't overlap and the line reads as one tone. One operation when there's no line.
+ */
+function filled(outline: Seg[], inner: () => Seg[], s: Style): Op[] {
+  if (!s.fill) return [path(outline, s, null)];
+  if (s.width <= 0) return [path(outline, s, s.fill, null)];
+  return [path(inner(), s, s.fill, null), path(outline, s, null)];
+}
+
+const box = (x0: number, y0: number, x1: number, y1: number, d: number): Seg[] => {
+  // Inset by d, never past the middle.
+  const dx = Math.min(d, (x1 - x0) / 2), dy = Math.min(d, (y1 - y0) / 2);
+  return [["M", x0 + dx, y0 + dy], ["L", x1 - dx, y0 + dy], ["L", x1 - dx, y1 - dy], ["L", x0 + dx, y1 - dy], ["Z"]];
+};
+
+/**
+ * A circular arc about `c`, radius r, from direction `from` to direction `to` (unit vectors),
+ * going round the side `via` points to, as Bezier pieces of at most a quarter turn.
+ */
+function arc(c: Pt, r: number, from: Pt, to: Pt, via: Pt): Seg[] {
+  const a0 = Math.atan2(from[1], from[0]);
+  let d = Math.atan2(to[1], to[0]) - a0;
+  while (d <= 0) d += 2 * Math.PI;
+  // d runs anticlockwise (in these axes); the other way round is d - 2 pi. Take the one through `via`.
+  const mid = a0 + d / 2;
+  if (Math.cos(mid) * via[0] + Math.sin(mid) * via[1] < 0) d -= 2 * Math.PI;
+  const n = Math.max(1, Math.ceil(Math.abs(d) / (Math.PI / 2) - 1e-9));
+  const step = d / n;
+  const k = (4 / 3) * Math.tan(step / 4) * r;
+  const segs: Seg[] = [];
+  for (let i = 0; i < n; i++) {
+    const t0 = a0 + i * step, t1 = t0 + step;
+    const p0: Pt = [c[0] + r * Math.cos(t0), c[1] + r * Math.sin(t0)];
+    const p1: Pt = [c[0] + r * Math.cos(t1), c[1] + r * Math.sin(t1)];
+    segs.push(["C", p0[0] - k * Math.sin(t0), p0[1] + k * Math.cos(t0), p1[0] + k * Math.sin(t1), p1[1] - k * Math.cos(t1), p1[0], p1[1]]);
+  }
+  return segs;
 }
 
 /** Arrowhead length for a line weight: readable on a drawing, growing with weight. */
@@ -66,7 +109,7 @@ function arrowhead(tip: Pt, dir: Pt, width: number): Seg[] {
 
 function rectOps(r: Rect, s: Style): Op[] {
   const [x0, y0, x1, y1] = normRect(r);
-  return [path([["M", x0, y0], ["L", x1, y0], ["L", x1, y1], ["L", x0, y1], ["Z"]], s)];
+  return filled(box(x0, y0, x1, y1, 0), () => box(x0, y0, x1, y1, s.width / 2), s);
 }
 
 function arrowOps(from: Pt, to: Pt, s: Style): Op[] {
@@ -89,16 +132,19 @@ export function cloudChord(intensity: number): number {
   return 14 * Math.max(0.5, intensity);
 }
 
-/**
- * Revision cloud: each edge divided into equal chords, each bulging outwards as a half circle
- * drawn as two Bezier quarter arcs.
- */
-function cloudOps(v: Pt[], intensity: number, s: Style): Op[] {
-  if (v.length < 2) return [];
+interface Scallop {
+  /** Centre, radius, direction along the edge, outward normal. */
+  c: Pt;
+  r: number;
+  u: Pt;
+  out: Pt;
+}
+
+/** A revision cloud's scallops: each edge divided into equal chords, each a half circle bulging outwards. */
+function scallops(v: Pt[], intensity: number): Scallop[] {
   const pos = signedArea(v) > 0;
   const target = cloudChord(intensity);
-  const k = 0.55228475;
-  const segs: Seg[] = [];
+  const out: Scallop[] = [];
   for (let i = 0; i < v.length; i++) {
     const a = v[i], b = v[(i + 1) % v.length];
     const e = len(sub(b, a));
@@ -107,21 +153,53 @@ function cloudOps(v: Pt[], intensity: number, s: Style): Op[] {
     const d = mul(sub(b, a), 1 / count);
     const u = unit(d);
     // Outward normal: one side of travel or the other, by the winding.
-    const out: Pt = pos ? [u[1], -u[0]] : [-u[1], u[0]];
-    const r = len(d) / 2;
-    for (let j = 0; j < count; j++) {
-      const p0 = add(a, mul(d, j));
-      const p1 = add(p0, d);
-      const top = add(mul(add(p0, p1), 0.5), mul(out, r));
-      if (!segs.length) segs.push(["M", p0[0], p0[1]]);
-      const c1 = add(p0, mul(out, k * r)), c2 = sub(top, mul(u, k * r));
-      const c3 = add(top, mul(u, k * r)), c4 = add(p1, mul(out, k * r));
-      segs.push(["C", c1[0], c1[1], c2[0], c2[1], top[0], top[1]]);
-      segs.push(["C", c3[0], c3[1], c4[0], c4[1], p1[0], p1[1]]);
-    }
+    const n: Pt = pos ? [u[1], -u[0]] : [-u[1], u[0]];
+    for (let j = 0; j < count; j++) out.push({ c: add(a, mul(d, j + 0.5)), r: len(d) / 2, u, out: n });
+  }
+  return out;
+}
+
+/** The cloud's outline: the scallops end to end. */
+function cloudOutline(sc: Scallop[]): Seg[] {
+  const segs: Seg[] = [];
+  for (const q of sc) {
+    const p0 = sub(q.c, mul(q.u, q.r));
+    if (!segs.length) segs.push(["M", p0[0], p0[1]]);
+    segs.push(...arc(q.c, q.r, mul(q.u, -1), q.u, q.out));
   }
   segs.push(["Z"]);
-  return [path(segs, s)];
+  return segs;
+}
+
+/**
+ * The cloud's outline inset by d: each scallop shrunk about its centre, and between scallops a
+ * small inward arc round the point where they meet (the line's round join there).
+ */
+function cloudInner(sc: Scallop[], d: number): Seg[] {
+  const segs: Seg[] = [];
+  sc.forEach((q, i) => {
+    const r = Math.max(0, q.r - d);
+    const p0 = sub(q.c, mul(q.u, r));
+    segs.push([segs.length ? "L" : "M", p0[0], p0[1]]);
+    if (r > 0) segs.push(...arc(q.c, r, mul(q.u, -1), q.u, q.out));
+    // Round the meeting point, from this scallop's end to the next one's start.
+    const nx = sc[(i + 1) % sc.length];
+    const meet = add(q.c, mul(q.u, q.r));
+    if (q.r > d && nx.r > d) {
+      const inward: Pt = mul(add(q.out, nx.out), -1);
+      segs.push(...arc(meet, d, mul(q.u, -1), nx.u, len(inward) > 1e-6 ? inward : mul(q.out, -1)));
+    }
+  });
+  segs.push(["Z"]);
+  return segs;
+}
+
+/** Revision cloud: half-circle scallops along each edge, bulging outwards. */
+function cloudOps(v: Pt[], intensity: number, s: Style): Op[] {
+  if (v.length < 2) return [];
+  const sc = scallops(v, intensity);
+  if (!sc.length) return [];
+  return filled(cloudOutline(sc), () => cloudInner(sc, s.width / 2), s);
 }
 
 /** Freehand ink: each stroke smoothed with a Catmull-Rom spline through its points. */
@@ -162,17 +240,9 @@ export function textHeight(lines: number, size: number, borderWidth: number): nu
 function textOps(r: Rect, text: string, size: number, colour: Rgb, s: Style): Op[] {
   const [x0, y0, x1, y1] = normRect(r);
   const ops: Op[] = [];
-  const hw = s.width / 2;
-  if (s.width > 0 || s.fill) {
-    ops.push(
-      path(
-        [["M", x0 + hw, y0 + hw], ["L", x1 - hw, y0 + hw], ["L", x1 - hw, y1 - hw], ["L", x0 + hw, y1 - hw], ["Z"]],
-        s,
-        s.fill,
-        s.width > 0 ? s.stroke : null,
-      ),
-    );
-  }
+  // The border sits inside the box: its centre half a weight in, its inner edge a whole weight.
+  if (s.width > 0) ops.push(...filled(box(x0, y0, x1, y1, s.width / 2), () => box(x0, y0, x1, y1, s.width), s));
+  else if (s.fill) ops.push(path(box(x0, y0, x1, y1, 0), s, s.fill, null));
   const inset = TEXT_PAD + s.width;
   ops.push({
     t: "text",

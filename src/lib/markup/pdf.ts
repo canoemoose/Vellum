@@ -66,8 +66,9 @@ const rgb = (c: [number, number, number]) => `${n(c[0])} ${n(c[1])} ${n(c[2])}`;
 
 export interface Content {
   ops: string;
-  /** Stroke and fill opacity for /GS0, if any operation uses it. */
+  /** Line (/CA) and fill (/ca) opacity for /GS0, if any operation uses it. */
   opacity: number | null;
+  fillOpacity: number | null;
   /** /Helv is used. */
   font: boolean;
 }
@@ -76,6 +77,7 @@ export interface Content {
 export function toContent(f: Frame, ops: Op[]): Content {
   const out: string[] = [];
   let opacity: number | null = null;
+  let fillOpacity: number | null = null;
   let font = false;
   const pt = (x: number, y: number) => {
     const u = toUser(f, x, y);
@@ -84,10 +86,11 @@ export function toContent(f: Frame, ops: Op[]): Content {
   for (const op of ops) {
     out.push("q");
     if (op.t === "path") {
-      if (op.opacity < 1) {
-        opacity = op.opacity;
-        out.push("/GS0 gs");
-      }
+      // One /GS0 serves every path: a markup's paths share its style.
+      const so = !!op.stroke && op.strokeOpacity < 1, fo = !!op.fill && op.fillOpacity < 1;
+      if (so) opacity = op.strokeOpacity;
+      if (fo) fillOpacity = op.fillOpacity;
+      if (so || fo) out.push("/GS0 gs");
       if (op.stroke) out.push(`${rgb(op.stroke)} RG`);
       if (op.fill) out.push(`${rgb(op.fill)} rg`);
       out.push(`${n(op.width)} w`, "1 j 1 J");
@@ -120,5 +123,10 @@ export function toContent(f: Frame, ops: Op[]): Content {
     }
     out.push("Q");
   }
-  return { ops: out.join("\n"), opacity, font };
+  // /GS0 sets both, so when it's used, name both (1 for whichever isn't see-through).
+  if (opacity !== null || fillOpacity !== null) {
+    opacity ??= 1;
+    fillOpacity ??= 1;
+  }
+  return { ops: out.join("\n"), opacity, fillOpacity, font };
 }

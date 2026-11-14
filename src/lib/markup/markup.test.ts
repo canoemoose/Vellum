@@ -14,6 +14,8 @@ const cloud = (v: Pt[] = [[100, 100], [200, 100], [200, 200], [100, 200]]): Mark
 const text = (t = "Check this bolt"): Markup => ({ id: "t1", page: 0, kind: "text", rect: [100, 100, 220, 140], text: t, textStyle: DEFAULT_TEXT, style: defaultStyle("text"), meta });
 const ink = (): Markup => ({ id: "i1", page: 0, kind: "ink", strokes: [[[0, 0], [10, 5], [20, 0]]], style: defaultStyle("ink"), meta });
 
+type Pt3 = [number, number, number];
+
 const A4: Frame = { quarterTurns: 0, bbox: [0, 0, 595, 842] };
 
 describe("Helvetica", () => {
@@ -46,6 +48,65 @@ describe("drawing operations", () => {
       expect(b[2]).toBeGreaterThan(105);
       expect(b[3]).toBeGreaterThan(105);
     }
+  });
+
+  it("fills only inside the line's inner edge", () => {
+    const style = { ...defaultStyle("rect"), width: 4, fill: [1, 1, 0] as Pt3 };
+    const [fill, line] = opsFor({ ...rect(), style }) as PathOp[];
+    expect(fill.fill).toEqual([1, 1, 0]);
+    expect(fill.stroke).toBeNull();
+    expect(line.fill).toBeNull();
+    expect(line.stroke).not.toBeNull();
+    // The rectangle is 100..200 x 100..150; the line's inner edge is 2 in.
+    expect(fill.segs[0]).toEqual(["M", 102, 102]);
+    expect(fill.segs[2]).toEqual(["L", 198, 148]);
+    // A text box's border sits inside the box, so its fill starts a whole weight in.
+    const t = opsFor({ ...text(), style: { ...defaultStyle("text"), width: 3 } }) as PathOp[];
+    expect(t[0].segs[0]).toEqual(["M", 103, 103]);
+    expect(t[1].segs[0]).toEqual(["M", 101.5, 101.5]);
+    // No line: one filled path to the edge.
+    const bare = opsFor({ ...rect(), style: { ...style, width: 0 } }) as PathOp[];
+    expect(bare.length).toBe(1);
+    expect(bare[0].segs[0]).toEqual(["M", 100, 100]);
+  });
+
+  it("insets a filled cloud's fill by half the line weight", () => {
+    const style = { ...defaultStyle("cloud"), width: 4, fill: [1, 1, 0] as Pt3 };
+    const [fill, line] = opsFor({ ...cloud(), style }) as PathOp[];
+    const ob = opsBounds([{ ...line, width: 0 }]);
+    const fb = opsBounds([{ ...fill, width: 0 }]);
+    // Bounds are grown by a point and snapped outwards; the inset is 2 on each side.
+    expect(fb[0] - ob[0]).toBeGreaterThanOrEqual(1);
+    expect(ob[2] - fb[2]).toBeGreaterThanOrEqual(1);
+    // Sampled along both paths, every point of the fill's edge is half the weight (2) from the
+    // line's centre: it meets the line's inner edge, neither under it nor short of it.
+    const sample = (segs: PathOp["segs"]): Pt[] => {
+      const out: Pt[] = [];
+      let at: Pt = [0, 0];
+      for (const s of segs) {
+        if (s[0] === "M" || s[0] === "L") at = [s[1], s[2]];
+        else if (s[0] === "C") {
+          for (let i = 1; i <= 16; i++) {
+            const t = i / 16, u = 1 - t;
+            out.push([
+              u * u * u * at[0] + 3 * u * u * t * s[1] + 3 * u * t * t * s[3] + t * t * t * s[5],
+              u * u * u * at[1] + 3 * u * u * t * s[2] + 3 * u * t * t * s[4] + t * t * t * s[6],
+            ]);
+          }
+          at = [s[5], s[6]];
+          continue;
+        } else continue;
+        out.push(at);
+      }
+      return out;
+    };
+    const centre = sample(line.segs);
+    for (const p of sample(fill.segs)) {
+      const d = Math.min(...centre.map((q) => Math.hypot(p[0] - q[0], p[1] - q[1])));
+      expect(d).toBeGreaterThan(1.9);
+      expect(d).toBeLessThan(2.3);
+    }
+    expect(fill.segs.at(-1)).toEqual(["Z"]);
   });
 
   it("puts an open arrowhead at the head", () => {
@@ -108,10 +169,15 @@ describe("page frame", () => {
     expect(c.ops).toContain("200 692 l");
     expect(c.ops.trim().endsWith("S\nQ")).toBe(true);
     expect(c.opacity).toBeNull();
-    const faint = toContent(A4, opsFor({ ...rect(), style: { ...defaultStyle("rect"), fill: [1, 1, 0], opacity: 0.5 } }));
+    const faint = toContent(A4, opsFor({ ...rect(), style: { ...defaultStyle("rect"), fill: [1, 1, 0], opacity: 0.5, fillOpacity: 0.25 } }));
     expect(faint.opacity).toBe(0.5);
+    expect(faint.fillOpacity).toBe(0.25);
     expect(faint.ops).toContain("/GS0 gs");
-    expect(faint.ops).toContain("B\nQ");
+    // The fill, then the line, as separate paths.
+    expect(faint.ops).toMatch(/f\nQ\nq\n[^]*S\nQ$/);
+    // A see-through fill under a solid line still names the line's opacity (1) for /GS0.
+    const tint = toContent(A4, opsFor({ ...rect(), style: { ...defaultStyle("rect"), fill: [1, 1, 0], fillOpacity: 0.3 } }));
+    expect([tint.opacity, tint.fillOpacity]).toEqual([1, 0.3]);
     expect(n(-0.0001)).toBe("0");
   });
 });

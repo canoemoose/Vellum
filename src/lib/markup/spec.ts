@@ -11,7 +11,7 @@ export interface AnnotSpec {
   nm: string;
   subtype: string;
   rect: [number, number, number, number];
-  appearance: { ops: string; bbox: [number, number, number, number]; opacity: number | null; font: boolean };
+  appearance: { ops: string; bbox: [number, number, number, number]; opacity: number | null; fillOpacity: number | null; font: boolean };
   author?: string;
   modified?: string;
   created?: string;
@@ -60,7 +60,7 @@ export function toSpec(m: Markup, f: Frame): AnnotSpec {
     nm: m.id,
     subtype: "Square",
     rect: box,
-    appearance: { ops: content.ops, bbox: box, opacity: content.opacity, font: content.font },
+    appearance: { ops: content.ops, bbox: box, opacity: content.opacity, fillOpacity: content.fillOpacity, font: content.font },
     author: m.meta.author || undefined,
     modified: pdfDate(m.meta.modified),
     created: pdfDate(m.meta.created),
@@ -68,7 +68,7 @@ export function toSpec(m: Markup, f: Frame): AnnotSpec {
     colour: s.stroke,
     borderWidth: s.width,
     dash: s.dash ?? undefined,
-    opacity: s.opacity < 1 ? s.opacity : undefined,
+    // No annotation-wide /CA: the line and fill have their own opacities, in the appearance.
   };
   if (s.fill) spec.interior = s.fill;
   switch (m.kind) {

@@ -21,6 +21,7 @@ fn square(page: usize, nm: &str, r: [f64; 4]) -> AnnotSpec {
             ops: format!("1 0 0 RG 1 0 0 rg {} {} {} {} re f", r[0], r[1], r[2] - r[0], r[3] - r[1]),
             bbox: r,
             opacity: None,
+            fill_opacity: None,
             font: false,
         },
         author: Some("Test".into()),

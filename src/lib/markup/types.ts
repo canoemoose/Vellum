@@ -13,8 +13,10 @@ export interface Style {
   width: number;
   /** Fill, or none. */
   fill: Rgb | null;
-  /** 0..1, for line and fill alike. */
+  /** Line opacity, 0..1. */
   opacity: number;
+  /** Fill opacity, 0..1. Older recovery files lack it: read it with fillOpacity(). */
+  fillOpacity: number;
   /** Dash pattern in points, or solid. */
   dash: number[] | null;
 }
@@ -82,13 +84,16 @@ export const WHITE: Rgb = [1, 1, 1];
 export function defaultStyle(kind: MarkupKind): Style {
   switch (kind) {
     case "text":
-      return { stroke: RED, width: 1, fill: WHITE, opacity: 1, dash: null };
+      return { stroke: RED, width: 1, fill: WHITE, opacity: 1, fillOpacity: 1, dash: null };
     case "ink":
-      return { stroke: RED, width: 2, fill: null, opacity: 1, dash: null };
+      return { stroke: RED, width: 2, fill: null, opacity: 1, fillOpacity: 1, dash: null };
     default:
-      return { stroke: RED, width: 1.5, fill: null, opacity: 1, dash: null };
+      return { stroke: RED, width: 1.5, fill: null, opacity: 1, fillOpacity: 1, dash: null };
   }
 }
+
+/** A style's fill opacity (styles saved before line and fill were split had only one). */
+export const fillOpacity = (s: Style): number => (typeof s.fillOpacity === "number" ? s.fillOpacity : s.opacity);
 
 export const DEFAULT_TEXT: TextStyle = { size: 10, colour: BLACK };
 

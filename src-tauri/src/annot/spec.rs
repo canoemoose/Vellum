@@ -11,8 +11,11 @@ pub struct Appearance {
     pub ops: String,
     /// [x0, y0, x1, y1].
     pub bbox: [f64; 4],
-    /// Stroke and fill opacity for the /GS0 graphics state, if the operators use it.
+    /// Line (/CA) opacity for the /GS0 graphics state, if the operators use it.
     pub opacity: Option<f64>,
+    /// Fill (/ca) opacity for /GS0; without it, the fill takes `opacity`.
+    #[serde(default)]
+    pub fill_opacity: Option<f64>,
     /// The operators use /Helv (Helvetica, WinAnsi).
     #[serde(default)]
     pub font: bool,

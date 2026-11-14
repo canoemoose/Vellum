@@ -38,6 +38,8 @@ function style(v: unknown, kind: MarkupKind): Style {
     width: num(s.width, 0, 50) ?? d.width,
     fill: s.fill === null ? null : (rgb(s.fill) ?? d.fill),
     opacity: num(s.opacity, 0.05, 1) ?? d.opacity,
+    // Before line and fill were split, one opacity covered both.
+    fillOpacity: num(s.fillOpacity, 0.05, 1) ?? num(s.opacity, 0.05, 1) ?? d.fillOpacity,
     dash,
   };
 }
