@@ -229,12 +229,9 @@ describe("view", () => {
     expect(angleByDrag(0, c, up, rotate(up, 80))).toBeCloseTo(80);
     expect(angleByDrag(170, c, up, rotate(up, 30))).toBeCloseTo(-160);
     expect(angleByDrag(0, c, { x: -100, y: 4 }, { x: -100, y: -4 })).toBeCloseTo(4.6, 1);
-    // Within 2 degrees of level or a quarter turn snaps there; Alt (snap false) doesn't.
-    expect(angleByDrag(5, c, up, rotate(up, -3.5))).toBe(0);
-    expect(angleByDrag(0, c, up, rotate(up, 91.5))).toBe(90);
-    expect(angleByDrag(178, c, up, rotate(up, 3))).toBe(180);
-    expect(angleByDrag(5, c, up, rotate(up, -3.5), false)).toBeCloseTo(1.5);
-    expect(angleByDrag(0, c, up, rotate(up, 2.5))).toBeCloseTo(2.5);
+    // No snapping: a small slope stays as dragged.
+    expect(angleByDrag(5, c, up, rotate(up, -3.5))).toBeCloseTo(1.5);
+    expect(angleByDrag(0, c, up, rotate(up, 0.3))).toBeCloseTo(0.3);
   });
 
   it("maps between the screen and the frame", () => {

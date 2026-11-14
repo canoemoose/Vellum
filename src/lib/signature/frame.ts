@@ -264,8 +264,6 @@ export function between(a: View, b: View, t: number, stage: Size): View {
 
 /** How far the rotate handle sits above the box's top edge, in screen pixels. */
 export const KNOB_GAP = 28;
-/** Within this many degrees of level (or of a quarter turn), the rotate handle snaps to it. */
-export const SNAP = 2;
 
 /** Where the rotate handle is drawn: on a stalk out from the middle of the box's top edge. */
 export function knobAt(v: View, b: Box, angle: number): Pt {
@@ -277,17 +275,15 @@ export function knobAt(v: View, b: Box, angle: number): Pt {
 /**
  * The box's angle while the rotate handle is dragged from `from` to `to` (screen points) about
  * the box's centre `c` (on screen), starting at `start` degrees: turned as far as the pointer has
- * gone round the centre, to a tenth of a degree, any way round. Within `SNAP` degrees of level
- * or of a quarter turn it snaps there, unless `snap` is false (Alt held).
+ * gone round the centre, to a tenth of a degree, any way round. No snapping: double-clicking the
+ * handle levels the box.
  */
-export function angleByDrag(start: number, c: Pt, from: Pt, to: Pt, snap = true): number {
+export function angleByDrag(start: number, c: Pt, from: Pt, to: Pt): number {
   const a0 = Math.atan2(from.y - c.y, from.x - c.x);
   const a1 = Math.atan2(to.y - c.y, to.x - c.x);
   let d = ((a1 - a0) * 180) / Math.PI;
   d = ((((d + 180) % 360) + 360) % 360) - 180;
-  const a = normAngle(Math.round((start + d) * 10) / 10);
-  const q = Math.round(a / 90) * 90;
-  return snap && Math.abs(a - q) <= SNAP ? normAngle(q) : a;
+  return normAngle(Math.round((start + d) * 10) / 10);
 }
 
 /** A screen point in frame pixels. */
