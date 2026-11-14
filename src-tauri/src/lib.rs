@@ -473,6 +473,15 @@ pub fn run() {
             print::print_send,
             print::print_cancel,
             // End WP-Print
+            // Signatures
+            signature::signature_import,
+            signature::signature_list,
+            signature::signature_add,
+            signature::signature_rename,
+            signature::signature_delete,
+            signature::signature_get,
+            signature::signature_strokes,
+            // End signatures
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -51,6 +51,8 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_WindowsAndMessaging",
   # text.rs links: ShellExecuteW hands a web address to the default browser.
   "Win32_UI_Shell",
+  # signature/dpapi.rs: the signature library is encrypted for the Windows account.
+  "Win32_Security_Cryptography",
 ] }
 
 # WP-Print: printer enumeration, capabilities and GDI output (StartDoc / StretchDIBits), and
