@@ -11,6 +11,8 @@ export interface TabView {
   detail: string | null;
   /** The view as it was left (background tabs only), for the hover card. Not owned here. */
   snapshot: ImageBitmap | null;
+  /** Unsaved markups. */
+  dirty?: boolean;
 }
 </script>
 
@@ -241,6 +243,7 @@ export interface TabView {
           <svg class="ic" width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="2.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M2 10l3-3 2.5 2.5L9 8l3 3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
         {/if}
         <span class="title" class:loading={t.loading}>{truncateMiddle(t.title, titleChars)}</span>
+        {#if t.dirty}<span class="dirty" title="Unsaved markups" aria-label="Unsaved markups"></span>{/if}
         <CloseButton size="small" label="Close tab" tabindex={-1} onclick={() => onClose(t.id)} />
       </div>
     {/each}
@@ -352,6 +355,13 @@ export interface TabView {
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+  .dirty {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
   }
   .title.loading {
     opacity: 0.6;

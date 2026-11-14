@@ -31,6 +31,8 @@
     onLayout: (m: "continuous" | "single" | "columns") => void;
     /** The search box, at the right-hand end. */
     searchBox?: Snippet;
+    /** The markup tools, in the centre. */
+    centre?: Snippet;
   }
   let p: Props = $props();
 
@@ -150,7 +152,7 @@
       </button>
     {/each}
   </div>
-  <div class="centre"></div>
+  <div class="centre">{@render p.centre?.()}</div>
   <!-- Automatic, or a fixed choice. While automatic, the mode it picked has a hairline round
        it; clicking that fixes the choice, and Auto goes back. -->
   <div class="group seg" role="radiogroup" aria-label="Navigation">
@@ -291,6 +293,8 @@
   .centre {
     flex: 1 1 0;
     min-width: 0;
+    display: flex;
+    justify-content: center;
   }
   /* Segments take the shared selected look (app.css .seg); icon buttons keep their own size. */
   .seg .mode {

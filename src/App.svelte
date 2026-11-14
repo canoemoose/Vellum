@@ -12,6 +12,18 @@
   import Toolbar from "./lib/components/Toolbar.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import SearchField from "./lib/components/SearchField.svelte";
+  import ToolPalette from "./lib/components/ToolPalette.svelte";
+  import PropertiesStrip from "./lib/components/PropertiesStrip.svelte";
+  import TextEditor from "./lib/components/TextEditor.svelte";
+  import ChoiceDialog, { type Choice } from "./lib/components/dialogs/ChoiceDialog.svelte";
+  import { MarkupTool, type Tool } from "./lib/engine/markupTool";
+  import { MarkupDoc } from "./lib/engine/markupDoc";
+  import { confirm as confirmSave, styleFor } from "./lib/markup/prefs";
+  import type { Frame } from "./lib/markup/pdf";
+  import { TEXT_PAD } from "./lib/markup/ops";
+  import type { Markup, MarkupKind, Style, TextStyle } from "./lib/markup/types";
+  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unsavedMessage } from "./lib/shell/save";
+  import { invoke } from "@tauri-apps/api/core";
   import type { SearchView } from "./lib/components/SearchResults.svelte";
   import { TextTool } from "./lib/engine/textTool";
   import { SearchController } from "./lib/engine/search";
@@ -42,7 +54,7 @@
   import type { PageRect, PrintContext } from "./lib/print/context";
   import { loadSettings, saveSettings, type Settings } from "./lib/settings";
   import {
-    appendPerfLog, jsHeapMb, launchArgs, memoryStats, onForwardedFiles, openUrl, pickFiles, pickFolder, revealInExplorer,
+    appendPerfLog, jsHeapMb, launchArgs, memoryStats, onForwardedFiles, openUrl, pickFiles, pickFolder, pickSavePdf, revealInExplorer,
     writeBinaryFile, type LaunchArgs,
   } from "./lib/platform";
   import { runBench } from "./lib/perf/bench";
@@ -80,6 +92,10 @@
     candidates: ScaleCandidate[] | null;
     password: string | null;
     token: number;
+    /** This tab's markups (engine/markupDoc.ts). */
+    marks: MarkupDoc;
+    /** The file's size and time when opened or last saved, to notice changes on disk. */
+    stamp: Stamp | null;
     /** The mini map's mode, its size now, and the size to remember (up to the guards). */
     map?: MapMode;
     mapSize?: number;
@@ -145,6 +161,8 @@
 
   /** The attached document changed (tab switch, open, close): selection and highlights follow. */
   function readingFollowsDoc() {
+    markupTool?.attach(active?.status === "open" ? active.marks : null);
+    markVersion++;
     textTool?.reset();
     search?.paint();
     refreshSearch();
@@ -175,10 +193,323 @@
     openUrl(url).catch((e) => notify(userMessage(e, "open the link")));
   }
 
+  // ------------------------------------------------------------------ markups (editing phases 2 and 3)
+
+  /** Drawing and editing markups on the canvas (engine/markupTool.ts); made with the viewer. */
+  let markupTool: MarkupTool | null = null;
+  /** Bumped whenever the markup tool reports a change, so derived UI re-reads it. */
+  let markVersion = $state(0);
+  /** The account's display name, written into markups unless one is set in the settings. */
+  let author = $state("");
+  /** A question waiting for an answer (ChoiceDialog). */
+  let choice = $state.raw<{ title: string; message: string; warnings?: string[]; note?: string | null; choices: Choice[]; onCancel: () => void } | null>(null);
+
+  /** Ask a question; resolves with the chosen label, or null if dismissed. */
+  function ask(title: string, message: string, labels: string[], extra: { warnings?: string[]; note?: string | null } = {}): Promise<string | null> {
+    return new Promise((resolve) => {
+      const done = (v: string | null) => {
+        choice = null;
+        resolve(v);
+      };
+      choice = {
+        title, message, ...extra,
+        choices: labels.map((label, i) => ({ label, primary: i === 0, action: () => done(label) })),
+        onCancel: () => done(null),
+      };
+    });
+  }
+
+  const toolNow = $derived.by<Tool>(() => {
+    void markVersion;
+    return markupTool?.tool ?? "select";
+  });
+
+  function setTool(t: Tool) {
+    markupTool?.setTool(t);
+  }
+
+  function onMarkupsChanged() {
+    markVersion++;
+    scheduleRecovery();
+  }
+
+  const KIND_LABEL: Record<MarkupKind, string> = { rect: "Rectangle", arrow: "Arrow", cloud: "Revision cloud", text: "Text box", ink: "Pen" };
+
+  /** What the properties strip shows: the tool's style, or the selection's. */
+  const strip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    if (!mt || !pdfDoc) return null;
+    if (mt.tool !== "select") {
+      const k = mt.tool;
+      return { kinds: [k], style: styleFor(settings.markup, k), text: k === "text" ? settings.markup.text : null, label: `${KIND_LABEL[k]} tool` };
+    }
+    const sel = mt.selected();
+    if (!sel.length) return null;
+    const kinds = [...new Set(sel.map((m) => m.kind))];
+    const t = sel.find((m) => m.kind === "text") as Extract<Markup, { kind: "text" }> | undefined;
+    return { kinds, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? KIND_LABEL[sel[0].kind] : `${sel.length} markups selected` };
+  });
+
+  function stripStyle(patch: Partial<Style>) {
+    const mt = markupTool;
+    if (!mt || !strip) return;
+    // Each tool remembers its last style; restyling a markup also sets it for its tool.
+    const next = { ...settings.markup.styles };
+    for (const k of strip.kinds) next[k] = { ...styleFor(settings.markup, k), ...patch };
+    settings.markup = { ...settings.markup, styles: next };
+    save();
+    if (mt.tool === "select") mt.restyle(patch);
+    markVersion++;
+  }
+
+  function stripText(patch: Partial<TextStyle>) {
+    const mt = markupTool;
+    if (!mt) return;
+    settings.markup = { ...settings.markup, text: { ...settings.markup.text, ...patch } };
+    save();
+    if (mt.tool === "select") mt.restyle({}, patch);
+    markVersion++;
+  }
+
+  /** The text box being typed into, placed on screen. */
+  const editor = $derived.by(() => {
+    void markVersion;
+    void [ui.viewWorld.x, ui.viewWorld.y, ui.zoom, ui.rotation];
+    const v = viewer;
+    const m = markupTool?.editingMarkup();
+    if (!v || !m) return null;
+    const tl = v.pageToScreen(m.page, m.rect[0], m.rect[1]);
+    if (!tl) return null;
+    const c = m.textStyle.colour.map((x) => Math.round(x * 255)).join(",");
+    return {
+      id: m.id, x: tl[0], y: tl[1], w: (m.rect[2] - m.rect[0]) * v.view.scale, h: (m.rect[3] - m.rect[1]) * v.view.scale,
+      rotation: ui.rotation, scale: v.view.scale, size: m.textStyle.size, pad: TEXT_PAD + m.style.width, colour: `rgb(${c})`, text: m.text,
+    };
+  });
+
+  // ---------------------------------------------------------------- saving
+
+  /** Fetch the frames of the pages a save touches. */
+  async function ensureFrames(t: Tab, docId: number) {
+    for (const page of t.marks.pagesWithoutFrames()) t.marks.frames.set(page, await invoke<Frame>("doc_page_frame", { docId, page }));
+  }
+
+  interface Prepared {
+    temp: string;
+    target: string;
+    added: number;
+    rebuilt: boolean;
+  }
+
+  /** Save the active tab's markups into its file (Ctrl+S). True when saved, or nothing to save. */
+  async function saveActive(): Promise<boolean> {
+    const t = active;
+    const v = viewer;
+    const mt = markupTool;
+    if (!t || !v || !mt || t.status !== "open" || !v.doc) return false;
+    mt.finishText();
+    if (!t.marks.dirty) return true;
+    if (t.kind !== "pdf") {
+      notify("Markups can't be saved into an image yet");
+      return false;
+    }
+    try {
+      await ensureFrames(t, v.doc.docId);
+      const key = pathKey(t.path);
+      if (!settings.markup.confirmed.includes(key)) {
+        const info = await invoke<FileInfo>("annot_inspect", { path: t.path, password: t.password });
+        const c = saveConfirmation(t.title, info);
+        const a = await ask("Save into the file", c.message, ["Save", "Save a copy…", "Cancel"], { warnings: c.warnings, note: c.note });
+        if (a === "Save a copy…") return saveCopy();
+        if (a !== "Save") return false;
+        settings.markup = confirmSave(settings.markup, key);
+        save();
+      }
+      return await writeSave(t, v, true);
+    } catch (e) {
+      return failSave(t, e);
+    }
+  }
+
+  async function writeSave(t: Tab, v: Viewer, expect: boolean): Promise<boolean> {
+    let p: Prepared;
+    try {
+      p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: t.marks.changes(), target: null, expect: expect ? t.stamp : null });
+    } catch (e) {
+      if (!hasCode(e, "changed_on_disk")) throw e;
+      const a = await ask("The file has changed", `${t.title} changed on disk since you opened it. Add your markups to it as it is now?`, ["Save", "Save a copy…", "Cancel"]);
+      if (a === "Save") return writeSave(t, v, false);
+      if (a === "Save a copy…") return saveCopy();
+      return false;
+    }
+    const oldId = v.doc!.docId;
+    const ids = new Map<number, string[]>();
+    for (const m of t.marks.markups) ids.set(m.page, [...(ids.get(m.page) ?? []), m.id]);
+    try {
+      await v.reopen(
+        () => invoke("annot_commit", { temp: p.temp, target: p.target }),
+        async (docId) => {
+          for (const [page, nms] of ids) await invoke("doc_hide_annots", { docId, page, nms, hidden: true });
+        },
+      );
+    } catch (e) {
+      invoke("annot_discard", { temp: p.temp }).catch(() => {});
+      readingFollowsAfterReopen(t, oldId, v);
+      throw e;
+    }
+    t.marks.markSaved();
+    readingFollowsAfterReopen(t, oldId, v);
+    const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
+    updateTab(t.id, { stamp });
+    invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+    markVersion++;
+    notify(p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`);
+    return true;
+  }
+
+  /** After a reopen the document has a new id: move the tab and the caches over to it. */
+  function readingFollowsAfterReopen(t: Tab, oldId: number, v: Viewer) {
+    if (!v.doc || v.doc.docId === oldId) return;
+    textTool?.forgetDoc(oldId);
+    search?.forgetDoc(oldId);
+    updateTab(t.id, { info: v.doc });
+    readingFollowsDoc();
+  }
+
+  async function failSave(t: Tab, e: unknown): Promise<boolean> {
+    console.warn("save failed:", String((e as Error)?.message ?? e));
+    const a = await ask("Couldn't save", `${userMessage(e, `save ${t.title}`)} Your markups are still here.`, ["Save a copy…", "Close"]);
+    if (a === "Save a copy…") return saveCopy();
+    return false;
+  }
+
+  /** Save the markups into a copy of the file, staying on the original (Ctrl+Shift+S). */
+  async function saveCopy(): Promise<boolean> {
+    const t = active;
+    const v = viewer;
+    if (!t || !v || !markupTool || t.status !== "open" || !v.doc) return false;
+    markupTool.finishText();
+    if (t.kind !== "pdf") {
+      notify("Markups can't be saved into an image yet");
+      return false;
+    }
+    const dir = t.path.replace(/[\\/][^\\/]*$/, "");
+    const dest = await pickSavePdf(`${dir}\\${copyName(t.path)}`, "Save a copy with markups");
+    if (!dest) return false;
+    if (pathKey(dest) === pathKey(t.path)) return saveActive();
+    try {
+      await ensureFrames(t, v.doc.docId);
+      const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: t.marks.changes(), target: dest, expect: null });
+      await invoke("annot_commit", { temp: p.temp, target: p.target });
+      notify(`Saved a copy as ${fileName(dest)}`);
+      return true;
+    } catch (e) {
+      console.warn("save a copy failed:", String((e as Error)?.message ?? e));
+      notify(userMessage(e, "save the copy"));
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------- unsaved work
+
+  const dirtyTabs = () => tabs.tabs.filter((t) => t.marks.dirty);
+
+  /** Before a tab closes: save, discard or cancel. True to go ahead. */
+  async function settleTab(t: Tab): Promise<boolean> {
+    if (!t.marks.dirty) return true;
+    if (t.id !== tabs.activeId) await activate(t.id);
+    const a = await ask("Unsaved markups", unsavedMessage([t.title]), ["Save", "Don't save", "Cancel"]);
+    if (a === "Save") return saveActive();
+    if (a === "Don't save") {
+      invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+      return true;
+    }
+    return false;
+  }
+
+  /** Before Vellum closes (window close, update): save, discard or cancel. True to go ahead. */
+  async function settleAll(): Promise<boolean> {
+    const dirty = dirtyTabs();
+    if (!dirty.length) return true;
+    const a = await ask("Unsaved markups", unsavedMessage(dirty.map((t) => t.title)), [dirty.length > 1 ? "Save all" : "Save", "Don't save", "Cancel"]);
+    if (a === "Don't save") {
+      for (const t of dirty) await invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+      return true;
+    }
+    if (a !== "Save" && a !== "Save all") return false;
+    for (const t of dirty) {
+      await activate(t.id);
+      if (!(await saveActive())) return false;
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------- crash recovery
+
+  let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A second after a change, keep the active tab's unsaved markups where a crash can't lose them. */
+  function scheduleRecovery() {
+    clearTimeout(recoveryTimer);
+    recoveryTimer = setTimeout(() => {
+      const t = active;
+      if (!t || t.kind !== "pdf" || t.status !== "open") return;
+      const key = recoveryKey(pathKey(t.path));
+      if (!t.marks.dirty) {
+        invoke("recovery_delete", { key }).catch(() => {});
+        return;
+      }
+      const json = JSON.stringify({ v: 1, path: t.path, stamp: t.stamp, markups: t.marks.markups, saved: t.marks.saved.map((m) => m.id) });
+      invoke("recovery_write", { key, json }).catch((e) => console.warn("recovery write failed:", String(e)));
+    }, 1000);
+  }
+
+  /** After opening a PDF: note its stamp, and offer back markups a crash left unsaved. */
+  async function afterOpenMarkups(id: number) {
+    const t = tabById(id);
+    if (!t || t.kind !== "pdf") return;
+    const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
+    updateTab(id, { stamp });
+    const key = recoveryKey(pathKey(t.path));
+    const raw = await invoke<string | null>("recovery_read", { key }).catch(() => null);
+    if (!raw) return;
+    let rec: { stamp: Stamp | null; markups: Markup[]; saved: string[] } | null = null;
+    try {
+      rec = JSON.parse(raw);
+    } catch {
+      rec = null;
+    }
+    const same = rec && stamp && rec.stamp && rec.stamp.size === stamp.size && rec.stamp.mtimeMs === stamp.mtimeMs;
+    if (!rec || !same || !Array.isArray(rec.markups)) {
+      // The file changed since (or the record is unreadable): the markups may not fit it any more.
+      invoke("recovery_delete", { key }).catch(() => {});
+      return;
+    }
+    const a = await ask("Unsaved markups", `Vellum closed before your markups on ${t.title} were saved. Restore them?`, ["Restore", "Discard"]);
+    if (a !== "Restore") {
+      invoke("recovery_delete", { key }).catch(() => {});
+      return;
+    }
+    const now = tabById(id);
+    const v = viewer;
+    if (!now || !v?.doc || now.id !== tabs.activeId) return;
+    const savedIds = new Set(rec.saved);
+    now.marks.saved = rec.markups.filter((m) => savedIds.has(m.id));
+    now.marks.history.push(rec.markups);
+    const byPage = new Map<number, string[]>();
+    for (const m of now.marks.saved) byPage.set(m.page, [...(byPage.get(m.page) ?? []), m.id]);
+    for (const [page, nms] of byPage) await invoke("doc_hide_annots", { docId: v.doc.docId, page, nms, hidden: true }).catch(() => {});
+    v.dropTiles();
+    markupTool?.attach(now.marks);
+    markVersion++;
+  }
+
   const active = $derived(activeTab(tabs));
   const hasDoc = $derived(!!active && active.status === "open" && ui.docId !== null);
   /** A PDF is showing: search, selection and links apply (images have no text). */
   const textDoc = $derived(hasDoc && ui.kind === "pdf");
+  /** A PDF is showing: markups can be drawn and saved (not into images, yet). */
+  const pdfDoc = $derived(hasDoc && ui.kind === "pdf");
   const theme = $derived(resolveTheme(settings.theme, systemDark));
   const chrome = $derived(!bench);
 
@@ -230,7 +561,7 @@
     return {
       id: nextTabId++, path, title: fileName(path), kind: rendererFor(path).name === "image" ? "image" : "pdf",
       status: "pending", error: null, view: null, info: null, scale: null, detected: null, candidates: null,
-      password: null, token: 0,
+      password: null, token: 0, marks: new MarkupDoc(), stamp: null,
     };
   }
 
@@ -339,6 +670,7 @@
     });
     if (passwordFor?.tabId === id) passwordFor = null;
     readingFollowsDoc();
+    void afterOpenMarkups(id);
     settings.recent = addRecent(settings.recent, t.path);
     save();
     detectScale(id, info);
@@ -346,8 +678,11 @@
 
   async function closeTab(id: number) {
     const v = viewer;
+    const first = tabById(id);
+    if (!v || !first) return;
+    if (!(await settleTab(first))) return;
     const t = tabById(id);
-    if (!v || !t) return;
+    if (!t) return;
     if (passwordFor?.tabId === id) passwordFor = null;
     const wasActive = id === tabs.activeId;
     if (wasActive && t.status === "open") rememberActive();
@@ -541,6 +876,7 @@
    * (return false to keep Vellum open).
    */
   async function closeForUpdate(): Promise<boolean> {
+    if (!(await settleAll())) return false;
     rememberActive();
     return true;
   }
@@ -562,6 +898,7 @@
   const docItem = (label: string, action: () => void, shortcut?: string): MenuItem => ({ label, action, shortcut, disabled: !hasDoc });
 
   const menus = $derived.by((): Menu[] => {
+    void markVersion;
     const v = viewer;
     const recent: MenuItem[] = settings.recent.length
       ? [
@@ -580,6 +917,9 @@
           docItem("Export pages as images…", () => { exportState = { progress: null, result: null, ac: null }; dialog = "export"; }),
           docItem("Show in Explorer", () => active && showInExplorer(active.path)),
           { separator: true },
+          { label: "Save", shortcut: "Ctrl+S", disabled: !pdfDoc || !active?.marks.dirty, action: () => void saveActive() },
+          { label: "Save a copy…", shortcut: "Ctrl+Shift+S", disabled: !pdfDoc, action: () => void saveCopy() },
+          { separator: true },
           docItem("Print…", openPrint, "Ctrl+P"),
           docItem("Document properties", () => (dialog = "properties"), "Ctrl+D"),
           { separator: true },
@@ -589,7 +929,13 @@
       {
         label: "Edit",
         items: [
-          { label: "Copy", shortcut: "Ctrl+C", disabled: !textUi.hasSelection, action: copySelection },
+          { label: "Undo", shortcut: "Ctrl+Z", disabled: !markupTool?.doc?.history.canUndo, action: () => markupTool?.undo() },
+          { label: "Redo", shortcut: "Ctrl+Y", disabled: !markupTool?.doc?.history.canRedo, action: () => markupTool?.redo() },
+          { separator: true },
+          { label: "Copy", shortcut: "Ctrl+C", disabled: !textUi.hasSelection && !markupTool?.hasSelection, action: () => (markupTool?.hasSelection ? markupTool.copy() : copySelection()) },
+          { label: "Paste markups", shortcut: "Ctrl+V", disabled: !markupTool?.canPaste, action: () => markupTool?.paste() },
+          { label: "Delete markups", shortcut: "Delete", disabled: !markupTool?.hasSelection, action: () => markupTool?.deleteSelection() },
+          { separator: true },
           { label: "Select all text on the page", shortcut: "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
           { separator: true },
           { label: "Find…", shortcut: "Ctrl+F", disabled: !textDoc, action: () => searchField?.focus() },
@@ -716,7 +1062,7 @@
   // ------------------------------------------------------------------ keyboard (shell-level; navigation keys live in input.ts)
 
   /** A modal (a dialog, or the print dialog unless it's hidden for an area pick) owns the keyboard. */
-  const modalOpen = $derived(dialog !== null || (printOpen && !marquee));
+  const modalOpen = $derived(dialog !== null || choice !== null || (printOpen && !marquee));
 
   // WebView2's own accelerators (reload, find, save page...) don't belong here. Capture phase,
   // so it runs before a dialog or menu can stop the key.
@@ -732,6 +1078,12 @@
     if (ctrl && !e.shiftKey && !e.altKey && k === "f") {
       if (textDoc) searchField?.focus();
       e.preventDefault();
+      return;
+    }
+    // Save is ours too (Ctrl+S is also a WebView2 accelerator).
+    if (ctrl && !e.altKey && k === "s") {
+      e.preventDefault();
+      if (!e.repeat && pdfDoc) void (e.shiftKey ? saveCopy() : saveActive());
       return;
     }
     if (e.key === "F3" && !ctrl) {
@@ -755,9 +1107,30 @@
       if (hasDoc) dialog = "properties";
     } else if (ctrl && !e.shiftKey && k === "b") {
       toggleSidebar();
+    } else if (ctrl && !e.shiftKey && k === "z" && !isTyping(e)) {
+      markupTool?.undo();
+    } else if (ctrl && (k === "y" || (e.shiftKey && k === "z")) && !isTyping(e)) {
+      markupTool?.redo();
     } else if (ctrl && !e.shiftKey && k === "c" && !isTyping(e)) {
-      if (textUi.hasSelection) copySelection();
+      if (markupTool?.hasSelection) markupTool.copy();
+      else if (textUi.hasSelection) copySelection();
       else handled = false;
+    } else if (ctrl && !e.shiftKey && k === "v" && !isTyping(e)) {
+      if (!markupTool?.paste()) handled = false;
+    } else if ((e.key === "Delete" || e.key === "Backspace") && !isTyping(e)) {
+      if (!markupTool?.deleteSelection()) handled = false;
+    } else if (e.key.startsWith("Arrow") && !ctrl && !isTyping(e) && markupTool?.hasSelection) {
+      const step = e.shiftKey ? 10 : 1;
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
+      markupTool.nudge(d[0], d[1]);
+    } else if (e.key === "Enter" && !isTyping(e) && markupTool?.drawingCloud) {
+      markupTool.finishCloud(true);
+    } else if (e.key === "Escape" && !isTyping(e) && markupTool && (markupTool.drawingCloud || markupTool.tool !== "select" || markupTool.hasSelection)) {
+      if (markupTool.drawingCloud) markupTool.finishCloud(false);
+      else if (markupTool.tool !== "select") markupTool.setTool("select");
+      else markupTool.clearSelection();
+    } else if (!ctrl && !e.altKey && !e.shiftKey && k === "v" && !isTyping(e)) {
+      if (pdfDoc) markupTool?.setTool("select");
     } else if (ctrl && !e.shiftKey && k === "a" && !isTyping(e)) {
       // Never the WebView's select-all, which would highlight the whole shell.
       if (textDoc) textTool?.selectPage(ui.page);
@@ -873,20 +1246,56 @@
       measure();
       const tt = new TextTool(v, { openUrl: followUrl, onChange: refreshText });
       textTool = tt;
+      const mt = new MarkupTool(v, {
+        styleFor: (k) => styleFor(settings.markup, k),
+        textStyle: () => settings.markup.text,
+        author: () => settings.markup.author ?? author,
+        onChange: onMarkupsChanged,
+      });
+      markupTool = mt;
+      invoke<string>("user_display_name").then((n) => (author = n)).catch(() => {});
+      // Closing the window: settle unsaved markups first (the title bar's close calls close()).
+      win
+        .onCloseRequested(async (ev) => {
+          if (!dirtyTabs().length) {
+            rememberActive();
+            return;
+          }
+          ev.preventDefault();
+          if (await settleAll()) {
+            rememberActive();
+            await win.destroy();
+          }
+        })
+        .then((un) => cleanups.push(un))
+        .catch(() => {});
       search = new SearchController(v, refreshSearch);
       detachInput = attachInput(host, v, {
         open: openDialog,
         toggleDebug: () => (debug = !debug),
         blocked: () => modalOpen,
         hasDoc: () => hasDoc,
+        // Markups first (handles, markups, drawing tools), then text and links, then a marquee.
         left: {
-          down: (x, y, clicks) => (textDoc ? tt.pointerDown(x, y, clicks) : false),
-          move: (x, y) => {
-            if (textDoc) tt.pointerMove(x, y);
+          down: (x, y, clicks, mods) => {
+            if (pdfDoc && mt.down(x, y, clicks, mods)) return true;
+            if (textDoc && mt.tool === "select" && tt.pointerDown(x, y, clicks)) return true;
+            return pdfDoc && mt.marqueeDown(x, y, mods);
           },
-          up: () => tt.pointerUp(),
+          move: (x, y, mods) => {
+            if (mt.active) mt.move(x, y, mods);
+            else if (tt.active) tt.pointerMove(x, y);
+            else {
+              if (pdfDoc) mt.move(x, y, mods);
+              if (textDoc && mt.tool === "select") tt.pointerMove(x, y);
+            }
+          },
+          up: (x, y, mods) => {
+            if (mt.active) mt.up(x, y, mods);
+            else tt.pointerUp();
+          },
           leave: () => tt.pointerLeave(),
-          cursor: () => (textDoc ? tt.cursor() : null),
+          cursor: () => (pdfDoc ? mt.cursor() : null) ?? (textDoc && mt.tool === "select" ? tt.cursor() : null),
         },
         contextMenu: (x, y) => {
           if (!tt.hasSelection) return;
@@ -978,6 +1387,7 @@
       note: t.info?.meta.note ?? null,
       detail: tabDetail(t),
       snapshot: t.view?.snapshot ?? null,
+      dirty: (void markVersion, t.marks.dirty),
     })),
   );
   const sizes = $derived(hasDoc && active?.info ? active.info.sizes : []);
@@ -1069,6 +1479,14 @@
       columns={ui.columns}
       onLayout={setLayout}
     >
+      {#snippet centre()}
+        <ToolPalette
+          tool={toolNow}
+          disabled={!pdfDoc}
+          disabledReason={hasDoc && !pdfDoc ? "Markups on images come later (they can't be saved into an image)" : undefined}
+          onTool={setTool}
+        />
+      {/snippet}
       {#snippet searchBox()}
         <SearchField
           bind:this={searchField}
@@ -1084,6 +1502,9 @@
         />
       {/snippet}
     </Toolbar>
+    {#if strip}
+      <PropertiesStrip kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label} onStyle={stripStyle} onText={stripText} />
+    {/if}
   {/if}
 
   <div class="body">
@@ -1183,6 +1604,16 @@
       {#if chrome && hasDoc && viewer && ui.navMode === "document"}
         <CanvasScrollbars view={ui.viewWorld} bounds={ui.bounds} unitsPerPx={1 / (ui.zoom * PT_TO_CSS)} onPan={(dx, dy) => viewer?.panBy(dx, dy)} />
       {/if}
+      {#if editor}
+        {#key editor.id}
+          <TextEditor
+            x={editor.x} y={editor.y} w={editor.w} h={editor.h} rotation={editor.rotation} scale={editor.scale}
+            size={editor.size} pad={editor.pad} colour={editor.colour} text={editor.text}
+            onInput={(s) => markupTool?.setText(s)}
+            onDone={() => markupTool?.finishText()}
+          />
+        {/key}
+      {/if}
       {#if marquee}
         <MarqueeOverlay pageAt={(x, y) => viewer?.pagePointAt(x, y) ?? null} {pointOn} onDone={marquee} />
       {/if}
@@ -1210,6 +1641,10 @@
 {#if contextMenu}
   <MenuPopup items={contextMenu.items} x={contextMenu.x} y={contextMenu.y} onClose={() => (contextMenu = null)} />
   <div class="ctx-catch" role="presentation" onpointerdown={() => (contextMenu = null)} oncontextmenu={(e) => { e.preventDefault(); contextMenu = null; }}></div>
+{/if}
+
+{#if choice}
+  <ChoiceDialog title={choice.title} message={choice.message} warnings={choice.warnings} note={choice.note} choices={choice.choices} onCancel={choice.onCancel} />
 {/if}
 
 {#if passwordFor}
