@@ -3,7 +3,7 @@
   // box round the signature, which can be turned to lie along a slanted one. Shown on an
   // upright preview (signature_preview); the framing is applied to the full-size photo in
   // Rust. Drag the box's corners or edges to resize it, drag inside it to move it, drag outside
-  // it to draw a new one, and drag the round handle above it to turn it along a slanted
+  // it to draw a new one (inside it too, while it's still the whole photo), and drag the round handle above it to turn it along a slanted
   // signature; on letting go the view turns with it, so the box is level and the photo tilts
   // (double-click the handle to level it). When the box is let go, the view settles
   // on it with room round it. Maths in src/lib/signature/frame.ts.
@@ -18,6 +18,8 @@
     FULL,
     handleCursor,
     hitBox,
+    isFull,
+    isLevel,
     knobAt,
     KNOB_GAP,
     screenToFrameDelta,
@@ -248,6 +250,11 @@
     }
   }
 
+  /** Whether the box is the whole photo, level (so it can't be moved). */
+  function wholePhoto(): boolean {
+    return isFull(adj.crop) && isLevel(adj.angle);
+  }
+
   function onKnob(p: Pt): boolean {
     const k = knobAt(view, box, adj.angle);
     return Math.hypot(p.x - k.x, p.y - k.y) <= KNOB_R + 4;
@@ -268,7 +275,10 @@
       straightening = true;
       cursor = "grabbing";
     } else {
-      const handle = hitBox(view, box, adj.angle, p, HANDLE_TOL);
+      let handle = hitBox(view, box, adj.angle, p, HANDLE_TOL);
+      // The box starts as the whole photo, where moving it does nothing: a drag inside draws
+      // a new box instead, as the first thing anyone does is drag round the signature.
+      if (handle === "move" && wholePhoto()) handle = null;
       drag = handle
         ? { kind: "box", handle, from: p, box: { ...box }, id: e.pointerId }
         : { kind: "new", from: toFrame(view, p), id: e.pointerId };
@@ -280,7 +290,8 @@
   function move(e: PointerEvent) {
     const p = point(e);
     if (!drag) {
-      const h = hitBox(view, box, adj.angle, p, HANDLE_TOL);
+      let h = hitBox(view, box, adj.angle, p, HANDLE_TOL);
+      if (h === "move" && wholePhoto()) h = null;
       cursor = onKnob(p) ? "grab" : h ? handleCursor(h, adj.angle + view.rot) : "crosshair";
       return;
     }
@@ -374,7 +385,7 @@
   </div>
 
   <div class="row">
-    <span class="hint">Drag a box round the signature. Turn it with the round handle to lie along the writing.</span>
+    <span class="hint">Drag to crop. Drag the top handle to rotate, double-click it to level. Enter applies, Esc cancels.</span>
     <span class="spacer"></span>
     <button class="btn small" onclick={reset} disabled={busy}>Reset</button>
     <button class="btn" onclick={oncancel} disabled={busy}>Cancel</button>

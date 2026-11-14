@@ -57,7 +57,8 @@ alone, so the page never ships. What to look at:
   one, the vector form beside it, which should look identical.
 - **Import:** "Import a picture…" and pick a phone photo of a signature on paper (shadowed and
   uneven light is the point). The photo opens in the framing view first: drag a box round the
-  signature (corners and edges resize it, drag inside to move it, drag outside for a new box),
+  signature (corners and edges resize it, drag inside to move it, drag outside for a new box; while the box is still the whole photo, dragging inside it
+  draws a new one too),
   turn the photo a quarter with the two page-and-arrow buttons, and turn the box to lie along a
   slanted signature by dragging the round handle above it (a fine grid and the angle show
   while you drag; it turns any way round with no snapping, and double-clicking the handle levels it). When you
@@ -97,7 +98,8 @@ alone, so the page never ships. What to look at:
   When the view settles it also turns by the box's angle the other way, so the box always
   ends up level on screen (Matt: "why doesn't it level after release like the zoom does?");
   only the view turns, the framing sent to Rust is the same. The initial box is the whole
-  photo.
+  photo, so a photo that's already tight is one click; dragging inside it draws a new box,
+  since a whole-photo box can't move.
 - **Two importer changes the crop made necessary.** A tight crop makes the pen large against
   the picture, and two size rules were relative to the picture: (1) the "blob" filter dropped
   marks thicker than 3% of the short side, which a wavy biro line in a crop 400 px high exceeds;
