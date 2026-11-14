@@ -40,6 +40,12 @@ PDF reader, not only a drawing tool.
 - **Ruled out:** in-place paragraph editing (PDFium has no text-editing model), certificate
   signing and password protection on save (PDFium can't write either; each needs another
   library). Revisit only if asked.
+- **Certified files** (14 November, phase 0 finding 2): saving markups into a file certified
+  "no changes" or "form filling only" warns once, naming the certifier, then goes ahead.
+- **"No commenting" permission** (14 November, finding 3): treated like a certified file, a
+  warning on the first save.
+- **Malformed files** (14 November, finding 1): the first-save confirmation says "This file has
+  errors; saving rewrites it", and nothing more.
 - Reference for feature ideas only: RonnyM82/Open-Source-PDF-Editor. It's AGPL (PyMuPDF), so
   no code can come from it.
 
@@ -154,7 +160,8 @@ changing what the file came with**:
 - On unlock, say so if the file is digitally signed (saving changes invalidates it) or its
   permissions ask for no modification.
 - Phase 0 found that a *certified* file breaks when markups are merely added, which this lock
-  treats as free, so that warning can't wait for the unlock: see open question 1 at the end.
+  treats as free, so that warning can't wait for the unlock: it comes on the first save (see
+  "Decisions made"), as does the one for a "no commenting" permission.
 - Nothing reaches the disk until Save in either state, and everything is undoable.
 
 Alternative considered: no lock, with the first-save confirmation listing the destructive
@@ -489,16 +496,8 @@ in plain terms what's covered, what isn't, and the one command). Plan:
 
 The first round was answered on 13 November 2026 and is recorded under "Decisions made". The
 table of assumed defaults above is still unreviewed by Matt; treat it as provisional and
-raise it before phase 2.
+raise it before phase 2. (Phase 1 note: with no tool active, left drag selects text and
+follows links, so "returns to select" in that table means back to that.)
 
-Raised by phase 0 (answer before phase 2):
-
-1. **Certified files** (finding 2): when a file is certified "no changes" or "form filling
-   only", should saving markups into it (a) warn once and let you go ahead, (b) only allow
-   "Save a copy", or (c) refuse? Suggested: (a), with the warning naming the certifier.
-2. **"No commenting" permission** (finding 3): honour it (adding markups then needs the edit
-   unlock, or is refused) or ignore it as Vellum does now? Suggested: treat it like a
-   certified file, a warning on first save.
-3. **Malformed files** (finding 1): saving one is a full rewrite through PDFium, not an append.
-   Suggested: the first-save confirmation says "This file has errors; saving rewrites it", and
-   nothing more.
+Raised by phase 0: answered by Matt on 14 November 2026 (recorded under "Decisions made").
+The table of assumed defaults is still unreviewed.
