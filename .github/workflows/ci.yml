@@ -1,7 +1,7 @@
 # Type check, tests, and a release build without bundling, on demand: Actions > CI > Run
 # workflow, or `gh workflow run ci.yml --ref <branch>`. It does not run on pushes; the Release
 # workflow runs the same checks before it builds anything. See docs/release-pipeline-scope.md.
-name: CI
+name: Checks only (manual)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: checks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -58,7 +58,7 @@ Notes:
   `src-tauri/tauri.conf.json`; changing it strands every installed copy.
 - A local `npm run tauri build` builds the installer and then fails at the signing step
   without the key. Use `-- --no-bundle` for the exe.
-- CI (`.github/workflows/ci.yml`: the same checks, no installer) runs only when asked:
+- "Checks only (manual)" (`.github/workflows/ci.yml`: the same checks, no installer) runs only when asked:
   `gh workflow run ci.yml --ref <branch>`. Pushes don't trigger it.
 - Third-party actions are pinned to commits. To update one, change the commit and the version
   comment together.
