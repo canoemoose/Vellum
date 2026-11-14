@@ -108,28 +108,29 @@ fn a_crop_applies_after_the_turn() {
 }
 
 #[test]
-fn straightening_turns_clockwise_about_the_centre() {
+fn a_turned_box_turns_the_picture_back() {
     let mut img = white(201, 101);
     dot(&mut img, 160.5, 50.5, 5.0); // 60 px right of the centre
+    // The whole frame as the box, turned 30 degrees clockwise: what lay along the box's top
+    // edge comes out level, so a point right of centre on the photo comes out up and right.
     let out = import::frame(&img, &adjust(0, 30.0, None));
     assert_eq!(out.dimensions(), (201, 101));
     let (x, y) = centroid(&out);
-    // Clockwise on screen (y down): right of centre goes down.
-    let (ex, ey) = (100.5 + 60.0 * 30f32.to_radians().cos(), 50.5 + 60.0 * 30f32.to_radians().sin());
+    let (ex, ey) = (100.5 + 60.0 * 30f32.to_radians().cos(), 50.5 - 60.0 * 30f32.to_radians().sin());
     assert!((x - ex).abs() < 0.8 && (y - ey).abs() < 0.8, "({x}, {y}) vs ({ex}, {ey})");
 }
 
 #[test]
-fn straightening_by_ninety_degrees_matches_a_quarter_turn() {
+fn a_box_turned_ninety_degrees_matches_a_quarter_turn_back() {
     // A square, so the frame is the same either way.
     let mut img = white(81, 81);
     scribble(&mut img, 10.0, 60.0, 20.0, 6.0, 3.0);
     dot(&mut img, 65.0, 70.0, 4.0);
-    let turned = import::frame(&img, &adjust(1, 0.0, None));
-    let straightened = import::frame(&img, &adjust(0, 90.0, None));
+    let turned = import::frame(&img, &adjust(3, 0.0, None));
+    let boxed = import::frame(&img, &adjust(0, 90.0, None));
     let worst = turned
         .pixels()
-        .zip(straightened.pixels())
+        .zip(boxed.pixels())
         .map(|(a, b)| (0..3).map(|c| (a[c] as i32 - b[c] as i32).abs()).max().unwrap())
         .max()
         .unwrap();
@@ -137,15 +138,41 @@ fn straightening_by_ninety_degrees_matches_a_quarter_turn() {
 }
 
 #[test]
-fn straighten_and_crop_together() {
-    let mut img = white(201, 101);
-    dot(&mut img, 160.5, 50.5, 5.0);
-    let (ex, ey) = (100.5 + 60.0 * 30f32.to_radians().cos(), 50.5 + 60.0 * 30f32.to_radians().sin());
-    // Crop the frame's right half.
-    let out = import::frame(&img, &adjust(0, 30.0, Some([0.5, 0.0, 0.5, 1.0])));
-    let (x, y) = centroid(&out);
-    let x0 = (0.5f32 * 201.0).round();
-    assert!((x + x0 - ex).abs() < 0.8 && (y - ey).abs() < 0.8, "({x}, {y})");
+fn a_box_turned_along_a_slanted_signature_levels_it() {
+    // Two dots 160 px apart on a line rising 20 degrees to the right, in a bigger photo, and a
+    // box round them turned to lie along that line.
+    let mut img = white(400, 300);
+    let (cx, cy, phi) = (220.0f32, 140.0f32, -20f32.to_radians());
+    dot(&mut img, cx - 80.0 * phi.cos(), cy - 80.0 * phi.sin(), 5.0);
+    dot(&mut img, cx + 80.0 * phi.cos(), cy + 80.0 * phi.sin(), 5.0);
+    let (bw, bh) = (240.0 / 400.0, 60.0 / 300.0);
+    let crop = [cx as f64 / 400.0 - bw / 2.0, cy as f64 / 300.0 - bh / 2.0, bw, bh];
+    let out = import::frame(&img, &adjust(0, -20.0, Some(crop)));
+    assert_eq!(out.dimensions(), (240, 60));
+    let half = |left: bool| {
+        let mut part = out.clone();
+        for (x, _, p) in part.enumerate_pixels_mut() {
+            if (x < 120) != left {
+                *p = Rgb([255, 255, 255]);
+            }
+        }
+        centroid(&part)
+    };
+    let ((lx, ly), (rx, ry)) = (half(true), half(false));
+    assert!((ly - 30.0).abs() < 0.8 && (ry - 30.0).abs() < 0.8, "level: {ly} and {ry}");
+    assert!((lx - 40.0).abs() < 0.8 && (rx - 200.0).abs() < 0.8, "apart: {lx} and {rx}");
+}
+
+#[test]
+fn a_turned_box_over_the_edge_is_paper_there() {
+    // The whole frame turned 45 degrees: the corners lie beyond the photo, and repeat its edge.
+    let img = white(120, 80);
+    let out = import::frame(&img, &adjust(0, 45.0, None));
+    assert_eq!(out.dimensions(), (120, 80));
+    assert!(out.pixels().all(|p| *p == Rgb([235, 232, 226])));
+    // Silly sizes are capped, never panic.
+    let out = import::frame(&img, &adjust(0, 10.0, Some([-5.0, 0.2, 40.0, 0.1])));
+    assert_eq!(out.dimensions(), (240, 8));
 }
 
 #[test]

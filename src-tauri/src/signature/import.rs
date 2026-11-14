@@ -2,8 +2,8 @@
 //! crop to the ink and return a PNG with alpha.
 //!
 //! The steps:
-//! 1. Decode, turn upright from the EXIF orientation, apply the user's framing (quarter turns,
-//!    straightening, crop: `Adjust`, chosen on a preview first), and shrink anything huge to a
+//! 1. Decode, turn upright from the EXIF orientation, apply the user's framing (quarter turns
+//!    and a crop box that may be turned: `Adjust`, chosen on a preview first), and shrink anything huge to a
 //!    working size. Cropping comes before the shrink, so a small signature in a big photo keeps
 //!    its full resolution.
 //! 2. Estimate the paper's colour everywhere: per block, the brightest tenth of pixels, then
@@ -48,23 +48,24 @@ pub struct Imported {
     /// tests and diagnostics.
     pub origin: (i64, i64),
     pub scale: f64,
-    /// The working image's scale against the framed image (oriented, turned, straightened and
+    /// The working image's scale against the framed image (oriented, turned and
     /// cropped): 1 unless that was larger than `MAX_WORK_SIDE`.
     pub work_scale: f64,
 }
 
-/// How the user framed the photo before the paper is knocked out. All of it happens on the
-/// upright (EXIF-oriented) image, in this order: quarter turns, straightening, crop.
+/// How the user framed the photo before the paper is knocked out, on the upright
+/// (EXIF-oriented) image: quarter turns, then a crop box, which may be turned to lie along a
+/// slanted signature. What's in the box comes out level.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Adjust {
-    /// Quarter turns clockwise (larger values wrap).
+    /// Quarter turns clockwise (larger values wrap). The frame is the turned image.
     pub turns: u8,
-    /// Straightening, in degrees clockwise, about the centre of the turned image. The frame
-    /// keeps the turned image's size: what turns out of it is lost, and what turns in from
-    /// beyond the photo's edge repeats the edge (paper, usually, which knocks out).
+    /// The crop box's turn, in degrees clockwise about its own centre. Level (0), the box is
+    /// kept inside the frame; turned, it may stick out, and what's beyond the photo repeats
+    /// its edge (paper, usually, which knocks out).
     pub angle: f64,
-    /// The part to keep, as fractions of the frame (0 to 1). None keeps all of it.
+    /// The box before it's turned, as fractions of the frame (0 to 1). None is all of it.
     pub crop: Option<Crop>,
 }
 
@@ -176,19 +177,30 @@ pub fn frame(img: &RgbImage, a: &Adjust) -> RgbImage {
         }
         return image::imageops::crop_imm(&turned, cx as u32, cy as u32, cw as u32, ch as u32).to_image();
     }
-    // Straighten: each output pixel's centre, in the frame, turned back by the angle about the
-    // frame's centre, is where it comes from in the turned image (sampled bilinearly, edges
-    // repeated).
-    let (sin, cos) = (-angle.to_radians()).sin_cos();
-    let (mx, my) = (fw / 2.0, fh / 2.0);
-    let (ow, oh) = (cw as u32, ch as u32);
+    // A turned box: its centre stays in the frame, and its sides (along the box) are the crop's
+    // width and height in frame pixels, at most twice the frame's, as a box turned over a
+    // corner may stick out.
+    let (mx, my, ow, oh) = match a.crop {
+        Some(c) if [c.x, c.y, c.w, c.h].iter().all(|v| v.is_finite()) => (
+            (c.x + c.w / 2.0).clamp(0.0, 1.0) * fw,
+            (c.y + c.h / 2.0).clamp(0.0, 1.0) * fh,
+            (c.w.abs().min(2.0) * fw).round().max(1.0) as u32,
+            (c.h.abs().min(2.0) * fh).round().max(1.0) as u32,
+        ),
+        _ => (fw / 2.0, fh / 2.0, fw as u32, fh as u32),
+    };
+    // Each output pixel's centre, measured from the box's centre along the box's sides, turned
+    // by the box's angle, is where it comes from in the turned image (sampled bilinearly, the
+    // edges repeated beyond the photo).
+    let (sin, cos) = angle.to_radians().sin_cos();
     let (tw, th) = (turned.width() as i64, turned.height() as i64);
     let px = |x: i64, y: i64| turned.get_pixel(x.clamp(0, tw - 1) as u32, y.clamp(0, th - 1) as u32);
     let mut out = RgbImage::new(ow, oh);
+    let (hw, hh) = (ow as f64 / 2.0, oh as f64 / 2.0);
     for oy in 0..oh {
         for ox in 0..ow {
-            let dx = cx + ox as f64 + 0.5 - mx;
-            let dy = cy + oy as f64 + 0.5 - my;
+            let dx = ox as f64 + 0.5 - hw;
+            let dy = oy as f64 + 0.5 - hh;
             let sx = mx + dx * cos - dy * sin - 0.5;
             let sy = my + dx * sin + dy * cos - 0.5;
             let (fx, fy) = (sx.floor(), sy.floor());

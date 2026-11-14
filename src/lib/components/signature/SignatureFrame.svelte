@@ -1,26 +1,36 @@
 <script lang="ts">
-  // Frame a photo before its paper is knocked out: turn it, straighten it, crop to the
-  // signature. Shown on an upright preview (signature_preview); the framing is applied to the
-  // full-size photo in Rust. Drag the box's corners or edges to crop, drag inside it to move it,
-  // drag outside it to draw a new one. The wheel zooms at the pointer; middle-drag, or Space
-  // and drag, pans. Maths in src/lib/signature/frame.ts.
+  // Frame a photo before its paper is knocked out: turn it a quarter at a time, then a crop
+  // box round the signature, which can be turned to lie along a slanted one. Shown on an
+  // upright preview (signature_preview); the framing is applied to the full-size photo in
+  // Rust. Drag the box's corners or edges to resize it, drag inside it to move it, drag outside
+  // it to draw a new one. When the box is let go the view settles on it, with room round it.
+  // (The wheel zooms and Space-drag or middle-drag pans, as quiet extras.) Maths in
+  // src/lib/signature/frame.ts.
   import { onMount } from "svelte";
   import {
+    between,
+    bounds,
+    boxBetween,
     clampAngle,
-    cropBetween,
-    cropOnScreen,
-    dragCrop,
+    corners,
+    dragBox,
     fitView,
     frameSize,
     FULL,
-    hitCrop,
+    handleCursor,
+    hitBox,
     MAX_ANGLE,
-    screenToFrame,
+    settleView,
+    toBox,
+    toCrop,
+    toFrame,
+    toScreen,
     turn,
     zoomAt,
     type Adjust,
-    type Crop,
+    type Box,
     type Handle,
+    type Pt,
     type View,
   } from "../../signature/frame";
 
@@ -37,41 +47,65 @@
   // svelte-ignore state_referenced_locally
   let adj = $state<Adjust>({ ...start, crop: { ...start.crop } });
   let view = $state<View>({ scale: 1, x: 0, y: 0 });
-  /** True once the user has zoomed or panned; until then the view follows the box's size. */
-  let placed = false;
-  let box = { w: 1, h: 1 };
+  let stage = { w: 1, h: 1 };
   let dpr = 1;
   let canvas: HTMLCanvasElement;
   let host: HTMLDivElement;
   let straightening = $state(false);
   let spaceDown = false;
   let cursor = $state("crosshair");
+  let anim = 0;
 
-  const PAD = 24; // room round the frame for the handles
+  const PAD = 24; // room round the photo for the handles
   const HANDLE_TOL = 8;
-  const MIN_PX = 24; // the smallest crop, in preview pixels
+  const MIN_PX = 24; // the box's shortest side, in preview pixels
+  const FILL = 0.75; // how much of the stage a settled box fills
+  const MAX_SCALE = 6; // screen pixels per preview pixel, at most, when settling
+  const SETTLE_MS = 220;
 
   const frame = $derived(frameSize(image.width, image.height, adj.turns));
-  const minCrop = $derived({ w: Math.min(1, MIN_PX / frame.w), h: Math.min(1, MIN_PX / frame.h) });
+  const box = $derived(toBox(adj.crop, frame));
+
+  function setBox(b: Box) {
+    adj.crop = toCrop(b, frame);
+  }
 
   type Drag =
-    | { kind: "crop"; handle: Handle; from: { x: number; y: number }; crop: Crop; id: number }
-    | { kind: "new"; from: { x: number; y: number }; id: number }
-    | { kind: "pan"; from: { x: number; y: number }; view: View; id: number };
+    | { kind: "box"; handle: Handle; from: Pt; box: Box; id: number }
+    | { kind: "new"; from: Pt; id: number }
+    | { kind: "pan"; from: Pt; view: View; id: number };
   let drag: Drag | null = null;
 
-  function fit() {
-    view = fitView(frame, box, PAD);
-    placed = false;
+  function stopSettling() {
+    cancelAnimationFrame(anim);
+    anim = 0;
+  }
+
+  /** Move the view onto the box: smoothly, unless `now` or the user prefers less motion. */
+  function settle(now = false) {
+    stopSettling();
+    const target = settleView(frame, bounds(corners(box, adj.angle)), stage, PAD, FILL, MAX_SCALE);
+    if (now || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      view = target;
+      return;
+    }
+    const from = { ...view };
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / SETTLE_MS);
+      view = between(from, target, 1 - Math.pow(1 - k, 3), stage);
+      anim = k < 1 ? requestAnimationFrame(step) : 0;
+    };
+    anim = requestAnimationFrame(step);
   }
 
   function resize() {
     const r = host.getBoundingClientRect();
     dpr = window.devicePixelRatio || 1;
-    box = { w: Math.max(1, r.width), h: Math.max(1, r.height) };
-    canvas.width = Math.round(box.w * dpr);
-    canvas.height = Math.round(box.h * dpr);
-    if (!placed) fit();
+    stage = { w: Math.max(1, r.width), h: Math.max(1, r.height) };
+    canvas.width = Math.round(stage.w * dpr);
+    canvas.height = Math.round(stage.h * dpr);
+    settle(true);
     draw();
   }
 
@@ -79,7 +113,10 @@
     const ro = new ResizeObserver(resize);
     ro.observe(host);
     host.focus();
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      stopSettling();
+    };
   });
 
   // Redraw whenever the framing or the view changes.
@@ -95,41 +132,48 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const f = frame;
 
-    // The photo, turned and straightened about the frame's centre, clipped to the frame.
+    // The photo, turned its quarter turns about the frame's centre.
     ctx.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, dpr * view.x, dpr * view.y);
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, f.w, f.h);
-    ctx.clip();
     ctx.translate(f.w / 2, f.h / 2);
-    ctx.rotate(((adj.turns * 90 + adj.angle) * Math.PI) / 180);
+    ctx.rotate((adj.turns * Math.PI) / 2);
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(image, -image.width / 2, -image.height / 2);
     ctx.restore();
 
-    // Screen space from here: dim what's cropped away, then the box, its grid and handles.
+    // Screen space from here: dim the photo outside the box.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const fr = cropOnScreen(view, f, FULL);
-    const r = cropOnScreen(view, f, adj.crop);
+    const p0 = toScreen(view, { x: 0, y: 0 });
+    const pts = corners(box, adj.angle).map((p) => toScreen(view, p));
     ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
     ctx.beginPath();
-    ctx.rect(fr.x, fr.y, fr.w, fr.h);
-    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.rect(p0.x, p0.y, f.w * view.scale, f.h * view.scale);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
     ctx.fill("evenodd");
 
-    // While straightening, a fine grid to line the signature up with; otherwise thirds.
-    const lines = straightening ? Math.max(4, Math.round(r.h / 24)) : 3;
+    // The box, its grid and handles, drawn level about its centre and then turned.
+    const c = toScreen(view, { x: box.cx, y: box.cy });
+    ctx.translate(c.x, c.y);
+    ctx.rotate((adj.angle * Math.PI) / 180);
+    const w = box.w * view.scale;
+    const h = box.h * view.scale;
+    const r = { x: -w / 2, y: -h / 2, w, h };
+
+    // While turning the box, a fine grid to line the signature up with; otherwise thirds.
+    const rows = straightening ? Math.max(4, Math.round(r.h / 24)) : 3;
     const cols = straightening ? Math.max(4, Math.round(r.w / 24)) : 3;
     ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let i = 1; i < lines; i++) {
-      const y = Math.round(r.y + (r.h * i) / lines) + 0.5;
+    for (let i = 1; i < rows; i++) {
+      const y = r.y + (r.h * i) / rows;
       ctx.moveTo(r.x, y);
       ctx.lineTo(r.x + r.w, y);
     }
     for (let i = 1; i < cols; i++) {
-      const x = Math.round(r.x + (r.w * i) / cols) + 0.5;
+      const x = r.x + (r.w * i) / cols;
       ctx.moveTo(x, r.y);
       ctx.lineTo(x, r.y + r.h);
     }
@@ -154,45 +198,35 @@
       ctx.lineTo(cx + sx * L, cy);
     }
     const B = Math.min(10, r.w / 6, r.h / 6);
-    ctx.moveTo(r.x + r.w / 2 - B, r.y);
-    ctx.lineTo(r.x + r.w / 2 + B, r.y);
-    ctx.moveTo(r.x + r.w / 2 - B, r.y + r.h);
-    ctx.lineTo(r.x + r.w / 2 + B, r.y + r.h);
-    ctx.moveTo(r.x, r.y + r.h / 2 - B);
-    ctx.lineTo(r.x, r.y + r.h / 2 + B);
-    ctx.moveTo(r.x + r.w, r.y + r.h / 2 - B);
-    ctx.lineTo(r.x + r.w, r.y + r.h / 2 + B);
+    ctx.moveTo(-B, r.y);
+    ctx.lineTo(B, r.y);
+    ctx.moveTo(-B, r.y + r.h);
+    ctx.lineTo(B, r.y + r.h);
+    ctx.moveTo(r.x, -B);
+    ctx.lineTo(r.x, B);
+    ctx.moveTo(r.x + r.w, -B);
+    ctx.lineTo(r.x + r.w, B);
     ctx.stroke();
   }
 
-  function point(e: PointerEvent | WheelEvent) {
+  function point(e: PointerEvent | WheelEvent): Pt {
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
-
-  const CURSORS: Record<Handle, string> = {
-    nw: "nwse-resize",
-    se: "nwse-resize",
-    ne: "nesw-resize",
-    sw: "nesw-resize",
-    n: "ns-resize",
-    s: "ns-resize",
-    e: "ew-resize",
-    w: "ew-resize",
-    move: "move",
-  };
 
   function down(e: PointerEvent) {
     if (drag || busy) return;
     const p = point(e);
     if (e.button === 1 || (e.button === 0 && spaceDown)) {
+      stopSettling();
       drag = { kind: "pan", from: p, view: { ...view }, id: e.pointerId };
       cursor = "grabbing";
     } else if (e.button === 0) {
-      const handle = hitCrop(cropOnScreen(view, frame, adj.crop), p, HANDLE_TOL);
+      stopSettling();
+      const handle = hitBox(view, box, adj.angle, p, HANDLE_TOL);
       drag = handle
-        ? { kind: "crop", handle, from: p, crop: { ...adj.crop }, id: e.pointerId }
-        : { kind: "new", from: screenToFrame(view, frame, p), id: e.pointerId };
+        ? { kind: "box", handle, from: p, box: { ...box }, id: e.pointerId }
+        : { kind: "new", from: toFrame(view, p), id: e.pointerId };
     } else return;
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
@@ -201,55 +235,54 @@
   function move(e: PointerEvent) {
     const p = point(e);
     if (!drag) {
-      const h = spaceDown ? null : hitCrop(cropOnScreen(view, frame, adj.crop), p, HANDLE_TOL);
-      cursor = spaceDown ? "grab" : h ? CURSORS[h] : "crosshair";
+      const h = spaceDown ? null : hitBox(view, box, adj.angle, p, HANDLE_TOL);
+      cursor = spaceDown ? "grab" : h ? handleCursor(h, adj.angle) : "crosshair";
       return;
     }
     if (e.pointerId !== drag.id) return;
     if (drag.kind === "pan") {
       view = { scale: drag.view.scale, x: drag.view.x + p.x - drag.from.x, y: drag.view.y + p.y - drag.from.y };
-      placed = true;
-    } else if (drag.kind === "crop") {
-      const dx = (p.x - drag.from.x) / view.scale / frame.w;
-      const dy = (p.y - drag.from.y) / view.scale / frame.h;
-      adj.crop = dragCrop(drag.crop, drag.handle, dx, dy, minCrop);
+    } else if (drag.kind === "box") {
+      const d = { x: (p.x - drag.from.x) / view.scale, y: (p.y - drag.from.y) / view.scale };
+      setBox(dragBox(drag.box, adj.angle, drag.handle, d, MIN_PX, frame));
     } else {
-      adj.crop = cropBetween(drag.from, screenToFrame(view, frame, p), minCrop);
+      setBox(boxBetween(drag.from, toFrame(view, p), adj.angle, MIN_PX, frame));
     }
   }
 
   function up(e: PointerEvent) {
     if (!drag || e.pointerId !== drag.id) return;
+    const placed = drag.kind !== "pan";
     drag = null;
     cursor = spaceDown ? "grab" : "crosshair";
+    if (placed) settle();
   }
 
   function wheel(e: WheelEvent) {
     e.preventDefault();
-    const fitScale = fitView(frame, box, PAD).scale;
-    // Up to 8 screen pixels per preview pixel: enough to see a biro line's edge.
+    stopSettling();
+    const fitScale = fitView(frame, stage, PAD).scale;
     view = zoomAt(view, Math.exp(-e.deltaY * 0.0015), point(e), fitScale * 0.5, Math.max(fitScale, 8));
-    placed = true;
-  }
-
-  function zoomBy(factor: number) {
-    const fitScale = fitView(frame, box, PAD).scale;
-    view = zoomAt(view, factor, { x: box.w / 2, y: box.h / 2 }, fitScale * 0.5, Math.max(fitScale, 8));
-    placed = true;
   }
 
   function quarter(dir: 1 | -1) {
     adj = turn(adj, dir);
-    fit();
+    settle(true);
   }
 
   function setAngle(v: number) {
     adj.angle = clampAngle(Math.round(v * 10) / 10);
   }
 
+  function endTurning() {
+    if (!straightening) return;
+    straightening = false;
+    settle();
+  }
+
   function reset() {
     adj = { turns: 0, angle: 0, crop: { ...FULL } };
-    fit();
+    settle();
   }
 
   function key(e: KeyboardEvent) {
@@ -300,13 +333,24 @@
   </div>
 
   <div class="row">
-    <button class="btn small icon" onclick={() => quarter(-1)} disabled={busy} title="Turn left" aria-label="Turn left">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5H9a4 4 0 0 1 4 4v0a4 4 0 0 1-4 4H6" /><path d="M7.5 1.5l-2 2 2 2" /></svg>
+    <!-- A page with a curved arrow over it: turning the photo, not going back or forward. -->
+    <button class="btn small icon" onclick={() => quarter(-1)} disabled={busy} title="Turn the photo left" aria-label="Turn the photo left">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <g transform="matrix(-1 0 0 1 16 0)">
+          <rect x="2.5" y="7.5" width="7" height="6" rx="1" />
+          <path d="M5 4.5h3.5a4 4 0 0 1 4 4v1.5" />
+          <path d="M10.5 8.5l2 2 2-2" />
+        </g>
+      </svg>
     </button>
-    <button class="btn small icon" onclick={() => quarter(1)} disabled={busy} title="Turn right" aria-label="Turn right">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 3.5H7a4 4 0 0 0-4 4v0a4 4 0 0 0 4 4h3" /><path d="M8.5 1.5l2 2-2 2" /></svg>
+    <button class="btn small icon" onclick={() => quarter(1)} disabled={busy} title="Turn the photo right" aria-label="Turn the photo right">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="2.5" y="7.5" width="7" height="6" rx="1" />
+        <path d="M5 4.5h3.5a4 4 0 0 1 4 4v1.5" />
+        <path d="M10.5 8.5l2 2 2-2" />
+      </svg>
     </button>
-    <label class="straighten" title="Straighten (double-click to reset)">
+    <label class="straighten" title="Turn the box to lie along the signature (double-click to level it)">
       <span class="label">Straighten</span>
       <input
         type="range"
@@ -315,22 +359,24 @@
         step="0.1"
         value={adj.angle}
         disabled={busy}
-        oninput={(e) => setAngle(+e.currentTarget.value)}
-        onpointerdown={() => (straightening = true)}
-        onpointerup={() => (straightening = false)}
-        onblur={() => (straightening = false)}
-        ondblclick={() => setAngle(0)}
+        oninput={(e) => {
+          straightening = true;
+          setAngle(+e.currentTarget.value);
+        }}
+        onchange={endTurning}
+        onpointerup={endTurning}
+        onblur={endTurning}
+        ondblclick={() => {
+          setAngle(0);
+          settle();
+        }}
       />
       <span class="angle">{adj.angle.toFixed(1)}°</span>
     </label>
-    <span class="spacer"></span>
-    <button class="btn small icon" onclick={() => zoomBy(1 / 1.4)} disabled={busy} title="Zoom out" aria-label="Zoom out">−</button>
-    <button class="btn small" onclick={fit} disabled={busy} title="Fit the photo in view">Fit</button>
-    <button class="btn small icon" onclick={() => zoomBy(1.4)} disabled={busy} title="Zoom in" aria-label="Zoom in">+</button>
   </div>
 
   <div class="row">
-    <span class="hint">Drag a box round the signature. Wheel to zoom, Space and drag to pan.</span>
+    <span class="hint">Drag a box round the signature, then turn it to lie along the writing.</span>
     <span class="spacer"></span>
     <button class="btn small" onclick={reset} disabled={busy}>Reset</button>
     <button class="btn" onclick={oncancel} disabled={busy}>Cancel</button>
@@ -407,7 +453,7 @@
     margin-left: 8px;
   }
   .straighten input {
-    width: 180px;
+    width: 220px;
     margin: 0;
     accent-color: var(--accent);
   }

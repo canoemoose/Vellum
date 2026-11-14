@@ -17,15 +17,15 @@ Those are phase 5 proper, after phases 2 and 3.
 
 | Piece | Where | What it does |
 |---|---|---|
-| Import | `src-tauri/src/signature/import.rs` | Photo or scan in, PNG with alpha out: EXIF rotation, the user's framing (turn, straighten, crop), paper knocked out, one ink colour, cropped to the ink, capped at 1600 px. Also the preview the framing is chosen on. |
+| Import | `src-tauri/src/signature/import.rs` | Photo or scan in, PNG with alpha out: EXIF rotation, the user's framing (quarter turns, then a crop box that may be turned), paper knocked out, one ink colour, cropped to the ink, capped at 1600 px. Also the preview the framing is chosen on. |
 | HEIC | `src-tauri/src/signature/wic.rs` | Pictures the `image` crate can't read (HEIC above all) decoded by Windows' own codecs. |
 | DPAPI | `src-tauri/src/signature/dpapi.rs` | `CryptProtectData` / `CryptUnprotectData` for the signed-in account. |
 | Library | `src-tauri/src/signature/library.rs` | One encrypted file per signature; list, add, rename, delete, get. |
 | Commands | `src-tauri/src/signature/mod.rs` | `signature_preview`, `signature_import`, `_list`, `_add`, `_rename`, `_delete`, `_get`, `_strokes`. |
 | Stroke model | `src/lib/signature/strokes.ts` | Capture, smoothing, simplification, drawing, PNG layout, SVG, stored form. Pure. |
 | IPC and PNG export | `src/lib/signature/api.ts` | Command wrappers, drawing to PNG, recolouring an import, error messages. |
-| Framing maths | `src/lib/signature/frame.ts` | Quarter turns, crop dragging and drawing, the zoomable view. Pure. |
-| Framing view | `src/lib/components/signature/SignatureFrame.svelte` | Crop, turn, straighten and zoom a photo before the paper is knocked out. |
+| Framing maths | `src/lib/signature/frame.ts` | Quarter turns, the crop box (turned or level: dragging, drawing, hit-testing, cursors), the view settling on the box. Pure. |
+| Framing view | `src/lib/components/signature/SignatureFrame.svelte` | Turn a photo and put a crop box (which can be turned) round the signature before the paper is knocked out. |
 | Ink | `src/lib/signature/ink.ts` | Ready-made inks, hex colours, recolouring pixels, the "too pale" check. Pure. |
 | Pad | `src/lib/components/signature/SignaturePad.svelte` | Draw, undo, clear, import a picture, choose the ink, name, save. |
 | Library list | `src/lib/components/signature/SignatureLibrary.svelte` | Previews and names; pick, rename, delete; unreadable files. |
@@ -58,8 +58,10 @@ alone, so the page never ships. What to look at:
 - **Import:** "Import a picture…" and pick a phone photo of a signature on paper (shadowed and
   uneven light is the point). The photo opens in the framing view first: drag a box round the
   signature (corners and edges resize it, drag inside to move it, drag outside for a new box),
-  turn it with the two arrows, straighten it with the slider (a fine grid shows while you drag;
-  double-click resets), wheel to zoom at the pointer, Space and drag or middle-drag to pan.
+  turn the photo a quarter with the two page-and-arrow buttons, and turn the box to lie along a
+  slanted signature with the Straighten slider (a fine grid shows in the box while you drag;
+  double-click levels it). When you let go, the view settles on the box with room round it
+  (the wheel and Space-drag still zoom and pan, unadvertised).
   Enter or "Remove the paper" applies, Esc or Cancel goes back. The result should come back as
   clean ink on the checkerboard, cropped close; "Adjust the photo…" reopens the framing as you
   left it. Blue biro should stay blue. Try a HEIC straight off an iPhone too: **does it come in
@@ -81,12 +83,15 @@ alone, so the page never ships. What to look at:
   webview can't show HEIC); the user frames it; the framing goes back as fractions of the frame
   and an angle, and Rust applies it to the full-size photo, re-reading the file (no cached
   image). Cropping happens before the shrink to the 3000 px working size, so a small signature in
-  a big photo keeps its full resolution. "Scale" is taken to mean zooming the view to frame
-  precisely; the output size is still set by the ink's crop and the 1600 px cap. Straightening
-  keeps the frame's size and turns the photo inside it (as phone photo editors do); corners that
-  turn in from beyond the photo show dark in the view and repeat the photo's edge in Rust, which
-  is paper and knocks out. The crop isn't shrunk automatically to avoid them. The initial crop
-  is the whole photo.
+  a big photo keeps its full resolution. Scale is set by the box's size (Matt); there's no zoom
+  control, the view settles on the box each time it's let go, filling 3/4 of the stage, never
+  further out than the whole photo nor closer than 6 screen pixels per preview pixel.
+  Straightening turns the **box**, not the photo (Matt, 14 November 2026: "I expected it to
+  rotate the crop box, not straighten the picture underneath"): the photo stays put and what's
+  in the box comes out level. Level, the box stays inside the photo; turned, it may stick out
+  (its centre stays on the photo), and what's beyond the photo repeats its edge in Rust, which
+  is paper and knocks out. Drawing a new box while the box is turned draws it at the same turn.
+  The initial box is the whole photo.
 - **Two importer changes the crop made necessary.** A tight crop makes the pen large against
   the picture, and two size rules were relative to the picture: (1) the "blob" filter dropped
   marks thicker than 3% of the short side, which a wavy biro line in a crop 400 px high exceeds;
@@ -189,17 +194,23 @@ For tuning the import by eye, an ignored test writes each synthetic photo and it
   imports through WIC (every Windows has that codec); WIC reads a JPEG's orientation tag
   without turning the pixels, so it's applied exactly once; a broken HEIF says what to install;
   junk is still "not supported"; HEIF is recognised by its header.
-- *Framing* (11 Rust tests): quarter turns go clockwise and wrap, a crop keeps exactly its part
+- *Framing* (12 Rust tests): quarter turns go clockwise and wrap, a crop keeps exactly its part
   (out-of-range and NaN crops are clamped or ignored, never panic), a crop applies after the
-  turn, straightening turns clockwise about the centre (a dot lands where the maths says),
-  straightening by 90 degrees matches a quarter turn to within one level, an import keeps only
+  turn, a turned box turns the picture back (a dot lands where the maths says), a box turned
+  90 degrees matches a quarter turn back to within one level, a box turned along a slanted pair
+  of dots brings them out level and the right distance apart, a box turned over the photo's edge
+  is paper there and silly sizes are capped, an import keeps only
   the cropped one of two signatures, cropping first keeps a small signature in a big photo at
   full resolution, the preview is capped at 2048 px, and a tight crop round a wavy biro line or
   a thick marker is still found. A blank photo with a desk at the edge is still "no ink".
-- *Framing maths* (11 Vitest tests): the crop turns with the picture, dragging corners and
-  edges stays in the frame and above the minimum, moving keeps the size, drawing a new box
-  either way round, the whole frame sends no crop, fitting, zooming about the pointer, the
-  screen-to-frame mapping, and what the pointer grabs.
+- *Framing maths* (20 Vitest tests): the box turns with the picture, fractions to pixels and
+  back, turned corners, a level box's corners and edges stay in the frame and above the
+  minimum, moving keeps the size, drawing a new box either way round; a turned box resizes
+  along its own sides with the opposite side fixed, may stick out but keeps its centre on the
+  photo, and draws new boxes at the same turn; the whole frame sends no crop; fitting, settling
+  on the box (centred, room round it, within limits), the in-between views of the settle, zoom
+  about the pointer, screen and frame mapping, what the pointer grabs on a level or turned box,
+  and the resize cursor following the turn.
 - *Ink* (4 tests): hex colours, recolouring (alpha kept), APCA contrast, which inks count as
   pale (black, blue, mid grey and red pass; yellow, sky blue and pale grey are flagged).
 - *Stroke model* (20 tests): thinning, smoothing (ends pinned, jitter gone, straight stays
@@ -245,8 +256,8 @@ specks, no desk edge.
 Answered 14 November 2026: ink for imports is an option (Original or another ink), drawn
 signatures get a colour picker, HEIC is in. Still open:
 
-1. **The framing view** is untried by hand: does it feel right (handles, zoom, the straighten
-   slider's range of 45 degrees each way), and does the turned or straightened result match
-   what the view showed?
+1. **The framing view** is untried by hand since the box became turnable: does the turned box
+   feel right (handles, the settle after letting go, the slider's 45 degrees each way), and does
+   the result match what was in the box?
 2. **iPhone HEIC orientation:** import one taken in portrait. If it comes in sideways, send the
    `[signature] decoded with WIC` line from the terminal.
