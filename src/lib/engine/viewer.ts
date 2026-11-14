@@ -1709,7 +1709,11 @@ export class Viewer {
       });
       ctx.globalCompositeOperation = "multiply";
       ctx.fillStyle = h.fill;
-      for (const [x0, y0, x1, y1] of boxes) ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      // One path for the layer: where padded rectangles overlap (lines of a selection), the
+      // overlap is filled once, not multiplied twice into a darker stripe.
+      ctx.beginPath();
+      for (const [x0, y0, x1, y1] of boxes) ctx.rect(x0, y0, x1 - x0, y1 - y0);
+      ctx.fill("nonzero");
       ctx.globalCompositeOperation = "source-over";
       if (h.stroke) {
         ctx.strokeStyle = h.stroke;

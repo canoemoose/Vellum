@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Box, type TextLayer, type TextLink, parseTextLayer, textOf, EMPTY_LAYER } from "./layer";
-import { CharIndex, lineDirection, lineRange, rangeRects, sameLine, wordRange } from "./hit";
+import { CharIndex, LineIndex, fitHighlight, lineDirection, lineRange, padHighlight, rangeRects, sameLine, wordRange } from "./hit";
 import { isEmpty, joinPages, ordered, rangeOnPage, selectedPages } from "./selection";
 import { followableUrl, linkAt, linkLabel } from "./links";
 import { HitList, countLabel, searchOrder, stepHit } from "./searchModel";
@@ -124,6 +124,39 @@ describe("hit testing", () => {
       [100, 120, 142, 130],
     ] satisfies Box[]);
     expect(rangeRects(l, 3, 3)).toEqual([]);
+  });
+
+  it("fits selection bands halfway into the gap to the next line, and no further", () => {
+    // Lines 10 pt tall at y 100, 120 (gap 10) and a lone title far below.
+    const l = layerOf([
+      { text: "first line", x: 100, y: 100 },
+      { text: "second line", x: 100, y: 120 },
+      { text: "Title", x: 100, y: 300 },
+    ]);
+    const lines = new LineIndex(l);
+    const [first, second, title] = lines.lines;
+    // Between the first two lines the gap is 10: each band takes 5 of it, so they meet at 115.
+    expect(fitHighlight(first, lines)).toEqual([99, 97.5, 161, 115]);
+    expect(fitHighlight(second, lines)).toEqual([99, 115, 167, 132.5]);
+    // Alone: a quarter of its height each way.
+    expect(fitHighlight(title, lines)).toEqual([99, 297.5, 131, 312.5]);
+  });
+
+  it("fits vertical text across its width", () => {
+    const l = layerOf([
+      { text: "UP", x: 50, y: 50, vertical: true },
+      { text: "ON", x: 64, y: 50, vertical: true },
+    ]);
+    const lines = new LineIndex(l);
+    // Columns 10 wide at x 50 and 64: a gap of 4, so each grows 2 into it.
+    expect(fitHighlight(lines.lines[0], lines)).toEqual([47.5, 49, 62, 63]);
+  });
+
+  it("pads highlights by a fixed margin when the lines aren't known", () => {
+    const b = padHighlight([100, 100, 160, 110]);
+    expect(b[1]).toBeCloseTo(99.2);
+    expect(b[3]).toBeCloseTo(110.8);
+    expect(b[0]).toBeCloseTo(99);
   });
 
   it("tells lines apart", () => {

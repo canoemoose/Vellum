@@ -84,7 +84,7 @@ describe("TextTool", () => {
     tt.pointerUp();
     expect(tt.hasSelection).toBe(true);
     expect(await tt.selectedText()).toBe("Stage");
-    expect(highlight(v, "selection")!.rects.get(0)).toEqual([[100, 100, 130, 110]]);
+    expect(highlight(v, "selection")!.rects.get(0)).toEqual([[99, 97.5, 131, 112.5]]); // a lone line: a quarter of its height either side
   });
 
   it("selects a word on double-click and a line on triple-click", async () => {
@@ -195,7 +195,8 @@ describe("SearchController", () => {
     expect(reveal).toHaveBeenLastCalledWith(2, [100, 100, 130, 110]);
     sc.step(1);
     expect(sc.session!.current).toBe(0); // wraps
-    expect(highlight(v, "search-current")!.rects.get(0)).toEqual([[100, 100, 130, 110]]);
+    const cur = highlight(v, "search-current")!.rects.get(0)![0];
+    [99, 99.2, 131, 110.8].forEach((want, k) => expect(cur[k]).toBeCloseTo(want)); // fixed small margin
   });
 
   it("clears on an empty query and when its document closes", async () => {

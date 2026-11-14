@@ -4,6 +4,7 @@
 
 import type { Viewer } from "./viewer";
 import type { Renderer } from "../render/types";
+import { padHighlight } from "../text/hit";
 import { HitList, type SearchHit, type SearchOptions, searchOrder, stepHit } from "../text/searchModel";
 
 /** Pages searched at once. */
@@ -182,13 +183,13 @@ export class SearchController {
     for (const h of s.list.hits) {
       let list = all.get(h.page);
       if (!list) all.set(h.page, (list = []));
-      list.push(...h.rects);
+      list.push(...h.rects.map(padHighlight));
     }
     this.viewer.setHighlights("search", { rects: all, fill: "rgba(255, 214, 0, 0.55)", order: 1, docId: id });
     const cur = s.hit;
     this.viewer.setHighlights(
       "search-current",
-      cur ? { rects: new Map([[cur.page, cur.rects]]), fill: "rgba(255, 140, 0, 0.75)", stroke: "rgba(200, 80, 0, 1)", order: 2, docId: id } : null,
+      cur ? { rects: new Map([[cur.page, cur.rects.map(padHighlight)]]), fill: "rgba(255, 140, 0, 0.75)", stroke: "rgba(200, 80, 0, 1)", order: 2, docId: id } : null,
     );
   }
 }

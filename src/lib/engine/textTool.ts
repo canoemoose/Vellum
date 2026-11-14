@@ -7,13 +7,15 @@
 
 import type { Viewer } from "./viewer";
 import { type TextLayer, type TextLink, textOf } from "../text/layer";
-import { CharIndex, lineRange, rangeRects, wordRange } from "../text/hit";
+import { CharIndex, LineIndex, fitHighlight, lineRange, rangeRects, wordRange } from "../text/hit";
 import { type Caret, type Selection, isEmpty, joinPages, ordered, rangeOnPage, selectedPages } from "../text/selection";
 import { followableUrl, linkAt } from "../text/links";
 
 interface Entry {
   layer: TextLayer;
   index: CharIndex | null;
+  /** The page's lines, for fitting selection bands between them (built on first use). */
+  lines: LineIndex | null;
 }
 
 export interface TextToolOptions {
@@ -105,7 +107,7 @@ export class TextTool {
       p = r
         .textLayer(id, page)
         .then((layer) => {
-          const e: Entry = { layer, index: null };
+          const e: Entry = { layer, index: null, lines: null };
           this.entries.set(k, e);
           this.trim(id);
           return e;
@@ -344,7 +346,10 @@ export class TextTool {
         continue;
       }
       const r = rangeOnPage(s, page, e.layer.n);
-      if (r) rects.set(page, rangeRects(e.layer, r[0], r[1]));
+      if (!r) continue;
+      e.lines ??= new LineIndex(e.layer);
+      const lines = e.lines;
+      rects.set(page, rangeRects(e.layer, r[0], r[1]).map((b) => fitHighlight(b, lines)));
     }
     this.viewer.setHighlights("selection", {
       rects,

@@ -148,6 +148,89 @@ export function lineRange(l: TextLayer, i: number): [number, number] {
   return [a, b];
 }
 
+/** How far a band grows across its line toward a neighbouring line: half the gap, up to this share of its height. */
+const MAX_TO_NEIGHBOUR = 0.5;
+/** How far it grows on a side with no line that close, as a share of its height. */
+const LONE_ACROSS = 0.25;
+/** How far a band runs past the ends of its text, as a share of its height. */
+const ALONG = 0.1;
+/** Fixed margin for highlights whose neighbouring lines aren't known (search hits). */
+const PLAIN_ACROSS = 0.08;
+
+const isHorizontal = (b: Box) => b[2] - b[0] >= b[3] - b[1];
+
+/** A highlight grown by a fixed small margin: for when the page's lines aren't to hand. */
+export function padHighlight(b: Box): Box {
+  const line = Math.min(b[2] - b[0], b[3] - b[1]);
+  return grow(b, line * PLAIN_ACROSS, line * PLAIN_ACROSS, line * ALONG);
+}
+
+/** Grow a band `before` / `after` across its line (above / below, or left / right) and `along` at both ends. */
+function grow(b: Box, before: number, after: number, along: number): Box {
+  return isHorizontal(b)
+    ? [b[0] - along, b[1] - before, b[2] + along, b[3] + after]
+    : [b[0] - before, b[1] - along, b[2] + after, b[3] + along];
+}
+
+/**
+ * The page's text lines (every run of characters on one line), in a grid so a band's
+ * neighbours are found quickly. Built once per layer.
+ */
+export class LineIndex {
+  readonly lines: Box[];
+  private cells = new Map<number, number[]>();
+
+  constructor(layer: TextLayer) {
+    this.lines = rangeRects(layer, 0, layer.n);
+    this.lines.forEach((b, i) => {
+      const [i0, j0, i1, j1] = [cell(b[0]), cell(b[1]), cell(b[2]), cell(b[3])];
+      if ((i1 - i0 + 1) * (j1 - j0 + 1) > 4096) return;
+      for (let cj = j0; cj <= j1; cj++)
+        for (let ci = i0; ci <= i1; ci++) {
+          const k = key(ci, cj);
+          let list = this.cells.get(k);
+          if (!list) this.cells.set(k, (list = []));
+          list.push(i);
+        }
+    });
+  }
+
+  /** Lines whose boxes come within `r` of b. */
+  near(b: Box, r: number): Box[] {
+    const seen = new Set<number>();
+    for (let cj = cell(b[1] - r); cj <= cell(b[3] + r); cj++)
+      for (let ci = cell(b[0] - r); ci <= cell(b[2] + r); ci++)
+        for (const i of this.cells.get(key(ci, cj)) ?? []) seen.add(i);
+    return [...seen].map((i) => this.lines[i]);
+  }
+}
+
+/**
+ * A highlight band for one line of selected text, grown across its line to the midpoint of
+ * the gap to the neighbouring line on each side (so a band never reaches the next line's
+ * ascenders, and selected lines meet without overlapping) up to half its height; by a quarter
+ * of its height on a side with no line within a line's height; and a little past its ends.
+ */
+export function fitHighlight(b: Box, lines: LineIndex): Box {
+  const horiz = isHorizontal(b);
+  const h = horiz ? b[3] - b[1] : b[2] - b[0];
+  const reach = 2 * h * MAX_TO_NEIGHBOUR; // a neighbour further than this gets the lone margin
+  // Across the line: y for horizontal text, x for vertical.
+  const [lo, hi] = horiz ? [b[1], b[3]] : [b[0], b[2]];
+  let before = Infinity;
+  let after = Infinity;
+  for (const l of lines.near(b, reach)) {
+    // Side by side along the line: only lines that overlap this one along it are neighbours.
+    const overlap = horiz ? Math.min(l[2], b[2]) - Math.max(l[0], b[0]) : Math.min(l[3], b[3]) - Math.max(l[1], b[1]);
+    if (overlap <= 0) continue;
+    const [llo, lhi] = horiz ? [l[1], l[3]] : [l[0], l[2]];
+    if (lhi <= lo + 1e-6 && lo - lhi <= reach) before = Math.min(before, Math.max(0, (lo - lhi) / 2));
+    else if (llo >= hi - 1e-6 && llo - hi <= reach) after = Math.min(after, Math.max(0, (llo - hi) / 2));
+  }
+  const side = (v: number) => (v === Infinity ? h * LONE_ACROSS : v);
+  return grow(b, side(before), side(after), h * ALONG);
+}
+
 /**
  * Highlight rectangles for characters [a, b): consecutive boxes on one line merge into one
  * rectangle; generated characters (spaces and breaks PDFium inferred) and characters without a
