@@ -27,8 +27,8 @@ export interface SignatureListing {
   unreadable: string[];
 }
 
-/** Image types the importer reads. */
-export const IMPORT_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "tif", "tiff", "bmp", "gif"];
+/** Image types the importer reads. HEIC and HEIF go through Windows' own codecs. */
+export const IMPORT_EXTENSIONS = ["jpg", "jpeg", "heic", "heif", "png", "webp", "tif", "tiff", "bmp", "gif"];
 
 /** Knock the paper out of a photo or scan: PNG bytes with transparency. */
 export async function importSignature(path: string): Promise<Uint8Array> {
@@ -75,6 +75,8 @@ export async function drawingToPng(strokes: Stroke[]): Promise<{ png: Uint8Array
 
 const MESSAGES: Record<string, string> = {
   signature_no_ink: "Couldn't find a signature in that picture. Sign in dark ink on plain paper and fill the frame with it.",
+  heic_codec_missing:
+    "Windows can't read this HEIC photo. Install HEIF Image Extensions and HEVC Video Extensions from the Microsoft Store, or save the photo as a JPEG.",
   signature_too_small: "That picture is too small to use.",
   signature_too_large: "That signature is too large to keep.",
   signature_unreadable: "This signature couldn't be read. It may have been saved by another Windows account.",

@@ -79,8 +79,16 @@ pub fn import_bytes(bytes: &[u8]) -> Result<Imported, String> {
 }
 
 /// Decode an image and turn it upright from its EXIF orientation (phone photos are stored
-/// sideways with a tag saying so).
+/// sideways with a tag saying so). Formats the `image` crate can't read (HEIC above all) go
+/// through Windows' own codecs (`wic.rs`).
 pub fn load_oriented(bytes: &[u8]) -> Result<DynamicImage, String> {
+    match load_with_image_crate(bytes) {
+        Ok(img) => Ok(img),
+        Err(first) => load_with_wic(bytes).map_err(|wic| wic.unwrap_or(first)),
+    }
+}
+
+fn load_with_image_crate(bytes: &[u8]) -> Result<DynamicImage, String> {
     let not_image = |e: &dyn std::fmt::Display| errcode::coded("not_supported", format!("not a readable image: {e}"));
     let reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(|e| not_image(&e))?;
     let mut decoder = reader.into_decoder().map_err(|e| not_image(&e))?;
@@ -88,6 +96,36 @@ pub fn load_oriented(bytes: &[u8]) -> Result<DynamicImage, String> {
     let mut img = DynamicImage::from_decoder(decoder).map_err(|e| not_image(&e))?;
     img.apply_orientation(orientation);
     Ok(img)
+}
+
+/// Decode through WIC. `Err(None)` means WIC can't either and the image crate's error stands;
+/// `Err(Some(..))` is a better error (a HEIC photo without the codec to read it).
+fn load_with_wic(bytes: &[u8]) -> Result<DynamicImage, Option<String>> {
+    let heif = super::wic::looks_like_heif(bytes);
+    match super::wic::decode(bytes) {
+        Ok(d) => {
+            let mut img = DynamicImage::ImageRgba8(d.rgba);
+            eprintln!(
+                "[signature] decoded with WIC: {}x{}, orientation {:?}{}",
+                img.width(),
+                img.height(),
+                d.orientation,
+                if heif { " (HEIF)" } else { "" }
+            );
+            if let Some(o) = d.orientation.and_then(|o| image::metadata::Orientation::from_exif(o as u8)) {
+                img.apply_orientation(o);
+            }
+            Ok(img)
+        }
+        Err(e) => {
+            if let super::wic::WicError::Failed(why) = &e {
+                eprintln!("[signature] WIC decode failed: {why}");
+            }
+            // A HEIF file WIC couldn't read: the HEIF or HEVC extension is missing (HEVC is
+            // what fails at the pixels when only HEIF is installed).
+            Err(heif.then(|| errcode::coded("heic_codec_missing", "no Windows codec for this HEIF picture")))
+        }
+    }
 }
 
 /// The image as RGB, with any transparency composited onto white (a PNG that's already a

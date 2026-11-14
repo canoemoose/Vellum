@@ -5,6 +5,7 @@
 pub mod dpapi;
 pub mod import;
 pub mod library;
+pub mod wic;
 
 use library::{Kind, Library, ListItem, Listing, Meta};
 use std::time::Instant;

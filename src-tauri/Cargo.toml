@@ -64,6 +64,11 @@ features = [
   "Win32_Graphics_Gdi",
   "Win32_Graphics_Printing",
   "Win32_Storage_Xps",
+  # signature/wic.rs: HEIC and other pictures through Windows' own codecs.
+  "Win32_Graphics_Imaging",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
 ]
 
 [target.'cfg(windows)'.dependencies.pdfium-render]
