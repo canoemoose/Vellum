@@ -10,7 +10,15 @@ export interface AnnotSpec {
   nm: string;
   subtype: string;
   rect: [number, number, number, number];
-  appearance: { ops: string; bbox: [number, number, number, number]; opacity: number | null; fillOpacity: number | null; fonts: Record<string, string> };
+  appearance: {
+    ops: string;
+    bbox: [number, number, number, number];
+    opacity: number | null;
+    fillOpacity: number | null;
+    fonts: Record<string, string>;
+    // Stamps: images the operators draw, by resource name (the same hash is written once).
+    images?: Record<string, { hash: string; png: string }>;
+  };
   author?: string;
   modified?: string;
   created?: string;
@@ -45,6 +53,8 @@ export interface AnnotSpec {
   caption?: boolean;
 
   // Stamps
+  /** /Name of a Stamp annotation ("Approved", "Signature"). */
+  stampName?: string;
 
   // Text markups
   /** The blend mode of the appearance's /GS0 (/BM), e.g. "Multiply" for highlights. */
@@ -55,7 +65,12 @@ export interface AnnotSpec {
   icon?: string;
 }
 
-export type Change = { op: "add"; spec: AnnotSpec } | { op: "replace"; spec: AnnotSpec } | { op: "delete"; page: number; nm: string };
+export type Change =
+  | { op: "add"; spec: AnnotSpec }
+  | { op: "replace"; spec: AnnotSpec }
+  | { op: "delete"; page: number; nm: string }
+  // Stamps: drawn into the page's content instead of added as an annotation (a baked signature).
+  | { op: "bake"; spec: AnnotSpec };
 
 /** "D:20261114120000Z" from an ISO time. */
 export function pdfDate(iso: string): string {

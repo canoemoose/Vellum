@@ -203,11 +203,11 @@ impl Writer {
     }
 
     /// Look an object up in the new section first, then the original.
-    fn get(&self, id: ObjectId) -> Option<&Object> {
+    pub(super) fn get(&self, id: ObjectId) -> Option<&Object> {
         self.inc.new_document.get_object(id).ok().or_else(|| self.prev().get_object(id).ok())
     }
 
-    fn resolve<'a>(&'a self, o: &'a Object) -> &'a Object {
+    pub(super) fn resolve<'a>(&'a self, o: &'a Object) -> &'a Object {
         match o {
             Object::Reference(id) => self.get(*id).unwrap_or(o),
             _ => o,
@@ -367,6 +367,9 @@ impl Writer {
         }
 
         // Stamps
+        if let Some(n) = s.stamp_name.as_deref().filter(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_alphanumeric())) {
+            d.set("Name", Object::Name(n.as_bytes().to_vec()));
+        }
 
         // Text markups
         if let Some(q) = &s.quad_points {
@@ -386,7 +389,7 @@ impl Writer {
         Ok(d)
     }
 
-    fn appearance_stream(&mut self, a: &Appearance) -> Result<ObjectId, String> {
+    pub(super) fn appearance_stream(&mut self, a: &Appearance) -> Result<ObjectId, String> {
         let mut res = Dictionary::new();
         if a.opacity.is_some() || a.fill_opacity.is_some() {
             let line = a.opacity.unwrap_or(1.0);
@@ -408,6 +411,8 @@ impl Writer {
             }
             res.set("Font", fd);
         }
+        // Stamps
+        self.add_images(&a.images, &mut res)?;
         let dict = dictionary! {
             "Type" => "XObject",
             "Subtype" => "Form",
@@ -492,6 +497,8 @@ impl Writer {
             Change::Add { spec } => self.add(spec).map(|_| ()),
             Change::Replace { spec } => self.replace(spec).map(|_| ()),
             Change::Delete { page, nm } => self.delete(*page, nm),
+            // Stamps
+            Change::Bake { spec } => self.bake(spec).map(|_| ()),
         }
     }
 

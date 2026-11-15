@@ -9,6 +9,9 @@ pub mod commands;
 pub mod measure; // Measuring
 pub mod spec;
 pub mod writer;
+// Stamps
+pub mod bake;
+pub mod image;
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};

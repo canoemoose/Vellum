@@ -13,6 +13,8 @@ import { type TextMarkVariant, sanitiseTextMarks } from "./markup/kinds/textmark
 // Measuring
 import { type MeasureFormat, DEFAULT_FORMAT, DEFAULT_LABEL_SIZE, sanitiseFormat } from "./markup/measure";
 import { type RememberedPages, sanitiseRememberedPages } from "./shell/pageScale";
+// Stamps
+import { type StampPrefs, sanitiseStampPrefs } from "./markup/stamps";
 
 const KEY = "vellum.settings.v1";
 
@@ -48,6 +50,8 @@ export interface Settings {
   measure: { format: MeasureFormat; labelSize: number; pageScales: Record<string, RememberedPages> };
 
   // Stamps
+  /** The Stamp tool's picker: second line on, colour (null: each stamp's own), last custom wording. */
+  stamps: StampPrefs;
 
   // Text markups
   /** Each text markup variant's colour and opacity, as last made or restyled. */
@@ -76,6 +80,7 @@ export const DEFAULTS: Settings = {
   measure: { format: { ...DEFAULT_FORMAT }, labelSize: DEFAULT_LABEL_SIZE, pageScales: {} },
 
   // Stamps
+  stamps: { sub: true, colour: null, custom: "" },
 
   // Text markups
   textMarks: {},
@@ -112,6 +117,7 @@ export function sanitiseSettings(raw: unknown): Settings {
     measure: sanitiseMeasure(s.measure),
 
     // Stamps
+    stamps: sanitiseStampPrefs(s.stamps),
 
     // Text markups
     textMarks: sanitiseTextMarks(s.textMarks),

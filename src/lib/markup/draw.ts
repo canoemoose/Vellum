@@ -51,9 +51,18 @@ export interface TextOp {
   offsets: number[];
 }
 
-export type Op = PathOp | TextOp;
+export type Op = PathOp | TextOp | ImageOp;
 
 // Stamps
+/** A picture filling `rect` (page points, upright on the page as rendered): a stamp's image. */
+export interface ImageOp {
+  t: "image";
+  rect: Rect;
+  /** The PNG, base64; the painter decodes it once per hash. */
+  png: string;
+  /** Hex SHA-256 of the PNG bytes. */
+  hash: string;
+}
 
 export const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
 export const sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]];
@@ -330,6 +339,7 @@ export function opsBounds(ops: Op[]): Rect {
   };
   for (const op of ops) {
     if (op.t === "path") for (const p of segPoints(op.segs)) take(p, op.width / 2 + 1);
+    else if (op.t === "image") for (const p of [[op.rect[0], op.rect[1]], [op.rect[2], op.rect[3]]] as Pt[]) take(p, 0);
     else if (op.clip) for (const p of op.clip) take(p, 1);
     else
       op.lines.forEach((l, i) => {

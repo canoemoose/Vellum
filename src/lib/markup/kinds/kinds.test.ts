@@ -41,6 +41,8 @@ const SAMPLES: { [K in MarkupKind]: () => MarkupOf<K> } = {
   measureArea: () => mk("measureArea", { vertices: [[100, 100], [200, 100], [150, 150]], scale: 100, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
   measureAngle: () => mk("measureAngle", { vertices: [[200, 100], [100, 100], [150, 150]], scale: null, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
   measureCalibrate: () => mk("measureCalibrate", { from: [100, 100], to: [200, 150], scale: null, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
+  // Stamps
+  stamp: () => mk("stamp", { rect: [100, 100, 200, 150], content: { type: "text", label: "APPROVED", sub: null, colour: [0, 0.5, 0] }, signature: false }),
 };
 
 const paths = (m: Markup) => opsFor(m).filter((o): o is PathOp => o.t === "path");

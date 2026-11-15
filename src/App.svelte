@@ -47,6 +47,16 @@
   import { type PageOverrides, fromRemembered, pageScaleText, rememberPages, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
 
   // Stamps
+  import SignaturePopover from "./lib/components/signature/SignaturePopover.svelte";
+  import SignatureDialog from "./lib/components/signature/SignatureDialog.svelte";
+  import StampPicker from "./lib/components/signature/StampPicker.svelte";
+  import { armStamp } from "./lib/markup/kinds/stamp";
+  import type { StampContent } from "./lib/markup/stamps";
+  import { setImageReady, preloadImage } from "./lib/engine/stampImages";
+  import { signatureContent } from "./lib/stamps/api";
+  import { type SignatureItem, signatureMessage } from "./lib/signature/api";
+  import { bakeQuestion, newSignatureIds, withBakes } from "./lib/shell/save";
+  import type { Change } from "./lib/markup/spec";
 
   // Text markups
   import SelectionBar from "./lib/components/SelectionBar.svelte";
@@ -247,6 +257,7 @@
 
   function setTool(t: Tool) {
     markupTool?.setTool(t);
+    stampToolPicked(t); // Stamps: the Signature and Stamp tools open their pickers
     // A collapsed palette shows each group's last tool, remembered between runs.
     const g = toolById(t)?.group;
     if (g && settings.markup.lastInGroup[g] !== t) {
@@ -266,6 +277,7 @@
     const mt = markupTool;
     if (!mt || !pdfDoc) return null;
     const tool = toolById(mt.tool);
+    if (stampsOnly(mt)) return null; // Stamps: nothing in the bar applies to a stamp
     if (tool?.kind) {
       const k = tool.kind;
       return {
@@ -500,6 +512,104 @@
   // End measuring
 
   // Stamps
+  /** Which stamp picker is open over the drawing area: the Signature tool's or the Stamp tool's. */
+  let stampPanel = $state<"signature" | "stamp" | null>(null);
+  /** The pad, in its dialog ("New signature..."). */
+  let signatureDialog = $state(false);
+  let signaturePopover = $state<SignaturePopover>();
+  /** What each stamp tool last had armed, so switching between them keeps each one's choice. */
+  const stampArmed: { signature?: StampContent; stamp?: StampContent } = {};
+  /** Per tab: the signatures the save in progress bakes in (the bake question's answer). */
+  const pendingBake = new WeakMap<Tab, Set<string>>();
+
+  // A stamp's picture decoded after it was first drawn: draw again.
+  setImageReady(() => viewer?.requestFrame());
+
+  /** Nothing in the properties bar applies to stamps: hidden for the stamp tools and stamps alone. */
+  function stampsOnly(mt: MarkupTool): boolean {
+    const tool = toolById(mt.tool);
+    if (tool) return tool.kind === "stamp";
+    const sel = mt.selected();
+    return sel.length > 0 && sel.every((m) => m.kind === "stamp");
+  }
+
+  function stampToolPicked(t: Tool) {
+    if (t === "signature" || t === "stamp") {
+      const prev = stampArmed[t];
+      if (prev) armStamp(prev, t === "signature");
+      stampPanel = t;
+    } else stampPanel = null;
+  }
+
+  // The tool changed some other way (Esc, a tab closing): the picker goes with it.
+  $effect(() => {
+    if (toolNow !== "signature" && toolNow !== "stamp") stampPanel = null;
+  });
+
+  function closeStampPanel() {
+    const t = stampPanel;
+    stampPanel = null;
+    // Closed without picking anything: there's nothing to place, so back to Select.
+    if (t && !stampArmed[t]) setTool("select");
+  }
+
+  /** Arm a stamp tool with what was picked, and close its picker. */
+  function armFor(tool: "signature" | "stamp", c: StampContent) {
+    stampArmed[tool] = c;
+    armStamp(c, tool === "signature");
+    if (c.type === "image") preloadImage(c.hash, c.png);
+    if (markupTool?.tool !== tool) setTool(tool);
+    stampPanel = null;
+    notify(tool === "signature" ? "Click on the page to place the signature, or drag to size it" : "Click on the page to place the stamp, or drag to size it");
+  }
+
+  async function pickSignature(item: SignatureItem) {
+    try {
+      const c = await signatureContent(item);
+      if (!c) throw new Error("[signature_unreadable] no strokes or picture");
+      armFor("signature", c);
+    } catch (e) {
+      // By id only: a signature's data never goes in the log.
+      console.warn(`signature ${item.id} could not be placed`);
+      notify(signatureMessage(e, "use the signature"));
+    }
+  }
+
+  function newSignatureSaved(item: SignatureItem) {
+    signatureDialog = false;
+    signaturePopover?.refresh();
+    pickSignature(item);
+  }
+
+  /**
+   * Before a save: when signatures were placed since the last one, ask whether to bake them in
+   * (asked each time). The ids to bake (none to keep them movable), or null if cancelled.
+   */
+  async function askBake(t: Tab, copy: boolean): Promise<Set<string> | null> {
+    const ids = newSignatureIds(t.marks.saved, t.marks.markups as { id: string; kind: string; signature?: boolean }[]);
+    if (!ids.length) return new Set();
+    const q = bakeQuestion(ids.length, copy);
+    const a = await ask(q.title, q.message, [q.keep, q.bake, "Cancel"]);
+    if (a === q.bake) return new Set(ids);
+    if (a === q.keep) return new Set();
+    return null;
+  }
+
+  /** The save's changes, with the signatures being baked in drawn into their pages instead. */
+  function saveChanges(t: Tab, bake: Set<string> | undefined): Change[] {
+    return withBakes(t.marks.changes(), bake ?? new Set()) as Change[];
+  }
+
+  /** After a save that baked signatures in: they're part of the page now, not markups (and undo can't bring them back). */
+  function afterBake(t: Tab) {
+    const ids = pendingBake.get(t);
+    pendingBake.delete(t);
+    if (!ids?.size) return;
+    t.marks.history.forget(ids);
+    t.marks.saved = t.marks.saved.filter((m) => !ids.has(m.id));
+    for (const id of ids) t.marks.selection.delete(id);
+    markupTool?.attach(t.marks);
+  }
 
   // Text markups
   //
@@ -648,6 +758,10 @@
         settings.markup = confirmSave(settings.markup, key);
         save();
       }
+      // Stamps: bake placed signatures in, or keep them movable.
+      const bake = await askBake(t, false);
+      if (!bake) return false;
+      pendingBake.set(t, bake);
       return await writeSave(t, v, true);
     } catch (e) {
       return failSave(t, e);
@@ -657,7 +771,7 @@
   async function writeSave(t: Tab, v: Viewer, expect: boolean): Promise<boolean> {
     let p: Prepared;
     try {
-      p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: t.marks.changes(), target: null, expect: expect ? t.stamp : null });
+      p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, pendingBake.get(t)), target: null, expect: expect ? t.stamp : null });
     } catch (e) {
       if (!hasCode(e, "changed_on_disk")) throw e;
       const a = await ask("The file has changed", `${t.title} changed on disk since you opened it. Add your markups to it as it is now?`, ["Save", "Save a copy…", "Cancel"]);
@@ -681,6 +795,7 @@
       throw e;
     }
     t.marks.markSaved();
+    afterBake(t); // Stamps
     readingFollowsAfterReopen(t, oldId, v);
     const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
     updateTab(t.id, { stamp });
@@ -720,9 +835,12 @@
     const dest = await pickSavePdf(`${dir}\\${copyName(t.path)}`, "Save a copy with markups");
     if (!dest) return false;
     if (pathKey(dest) === pathKey(t.path)) return saveActive();
+    // Stamps: the copy asks too; the signatures stay movable here either way.
+    const bake = await askBake(t, true);
+    if (!bake) return false;
     try {
       await ensureFrames(t, v.doc.docId);
-      const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: t.marks.changes(), target: dest, expect: null });
+      const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, bake), target: dest, expect: null });
       await invoke("annot_commit", { temp: p.temp, target: p.target });
       notify(`Saved a copy as ${fileName(dest)}`);
       return true;
@@ -1974,6 +2092,20 @@
       {/if}
       <!-- End measuring -->
       <!-- Stamps -->
+      {#if stampPanel === "signature"}
+        <SignaturePopover bind:this={signaturePopover} onPick={pickSignature} onNew={() => (signatureDialog = true)} onClose={closeStampPanel} />
+      {:else if stampPanel === "stamp"}
+        <StampPicker
+          author={settings.markup.author ?? author}
+          prefs={settings.stamps}
+          onPrefs={(p) => {
+            settings.stamps = p;
+            save();
+          }}
+          onPick={(c) => armFor("stamp", c)}
+          onClose={closeStampPanel}
+        />
+      {/if}
       <!-- Text markups -->
       {#if chrome && selBar}
         <SelectionBar x={selBar.x} y={selBar.y} areaW={stageW} areaH={stageH} onMark={(v) => void markText(v)} onCopy={() => void copySelection()} />
@@ -2009,6 +2141,11 @@
 {#if contextMenu}
   <MenuPopup items={contextMenu.items} x={contextMenu.x} y={contextMenu.y} onClose={() => (contextMenu = null)} />
   <div class="ctx-catch" role="presentation" onpointerdown={() => (contextMenu = null)} oncontextmenu={(e) => { e.preventDefault(); contextMenu = null; }}></div>
+{/if}
+
+<!-- Stamps -->
+{#if signatureDialog}
+  <SignatureDialog onSaved={newSignatureSaved} onClose={() => (signatureDialog = false)} />
 {/if}
 
 {#if choice}

@@ -21,6 +21,7 @@ import { measureAngle } from "./measureAngle";
 import { measureCalibrate } from "./measureCalibrate";
 
 // Stamps
+import { stamp } from "./stamp";
 
 // Text markups
 import { highlighter } from "./highlighter";
@@ -45,6 +46,7 @@ export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   measureCalibrate,
 
   // Stamps
+  stamp,
 
   // Text markups
   highlighter,

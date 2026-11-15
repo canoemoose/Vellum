@@ -53,6 +53,17 @@ const MESSAGES: Record<string, string> = {
   explorer_failed: "Couldn't open Explorer.",
   cancelled: "Cancelled.",
   // Stamps
+  signature_no_ink: "Couldn't find a signature there. Crop closer round it, or try a photo in dark ink on plain paper.",
+  heic_codec_missing:
+    "Windows can't read this HEIC photo. Install HEIF Image Extensions and HEVC Video Extensions from the Microsoft Store, or save the photo as a JPEG.",
+  signature_too_small: "That picture is too small to use.",
+  signature_too_large: "That signature is too large to keep.",
+  signature_unreadable: "This signature couldn't be read. It may have been saved by another Windows account.",
+  signature_not_found: "That signature isn't in the library any more.",
+  stamp_image: "Couldn't {verb}: a stamp's picture couldn't be read.",
+  stamp_not_found: "That stamp isn't in the library any more.",
+  stamp_too_small: "That picture is too small to use as a stamp.",
+  recovery_unreadable: "Unsaved markups from a crash couldn't be read back.",
 };
 
 /** Text written for people, as opposed to an internal or operating-system message. */

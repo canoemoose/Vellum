@@ -25,6 +25,10 @@ pub struct Appearance {
     #[serde(default)]
     pub fonts: std::collections::BTreeMap<String, String>,
     // Stamps
+    /// Images the operators draw (`/name Do`): resource name to the PNG and its hash
+    /// (annot/image.rs). The same hash under several names or annotations is written once.
+    #[serde(default)]
+    pub images: std::collections::BTreeMap<String, super::image::ImageRes>,
 
     // Text markups
 }
@@ -96,6 +100,9 @@ pub struct AnnotSpec {
     pub caption: Option<bool>,
 
     // Stamps
+    /// /Name of a Stamp annotation ("Approved", "Signature").
+    #[serde(default)]
+    pub stamp_name: Option<String>,
 
     // Text markups
     /// /BM for the appearance's /GS0 graphics state ("Multiply" for highlights).
@@ -119,4 +126,8 @@ pub enum Change {
     Replace { spec: AnnotSpec },
     /// Remove the annotation with this /NM (and its popup) from the page.
     Delete { page: usize, nm: String },
+    // Stamps
+    /// Draw the spec's appearance into its page's content instead of adding an annotation
+    /// (a signature baked in; annot/bake.rs). Removes an annotation with the same /NM.
+    Bake { spec: AnnotSpec },
 }
