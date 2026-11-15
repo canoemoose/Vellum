@@ -130,9 +130,9 @@ describe("formatting", () => {
   });
 
   it("cleans a stored format", () => {
-    expect(sanitiseFormat({ units: "m", decimals: 3 })).toEqual({ units: "m", decimals: 3 });
-    expect(sanitiseFormat({ units: "ft", decimals: 9 })).toEqual({ units: "auto", decimals: 4 });
-    expect(sanitiseFormat(null)).toEqual({ units: "auto", decimals: 2 });
+    expect(sanitiseFormat({ units: "m", decimals: 3 })).toEqual({ units: "m", decimals: 3, fraction: 16 });
+    expect(sanitiseFormat({ units: "yd", decimals: 9 })).toEqual({ units: "auto", decimals: 4, fraction: 16 });
+    expect(sanitiseFormat(null)).toEqual({ units: "auto", decimals: 2, fraction: 16 });
   });
 });
 
@@ -165,7 +165,6 @@ describe("calibration", () => {
     expect(parseDistance("")).toBeNull();
     expect(parseDistance("0")).toBeNull();
     expect(parseDistance("-3 m")).toBeNull();
-    expect(parseDistance("4.2 ft")).toBeNull();
     expect(parseDistance("1:100")).toBeNull();
   });
 

@@ -7,7 +7,8 @@
 import type { Pt, Rgb, Style } from "./base";
 import { type Op, type Seg, type TextOp, add, mul, path, sub, unit } from "./draw";
 import { HELVETICA, textWidth } from "./fonts";
-import { type MeasureFormat, type PageMeasure, formatScale, lengthUnit, measureSource, paperMm } from "./measure";
+import { type MeasureFormat, type PageMeasure, areaDecimals, formatScale, isImperial, lengthUnit, measureSource, paperMm } from "./measure";
+import { DEFAULT_FRACTION, MM_PER_FT, MM_PER_IN } from "./imperial"; // Imperial (stage 5 [A9])
 
 /** What every measurement carries besides its geometry. */
 export interface MeasureFields {
@@ -127,8 +128,17 @@ export interface MeasureSpec {
   unit: string;
   /** Units per user-space unit: page /UserUnit, paper millimetres and the scale together. */
   factor: number;
-  /** /D in the number formats: 100 for two decimals, 1 for whole numbers. */
+  /** /D in the number formats: 100 for two decimals, 1 for whole numbers; with `fraction`, the denominator. */
   precision: number;
+  // Imperial (stage 5 [A9]): absent for metric, which is written as before.
+  /** Distances are written as fractions (/F /F), `precision` the denominator. */
+  fraction?: boolean;
+  /** Distances read as whole feet, then inches (`unit` is "ft"). */
+  feetInches?: boolean;
+  /** Areas' unit ("sq ft"), its size in squares of `unit` (1/144 for "in"), and /D for it. Absent: the square of `unit` at `precision`. */
+  areaUnit?: string;
+  areaFactor?: number;
+  areaPrecision?: number;
 }
 
 /**
@@ -139,10 +149,27 @@ export function measureSpec(pm: PageMeasure, fmt: MeasureFormat, typicalMm: numb
   const ratio = pm.ratio ?? 1;
   const u = pm.ratio === null ? "mm" : lengthUnit(typicalMm, fmt);
   const mmPerUnit = paperMm(1, pm.userUnit) * ratio;
+  const r = pm.ratio === null ? "1:1 (paper)" : formatScale(pm.ratio, isImperial(fmt) ? "imperial" : "metric");
+  if (u === "mm" || u === "m") {
+    return {
+      ratio: r,
+      unit: u,
+      factor: u === "m" ? mmPerUnit / 1000 : mmPerUnit,
+      precision: u === "m" ? 10 ** fmt.decimals : pm.ratio === null ? 10 : 1,
+    };
+  }
+  // Imperial: distances in feet or inches, areas always in square feet.
+  const inFeet = u === "ft-in" || u === "ft";
+  const fraction = u === "ft-in" || u === "in-frac";
   return {
-    ratio: pm.ratio === null ? "1:1 (paper)" : formatScale(pm.ratio),
-    unit: u,
-    factor: u === "m" ? mmPerUnit / 1000 : mmPerUnit,
-    precision: u === "m" ? 10 ** fmt.decimals : pm.ratio === null ? 10 : 1,
+    ratio: r,
+    unit: inFeet ? "ft" : "in",
+    factor: mmPerUnit / (inFeet ? MM_PER_FT : MM_PER_IN),
+    precision: fraction ? (fmt.fraction ?? DEFAULT_FRACTION) : 10 ** fmt.decimals,
+    fraction,
+    feetInches: u === "ft-in",
+    areaUnit: "sq ft",
+    areaFactor: inFeet ? 1 : 1 / 144,
+    areaPrecision: 10 ** areaDecimals(fmt),
   };
 }

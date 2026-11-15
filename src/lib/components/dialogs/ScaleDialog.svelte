@@ -3,6 +3,8 @@
   import Dialog from "../Dialog.svelte";
   import type { ScaleCandidate } from "../../render/types";
   import { formatRatio, parseScaleInput, SCALE_PRESETS, type DocScale } from "../../shell/scale";
+  import { ARCHITECTURAL_SCALES, ENGINEERING_SCALES } from "../../markup/imperial"; // Imperial (stage 5 [A9])
+  import type { Units } from "../../shell/paper";
 
   interface Props {
     fileName: string;
@@ -15,14 +17,18 @@
     page?: number | null;
     pageScale?: DocScale | null;
     onApplyPage?: ((ratio: number | null) => void) | null;
+    // Imperial (stage 5 [A9])
+    /** View > Units: imperial writes scales as 1/4" = 1'-0" and offers those. */
+    units?: Units;
   }
-  let { fileName, current, candidates, onApply, onClose, page = null, pageScale = null, onApplyPage = null }: Props = $props();
+  let { fileName, current, candidates, onApply, onClose, page = null, pageScale = null, onApplyPage = null, units = "metric" }: Props = $props();
+  const fmt = (r: number) => formatRatio(r, units);
   // Measuring
   // svelte-ignore state_referenced_locally
   let pageOnly = $state(!!pageScale);
 
   // svelte-ignore state_referenced_locally
-  let text = $state((pageScale ?? current) ? formatRatio((pageScale ?? current)!.ratio) : "");
+  let text = $state((pageScale ?? current) ? fmt((pageScale ?? current)!.ratio) : "");
   const parsed = $derived(parseScaleInput(text));
   const uniqueCands = $derived.by(() => {
     const seen = new Set<number>();
@@ -48,8 +54,8 @@
       <div class="label">Found on the page</div>
       <div class="chips">
         {#each uniqueCands as c (c.ratio)}
-          <button type="button" class="chip" class:on={parsed === c.ratio} title="Written as “{c.text}”" onclick={() => (text = formatRatio(c.ratio))}>
-            {formatRatio(c.ratio)}
+          <button type="button" class="chip" class:on={parsed === c.ratio} title="Written as “{c.text}”" onclick={() => (text = fmt(c.ratio))}>
+            {fmt(c.ratio)}
           </button>
         {/each}
       </div>
@@ -59,16 +65,25 @@
 
     <label class="label" for="scale-in">Scale</label>
     <div class="row">
-      <input id="scale-in" class="field num" placeholder="1:100" autocomplete="off" bind:value={text} />
+      <input id="scale-in" class="field num" placeholder={units === "imperial" ? "1/4\" = 1'-0\"" : "1:100"} autocomplete="off" bind:value={text} />
       <select class="field" aria-label="Common scales" onchange={(e) => (text = (e.currentTarget as HTMLSelectElement).value)}>
         <option value="" selected disabled>Common scales</option>
-        {#each SCALE_PRESETS as r (r)}
-          <option value={formatRatio(r)}>{formatRatio(r)}</option>
-        {/each}
+        {#if units === "imperial"}
+          <optgroup label="Architectural">
+            {#each ARCHITECTURAL_SCALES as r (r)}<option value={fmt(r)}>{fmt(r)}</option>{/each}
+          </optgroup>
+          <optgroup label="Engineering">
+            {#each ENGINEERING_SCALES as r (r)}<option value={fmt(r)}>{fmt(r)}</option>{/each}
+          </optgroup>
+        {:else}
+          {#each SCALE_PRESETS as r (r)}
+            <option value={formatRatio(r)}>{formatRatio(r)}</option>
+          {/each}
+        {/if}
       </select>
     </div>
     {#if text && parsed === null}
-      <p class="err">Type a ratio such as 1:100 (or just 100).</p>
+      <p class="err">Type a ratio such as 1:100 (or just 100), or a scale such as 1/4" = 1'-0".</p>
     {/if}
     <!-- Measuring -->
     {#if onApplyPage && page !== null}

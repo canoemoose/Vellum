@@ -45,7 +45,7 @@
   import CalibrateDialog from "./lib/components/dialogs/CalibrateDialog.svelte";
   import Loupe from "./lib/components/Loupe.svelte";
   import { type MeasureFormat, type PageMeasure, setMeasureSource } from "./lib/markup/measure";
-  import { drawingLine, isMeasurement, measurementLine, resizeLabels, reformat, revalue } from "./lib/markup/measurements";
+  import { drawingLine, isMeasurement, measurementLine, resizeLabels, reformat, resolveAuto, revalue } from "./lib/markup/measurements";
   import { calibratePaperMm } from "./lib/markup/kinds/measureCalibrate";
   import { type PageOverrides, fromRemembered, pageScaleText, rememberPages, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
 
@@ -393,7 +393,13 @@
   }
 
   // New measurements take their page's scale, and the format and label size set in the bar.
-  setMeasureSource({ page: (p) => pageMeasure(active, p), format: () => settings.measure.format, labelSize: () => settings.measure.labelSize });
+  // Imperial (stage 5 [A9]): the format comes with View > Units as what Auto resolves to.
+  setMeasureSource({ page: (p) => pageMeasure(active, p), format: () => viewFormat(settings.measure.format), labelSize: () => settings.measure.labelSize });
+
+  /** Imperial (stage 5 [A9]): a format with Auto resolved to View > Units. */
+  function viewFormat(f: MeasureFormat): MeasureFormat {
+    return { ...f, system: settings.units };
+  }
 
   /** A measuring tool (Calibrate included) is out. */
   const measuring = $derived(toolById(toolNow)?.group === "measure");
@@ -473,8 +479,10 @@
     const v = viewer;
     if (!t || t.status !== "open" || !v || !markupTool) return;
     const sig = JSON.stringify([t.scale?.ratio ?? null, settings.measure.pageScales[pathKey(t.path)] ?? null, userUnits[t.id] ?? null]);
+    const units = settings.units; // Imperial (stage 5 [A9]): Auto follows View > Units
     untrack(() => {
       const r = revalue(t.marks.markups, null, (p) => pageMeasure(t, p));
+      r.markups = resolveAuto(r.markups, units); // Imperial (stage 5 [A9])
       const before = scaleSeen.get(t.id);
       scaleSeen.set(t.id, sig);
       if (r.markups !== t.marks.markups) {
@@ -498,6 +506,8 @@
     const mt = markupTool;
     if (mt && toolById(mt.tool)?.group === "measure") {
       settings.measure = { ...settings.measure, ...patch };
+      // Imperial (stage 5 [A9]): the view's system isn't remembered with the format.
+      if (patch.format) settings.measure.format = { ...patch.format, system: undefined };
       save();
     }
     if (t && mt) {
@@ -530,7 +540,7 @@
     const mt = markupTool;
     if (!mt) return {};
     const tool = toolById(mt.tool);
-    const ms = { labelSize: settings.measure.labelSize, format: settings.measure.format };
+    const ms = { labelSize: settings.measure.labelSize, format: viewFormat(settings.measure.format) };
     if (tool?.kind) return tool.group === "measure" && tool.kind !== "measureCalibrate" ? { measure: ms, onMeasure } : {};
     const sel = mt.selected();
     if (!sel.length || !sel.every(isMeasurement)) return {};
@@ -551,7 +561,7 @@
     }
     const noScale = measuring && pageMeasure(t, ui.page).ratio === null;
     return {
-      scaleText: pageScaleText(t.scale, pagesOf(t), ui.page),
+      scaleText: pageScaleText(t.scale, pagesOf(t), ui.page, settings.units),
       measure: line,
       onCalibrate: noScale && toolNow !== "measureCalibrate" ? () => setTool("measureCalibrate") : null,
     };
@@ -2343,7 +2353,7 @@
       {#if calib && active?.info && calib.tabId === active.id}
         <CalibrateDialog
           paperMm={calib.paperMm} page={calib.page + 1} numPages={active.info.numPages} current={pageMeasure(active, calib.page).ratio}
-          onApply={applyCalibration} onClose={calibrationDone}
+          onApply={applyCalibration} onClose={calibrationDone} units={settings.units}
         />
       {/if}
       <!-- End measuring -->
@@ -2383,7 +2393,7 @@
 
   {#if chrome}
     <StatusBar
-      scaleText={hasDoc ? scaleStatusText(active?.scale ?? null) : null}
+      scaleText={hasDoc ? scaleStatusText(active?.scale ?? null, settings.units) : null}
       hint={hasDoc ? textUi.link || navHint(ui.navMode) : ""}
       {notice}
       cursor={cursorLabel}
@@ -2427,7 +2437,7 @@
 {/if}
 
 {#if dialog === "scale" && active?.info}
-  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} {...measureScaleDialog} />
+  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} {...measureScaleDialog} units={settings.units} />
 {:else if dialog === "properties" && active?.info}
   <PropertiesDialog
     path={active.path}

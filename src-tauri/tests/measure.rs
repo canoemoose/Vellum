@@ -29,7 +29,7 @@ fn length() -> AnnotSpec {
         line_ends: Some(vec!["Butt".into(), "Butt".into()]),
         intent: Some("LineDimension".into()),
         contents: Some("7.06 m".into()),
-        measure: Some(MeasureSpec { ratio: "1:100".into(), unit: "m".into(), factor: 0.0352778, precision: 100 }),
+        measure: Some(MeasureSpec { ratio: "1:100".into(), unit: "m".into(), factor: 0.0352778, precision: 100, ..Default::default() }),
         caption: Some(true),
         ..Default::default()
     }

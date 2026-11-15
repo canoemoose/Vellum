@@ -1,7 +1,8 @@
 <script lang="ts">
   // Calibrate: after two points are picked on a dimension whose real length is known, type that
-  // length ("4.2 m", "4200", "4200mm"); the scale is the real length over the picked distance on
-  // paper. Applies to this page or every page, and replaces a detected scale.
+  // length ("4.2 m", "4200", "4200mm", or 12' 4 1/2", 148.5"); the scale is the real length over
+  // the picked distance on paper. Applies to this page or every page, and replaces a detected
+  // scale.
   import Dialog from "../Dialog.svelte";
   import { calibrate, formatPaper, formatScale, parseDistance } from "../../markup/measure";
 
@@ -15,8 +16,11 @@
     current: number | null;
     onApply: (ratio: number, pageOnly: boolean) => void;
     onClose: () => void;
+    /** View > Units (stage 5 [A9]): imperial suggests feet and inches and writes the scale 1/4" = 1'-0". */
+    units?: "metric" | "imperial";
   }
-  let { paperMm, page, numPages, current, onApply, onClose }: Props = $props();
+  let { paperMm, page, numPages, current, onApply, onClose, units = "metric" }: Props = $props();
+  const imperial = $derived(units === "imperial");
 
   let text = $state("");
   let pageOnly = $state(false);
@@ -36,14 +40,14 @@
     </p>
     <label class="label" for="cal-in">Real length</label>
     <!-- svelte-ignore a11y_autofocus -->
-    <input id="cal-in" class="field num" placeholder="4.2 m, or 4200 (mm)" autocomplete="off" autofocus bind:value={text} />
+    <input id="cal-in" class="field num" placeholder={imperial ? "12' 4 1/2\", or 148.5\"" : "4.2 m, or 4200 (mm)"} autocomplete="off" autofocus bind:value={text} />
     {#if text && real === null}
-      <p class="err">Type a length such as 4.2 m, 420 cm or 4200 (millimetres).</p>
+      <p class="err">Type a length such as 4.2 m, 420 cm, 4200 (millimetres), 12' 4 1/2" or 148.5".</p>
     {:else if real !== null && ratio === null}
       <p class="err">That gives a scale out of range. Pick the points further apart, or check the length.</p>
     {:else}
       <p class="result num">
-        {#if ratio !== null}Scale {formatScale(ratio)}{#if current !== null}<span class="was"> (was {formatScale(current)})</span>{/if}{:else}&nbsp;{/if}
+        {#if ratio !== null}Scale {formatScale(ratio, units)}{#if current !== null}<span class="was"> (was {formatScale(current, units)})</span>{/if}{:else}&nbsp;{/if}
       </p>
     {/if}
     {#if numPages > 1}

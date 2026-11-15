@@ -19,8 +19,25 @@ pub struct MeasureSpec {
     pub unit: String,
     /// Units per user-space unit (page /UserUnit, paper millimetres and the scale together).
     pub factor: f64,
-    /// /D in the number formats: 100 for two decimals, 1 for whole numbers.
+    /// /D in the number formats: 100 for two decimals, 1 for whole numbers; with `fraction`,
+    /// the fraction's denominator.
     pub precision: i64,
+    // Imperial (stage 5 [A9]). Absent for metric, which is written as before.
+    /// Distances are written as fractions (/F /F, `precision` the denominator): 148 1/2.
+    #[serde(default)]
+    pub fraction: bool,
+    /// Distances read as whole feet and then inches (`unit` is "ft"): 12' 4 1/2".
+    #[serde(default)]
+    pub feet_inches: bool,
+    /// Areas' unit ("sq ft"); absent, the square of `unit`.
+    #[serde(default)]
+    pub area_unit: Option<String>,
+    /// The area unit's size in squares of `unit` (1/144 for square feet over inches); absent, 1.
+    #[serde(default)]
+    pub area_factor: Option<f64>,
+    /// /D for areas; absent, `precision`.
+    #[serde(default)]
+    pub area_precision: Option<i64>,
 }
 
 fn ascii(s: &str) -> Object {
@@ -38,16 +55,50 @@ fn number_format(unit: &str, c: f64, precision: i64) -> Object {
     })
 }
 
+/// An imperial display format (ISO 32000-1 table 268): the label right after the number (/PS
+/// empty) and `after` following it, so feet and inches read 12' 4 1/2". `how` is /F: /D
+/// decimal, /F a fraction over `precision`, /T truncated to a whole number (the feet of feet
+/// and inches, whose remainder the inches format writes).
+fn imperial_format(label: &str, c: f64, how: &str, precision: i64, after: &str) -> Object {
+    Object::Dictionary(dictionary! {
+        "Type" => "NumberFormat",
+        "U" => ascii(label),
+        "C" => Object::Real(c as f32),
+        "F" => Object::Name(how.as_bytes().to_vec()),
+        "D" => precision.max(1),
+        "PS" => ascii(""),
+        "SS" => ascii(after),
+    })
+}
+
+/// How distances are written (/D): metric as before; imperial with the marks the label uses.
+fn distance_formats(m: &MeasureSpec) -> Vec<Object> {
+    let how = if m.fraction { "F" } else { "D" };
+    if m.feet_inches {
+        // Whole feet, then what's left in inches (12 to the foot).
+        vec![imperial_format("'", 1.0, "T", 1, " "), imperial_format("\"", 12.0, how, m.precision, "")]
+    } else if m.fraction {
+        let mark = if m.unit == "ft" { "'" } else { "\"" };
+        vec![imperial_format(mark, 1.0, how, m.precision, "")]
+    } else {
+        vec![number_format(&m.unit, 1.0, m.precision)]
+    }
+}
+
 /// The /Measure dictionary: a rectilinear measure whose X axis turns user-space units into the
-/// unit, with distances in that unit and areas in its square.
+/// unit, with distances in that unit and areas in its square (imperial: square feet).
 pub fn measure_dict(m: &MeasureSpec) -> Dictionary {
+    let area_unit = m.area_unit.clone().unwrap_or_else(|| format!("sq {}", m.unit));
+    let area = number_format(&area_unit, m.area_factor.unwrap_or(1.0), m.area_precision.unwrap_or(m.precision));
+    // X converts only: a fraction's denominator means nothing there, so it takes the decimal form.
+    let x_precision = if m.fraction { 100 } else { m.precision };
     dictionary! {
         "Type" => "Measure",
         "Subtype" => "RL",
         "R" => ascii(&m.ratio),
-        "X" => Object::Array(vec![number_format(&m.unit, m.factor, m.precision)]),
-        "D" => Object::Array(vec![number_format(&m.unit, 1.0, m.precision)]),
-        "A" => Object::Array(vec![number_format(&format!("sq {}", m.unit), 1.0, m.precision)]),
+        "X" => Object::Array(vec![number_format(&m.unit, m.factor, x_precision)]),
+        "D" => Object::Array(distance_formats(m)),
+        "A" => Object::Array(vec![area]),
     }
 }
 
