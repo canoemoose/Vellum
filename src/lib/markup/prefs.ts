@@ -4,6 +4,7 @@
 
 import { type MarkupKind, type Rgb, type Style, type TextStyle, DEFAULT_TEXT, arrowEnds, defaultStyle, fullText } from "./types";
 import { type Dock, DEFAULT_DOCK, sanitiseDock } from "../shell/dock";
+import { KINDS as DEFS, kindOf } from "./kinds";
 
 export interface MarkupPrefs {
   styles: Partial<Record<MarkupKind, Style>>;
@@ -16,7 +17,7 @@ export interface MarkupPrefs {
   dock: Dock;
 }
 
-export const KINDS: MarkupKind[] = ["rect", "arrow", "cloud", "text", "ink"];
+export const KINDS = Object.keys(DEFS) as MarkupKind[];
 const MAX_CONFIRMED = 500;
 
 export function defaultPrefs(): MarkupPrefs {
@@ -47,7 +48,7 @@ function style(v: unknown, kind: MarkupKind): Style {
     fillOpacity: num(s.fillOpacity, 0.05, 1) ?? num(s.opacity, 0.05, 1) ?? d.fillOpacity,
     dash,
   };
-  if (kind === "arrow") out.ends = arrowEnds(s as unknown as Style);
+  if (kindOf(kind).controls.ends) out.ends = arrowEnds(s as unknown as Style);
   return out;
 }
 
