@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4, 6 and 9.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4, 6, 7 and 9.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -287,12 +287,26 @@ grip the corner wins. Corners (`markup/corners.ts`, chosen by gesture: points wi
 count) never go below 3 closed or 2 open. The pen keeps its four corner grips (the brief's
 "eight, as a pen stroke does" was not quite what the pen has).
 
-## Stage 7: notes
+## Stage 7: notes ✓
 
 - **Notes can stay open** [D12]. A note has a pin: unpinned it's an icon you hover; pinned
   its text shows in a small box beside the icon. Saved as the standard open pop-up
   (`/Open`), so other apps show it open too. Pop-ups don't print; a callout is the tool
   for text that must print.
+
+Built (as done): a note has `pinned`. The pin is in the note editor's header (the editor
+opens on every new note), and the pinned box has an unpin pin; there is no context-bar
+control. Each pin or unpin is one undo step on that note; new notes start unpinned. The
+pinned box is HTML beside the icon's on-screen extent: upright at any view rotation, a fixed
+size on screen (up to 200 × 140 px), its left border in the note's colour, hidden while the
+note's editor is open. It takes the pointer only in Select (a click opens the editor); with
+any other tool out, drawing goes through it. Every note is written with a Popup annotation
+(/Parent, /Rect 200 × 120 pt beside the icon, /Open when pinned, /F NoZoom and NoRotate,
+never Print) at the end of /Annots, with the note's /Popup pointing to it; unpinned notes
+get a closed one, so pinning only changes /Open. Replacing a note updates its pop-up (or
+adds one); deleting removes it and any Popup naming the note as parent; reading takes the
+pin from /Open. Hiding a note in PDFium hides its linked pop-up, so a saved pinned note
+isn't drawn twice (the thumbnails and mini map may still show PDFium's open pop-up).
 
 ## Stage 8: stamps, signatures and images
 
