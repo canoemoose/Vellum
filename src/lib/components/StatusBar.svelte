@@ -10,8 +10,12 @@
     pageSize: string;
     onScale: () => void;
     // Measuring
+    /** A measurement's values (being drawn or selected): shown in the hint's place. */
+    measure?: string | null;
+    /** Set while a measuring tool is out and the page has no scale: offers Calibrate. */
+    onCalibrate?: (() => void) | null;
   }
-  let { scaleText, hint, notice = null, cursor, pageSize, onScale }: Props = $props();
+  let { scaleText, hint, notice = null, cursor, pageSize, onScale, measure = null, onCalibrate = null }: Props = $props();
 </script>
 
 <footer class="bar">
@@ -23,12 +27,20 @@
   </span>
   {#if notice}
     <span class="hint notice" role="status">{notice}</span>
+  {:else if measure}
+    <span class="hint measure num" title={measure}>{measure}</span>
   {:else}
     <span class="hint">{hint}</span>
   {/if}
   <span class="cursor num">{cursor}</span>
   <span class="size">{pageSize}</span>
   <!-- Measuring -->
+  {#if onCalibrate}
+    <span class="nosc">
+      No scale: <button type="button" class="scale" title="Pick two points on a known dimension and type its length" onclick={onCalibrate}>Calibrate</button>
+      or <button type="button" class="scale" title="Type the drawing's scale" onclick={onScale}>Set scale</button>
+    </span>
+  {/if}
 </footer>
 
 <style>
@@ -67,6 +79,20 @@
   }
   .notice {
     color: var(--tx);
+  }
+  /* Measuring */
+  .measure {
+    color: var(--tx);
+  }
+  .nosc {
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .nosc .scale {
+    margin: 0;
+    color: var(--accent);
   }
   .hint {
     flex: 1 1 auto;

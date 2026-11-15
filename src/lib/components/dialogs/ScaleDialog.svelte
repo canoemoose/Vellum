@@ -11,11 +11,18 @@
     onApply: (ratio: number | null) => void;
     onClose: () => void;
     // Measuring
+    /** The page in view (1-based) and its own scale, offered as "This page only" when given. */
+    page?: number | null;
+    pageScale?: DocScale | null;
+    onApplyPage?: ((ratio: number | null) => void) | null;
   }
-  let { fileName, current, candidates, onApply, onClose }: Props = $props();
+  let { fileName, current, candidates, onApply, onClose, page = null, pageScale = null, onApplyPage = null }: Props = $props();
+  // Measuring
+  // svelte-ignore state_referenced_locally
+  let pageOnly = $state(!!pageScale);
 
   // svelte-ignore state_referenced_locally
-  let text = $state(current ? formatRatio(current.ratio) : "");
+  let text = $state((pageScale ?? current) ? formatRatio((pageScale ?? current)!.ratio) : "");
   const parsed = $derived(parseScaleInput(text));
   const uniqueCands = $derived.by(() => {
     const seen = new Set<number>();
@@ -24,7 +31,7 @@
 
   function submit(e: Event) {
     e.preventDefault();
-    if (parsed !== null) onApply(parsed);
+    if (parsed !== null) (pageOnly && onApplyPage ? onApplyPage : onApply)(parsed);
   }
 </script>
 
@@ -63,9 +70,15 @@
     {#if text && parsed === null}
       <p class="err">Type a ratio such as 1:100 (or just 100).</p>
     {/if}
+    <!-- Measuring -->
+    {#if onApplyPage && page !== null}
+      <label class="pageonly"><input type="checkbox" bind:checked={pageOnly} /> This page only (page {page})</label>
+    {/if}
   </form>
   {#snippet footer()}
-    {#if current}
+    {#if pageOnly && onApplyPage && pageScale}
+      <button type="button" class="btn ghost clear" onclick={() => onApplyPage(null)}>Clear this page's scale</button>
+    {:else if current && !pageOnly}
       <button type="button" class="btn ghost clear" onclick={() => onApply(null)}>Clear scale</button>
     {/if}
     <button type="button" class="btn" onclick={onClose}>Cancel</button>
@@ -128,5 +141,13 @@
   }
   .clear {
     margin-right: auto;
+  }
+  /* Measuring */
+  .pageonly {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    color: var(--tx2);
   }
 </style>

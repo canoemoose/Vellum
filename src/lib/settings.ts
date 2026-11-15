@@ -8,6 +8,9 @@ import { type DocMemory, sanitiseDocs } from "./shell/docMemory";
 import type { Units } from "./shell/paper";
 import type { ThemePref } from "./shell/theme";
 import type { Bounds } from "./shell/windowPlacement";
+// Measuring
+import { type MeasureFormat, DEFAULT_FORMAT, DEFAULT_LABEL_SIZE, sanitiseFormat } from "./markup/measure";
+import { type RememberedPages, sanitiseRememberedPages } from "./shell/pageScale";
 
 const KEY = "vellum.settings.v1";
 
@@ -39,6 +42,8 @@ export interface Settings {
   /** Tool styles, confirmed saves, author (markup/prefs.ts). */
   markup: MarkupPrefs;
   // Measuring
+  /** How measurements are written and labelled, and per-page scales by file (pathKey). */
+  measure: { format: MeasureFormat; labelSize: number; pageScales: Record<string, RememberedPages> };
 
   // Stamps
 
@@ -64,6 +69,7 @@ export const DEFAULTS: Settings = {
   updateCheck: true,
   markup: defaultPrefs(),
   // Measuring
+  measure: { format: { ...DEFAULT_FORMAT }, labelSize: DEFAULT_LABEL_SIZE, pageScales: {} },
 
   // Stamps
 
@@ -98,12 +104,21 @@ export function sanitiseSettings(raw: unknown): Settings {
     updateCheck: s.updateCheck !== false,
     markup: sanitisePrefs(s.markup),
     // Measuring
+    measure: sanitiseMeasure(s.measure),
 
     // Stamps
 
     // Text markups
   };
 }
+
+// Measuring
+function sanitiseMeasure(raw: unknown): Settings["measure"] {
+  const m = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const size = typeof m.labelSize === "number" && Number.isFinite(m.labelSize) && m.labelSize >= 4 && m.labelSize <= 72 ? m.labelSize : DEFAULT_LABEL_SIZE;
+  return { format: sanitiseFormat(m.format), labelSize: size, pageScales: sanitiseRememberedPages(m.pageScales) };
+}
+// End measuring
 
 export function loadSettings(): Settings {
   try {
