@@ -7,6 +7,7 @@ import { toSpec } from "./spec";
 import type { AnnotSpec } from "./annotation";
 import type { Frame } from "./pdf";
 import { KINDS, kindOf } from "./kinds";
+import { regularVertices } from "./regular";
 import { type FileAnnot, type PageAnnots, colourOf, freeToEdit, fromFile, parsePdfDate, stampHashes, textStyleOf, withStampImages } from "./fileAnnots";
 
 const A4: Frame = { quarterTurns: 0, bbox: [0, 0, 595, 842] };
@@ -54,6 +55,7 @@ function readBack(s: AnnotSpec, index = 0): FileAnnot {
   };
 }
 
+const spec7 = (m: Markup) => toSpec(m, A4);
 const page = (f: Frame, annots: FileAnnot[]): PageAnnots => ({ page: 2, frame: f, annots });
 const one = (f: Frame, a: FileAnnot) => fromFile(page(f, [a]), new Set())[0];
 
@@ -70,6 +72,22 @@ describe("Vellum's own annotations", () => {
         expect(got.origin).toMatchObject({ page: 2, index: 0, nm: m.id });
       }
     }
+  });
+
+  it("keep a regular polygon's Sides through a save and reopen; another app's polygon is freeform (stage 6)", () => {
+    const regular = { centre: [150, 150] as Pt, radius: 40, angle: 0.2, sides: 7 };
+    const m = mk("polygon", { vertices: regularVertices(regular), regular });
+    for (const quarterTurns of [0, 1, 2, 3]) {
+      const f: Frame = { quarterTurns, bbox: [10, 20, 605, 862] };
+      const got = one(f, readBack(toSpec(m, f))).markup;
+      expect(got).toEqual(m);
+      expect(kindOf("polygon").sides!(got as MarkupOf<"polygon">)).toBe(7);
+    }
+    // Changed by another app since: from the standard keys, so freeform.
+    const other = one(A4, { ...readBack(toSpec(m, A4)), modified: "D:20261116090000Z" }).markup as MarkupOf<"polygon">;
+    expect(other.vertices.length).toBe(7);
+    expect(kindOf("polygon").sides!(other)).toBeNull();
+    expect(spec7(m).vertices?.length).toBe(14); // still a plain /Vertices polygon for other apps
   });
 
   it("are mapped from the standard keys instead once another app has changed them", () => {

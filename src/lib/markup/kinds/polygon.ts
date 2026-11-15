@@ -1,16 +1,36 @@
-// Polygon: click the corners, double-click, Enter or a click on the first corner to finish (or
-// drag a box). Saved as a Polygon annotation.
+// Polygon: click the corners, double-click, Enter or a click on the first corner to finish; or
+// drag a regular one from the centre out, with Sides from the context bar (stage 6). Saved as a
+// Polygon annotation; a regular one's centre, size, turn and sides go only in Vellum's own
+// saved copy (../reedit.ts), so Sides still works on it after a save and reopen.
 
 import { type MarkupBase, type Pt, LINE_STYLE } from "../base";
 import { type Seg, add, filled, len, mul, signedArea, sub, unit } from "../draw";
-import { distToPolyline, dragPoint, insidePolygon, movePt, pointsBounds, vertexHandles } from "../shape";
+import { distToPolyline, dragPointGrip, insidePolygon, isBoxGrip, movePt, pointGrips, pointsBounds } from "../shape";
+import { type Regular, matchesRegular, moveRegular, readRegular, regularVertices, scaleRegular, withSides } from "../regular";
 import { userPoints } from "../annotation";
 import { defineKind } from "./kind";
 
 export interface PolygonMarkup extends MarkupBase {
   kind: "polygon";
   vertices: Pt[];
+  /** Stage 6: dragged out regular, and no corner changed by hand since. Absent: freeform. */
+  regular?: Regular;
 }
+
+/** Its regular parameters, if it is still that polygon (sound, and matching its corners). */
+function regularOf(m: PolygonMarkup): Regular | null {
+  const r = readRegular(m.regular);
+  return r && matchesRegular(r, m.vertices) ? r : null;
+}
+
+/** Freeform: the same corners, no longer regular. */
+function freeform(m: PolygonMarkup): PolygonMarkup {
+  if (!("regular" in m)) return m;
+  const { regular: _, ...rest } = m;
+  return rest;
+}
+
+const asRegular = (m: PolygonMarkup, r: Regular): PolygonMarkup => ({ ...m, regular: r, vertices: regularVertices(r) });
 
 declare module "../base" {
   interface MarkupKinds {
@@ -23,7 +43,7 @@ export const polygon = defineKind<PolygonMarkup>({
   label: "Polygon",
   defaultStyle: () => ({ ...LINE_STYLE }),
   controls: { fill: true, ends: false, text: false },
-  draw: { gesture: "points", make: (vertices) => ({ vertices }), closed: true, min: 3, drag: "box" },
+  draw: { gesture: "points", make: (vertices, ctx) => (ctx.regular ? { vertices, regular: ctx.regular } : { vertices }), closed: true, min: 3, drag: "regular" },
   ops: (m) => (m.vertices.length < 2 ? [] : filled(closedPath(m.vertices), () => closedPath(insetPolygon(m.vertices, m.style.width / 2)), m.style)),
   spec(m, f, spec) {
     spec.subtype = "Polygon";
@@ -34,9 +54,27 @@ export const polygon = defineKind<PolygonMarkup>({
     if (m.style.fill && insidePolygon(p, m.vertices)) return true;
     return distToPolyline(p, m.vertices, true) <= t;
   },
-  handles: (m) => vertexHandles(m.vertices),
-  dragHandle: (m, h, p, constrain) => dragPoint(m, h, p, constrain, true),
-  moveBy: (m, dx, dy) => ({ ...m, vertices: m.vertices.map((v) => movePt(v, dx, dy)) }),
+  handles: (m) => pointGrips(m.vertices),
+  dragHandle(m, h, p, constrain, minSize) {
+    const next = dragPointGrip(m, h, p, constrain, minSize, true);
+    const r = regularOf(m);
+    if (!r || next === m) return next;
+    // Resized by its box keeping proportions: still regular. A corner dragged, or the box
+    // stretched: freeform.
+    const s = isBoxGrip(h) ? scaleRegular(r, pointsBounds(m.vertices), pointsBounds(next.vertices)) : null;
+    return s ? asRegular(next, s) : freeform(next);
+  },
+  moveBy(m, dx, dy) {
+    const moved = { ...m, vertices: m.vertices.map((v) => movePt(v, dx, dy)) };
+    const r = regularOf(m);
+    return r ? asRegular(moved, moveRegular(r, dx, dy)) : moved;
+  },
+  sides: (m) => regularOf(m)?.sides ?? null,
+  withSides(m, sides) {
+    const r = regularOf(m);
+    return r ? asRegular(m, withSides(r, sides)) : m;
+  },
+  freeform,
 });
 
 const closedPath = (v: Pt[]): Seg[] => [["M", v[0][0], v[0][1]], ...v.slice(1).map((p) => ["L", p[0], p[1]] as Seg), ["Z"]];

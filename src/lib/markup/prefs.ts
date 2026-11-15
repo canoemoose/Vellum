@@ -7,6 +7,7 @@ import { type MarkupKind, type Rgb, type Style, type TextStyle, DEFAULT_TEXT, ar
 import { type Dock, DEFAULT_DOCK, sanitiseDock } from "../shell/dock";
 import { kindOf } from "./kinds";
 import { type ToolDef, GROUPS, TOOLS, toolById, toolDefaults, withPreset } from "./tools";
+import { DEFAULT_SIDES, clampSides } from "./regular";
 
 export interface MarkupPrefs {
   /** By tool id (a kind's own tool has the kind's name, so styles saved before tools had ids still apply). */
@@ -23,12 +24,26 @@ export interface MarkupPrefs {
   lastInGroup: Partial<Record<string, string>>;
   /** By letter, the last tool used of those sharing it (what the letter picks, rule 8). */
   lastForKey: Partial<Record<string, string>>;
+  /** Stage 6: by tool id, the Sides a tool that drags regular polygons last had (rule 7). */
+  sides: Partial<Record<string, number>>;
+}
+
+/** Stage 6: the tools that drag a regular polygon (and so remember Sides). */
+const sidesTools = (): ToolDef[] =>
+  TOOLS.filter((t) => {
+    const d = t.kind ? kindOf(t.kind).draw : null;
+    return d?.gesture === "points" && d.drag === "regular";
+  });
+
+/** A tool's Sides: what it last had, or the default. */
+export function sidesFor(p: MarkupPrefs, toolId: string): number {
+  return clampSides(p.sides?.[toolId] ?? DEFAULT_SIDES);
 }
 
 const MAX_CONFIRMED = 500;
 
 export function defaultPrefs(): MarkupPrefs {
-  return { styles: {}, texts: {}, confirmed: [], author: null, dock: { ...DEFAULT_DOCK }, lastInGroup: {}, lastForKey: {} };
+  return { styles: {}, texts: {}, confirmed: [], author: null, dock: { ...DEFAULT_DOCK }, lastInGroup: {}, lastForKey: {}, sides: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
@@ -86,6 +101,9 @@ export function sanitisePrefs(raw: unknown): MarkupPrefs {
     const v = rt[t.id] ?? p.text;
     if (v && typeof v === "object") texts[t.id] = textStyle(v);
   }
+  const sides: Partial<Record<string, number>> = {};
+  const rsd = (p.sides && typeof p.sides === "object" ? p.sides : {}) as Record<string, unknown>;
+  for (const t of sidesTools()) if (typeof rsd[t.id] === "number") sides[t.id] = clampSides(rsd[t.id]);
   return {
     styles,
     texts,
@@ -94,6 +112,7 @@ export function sanitisePrefs(raw: unknown): MarkupPrefs {
     dock: sanitiseDock(p.dock),
     lastInGroup,
     lastForKey,
+    sides,
   };
 }
 

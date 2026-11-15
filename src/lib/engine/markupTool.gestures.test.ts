@@ -137,13 +137,26 @@ describe("points gesture", () => {
     t.finishPoints(false);
   });
 
-  it("draws a rectangular polygon when a box is dragged, and nothing for a sliver", async () => {
+  it("draws a rectangular cloud when a box is dragged, and nothing for a sliver", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("cloud");
+    drag(t, v, [100, 100], [200, 160]);
+    expect(only(doc, "cloud").vertices.length).toBe(4);
+    drag(t, v, [300, 100], [400, 101]);
+    t.finishPoints(false);
+    expect(doc.markups.length).toBe(1);
+  });
+
+  it("drags a regular polygon from the centre with Polygon (stage 6), six sides unless told", async () => {
     const { v, doc, t } = await setup();
     t.setTool("polygon");
-    drag(t, v, [100, 100], [200, 160]);
-    expect(only(doc, "polygon").vertices.length).toBe(4);
-    drag(t, v, [300, 100], [400, 101]);
-    expect(doc.markups.length).toBe(1);
+    drag(t, v, [200, 200], [260, 200]);
+    const m = only(doc, "polygon");
+    expect(m.vertices.length).toBe(6);
+    expect(m.regular!.centre[0]).toBeCloseTo(200);
+    expect(m.regular!.centre[1]).toBeCloseTo(200);
+    expect(m.vertices[0][0]).toBeCloseTo(260);
+    expect(m.vertices[0][1]).toBeCloseTo(200);
   });
 
   it("abandons a shape being clicked out when the tool changes", async () => {

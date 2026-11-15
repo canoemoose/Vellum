@@ -3,7 +3,7 @@
 
 import { type MarkupBase, type Pt, LINE_STYLE, arrowEnds } from "../base";
 import { endedLine } from "../draw";
-import { distToPolyline, dragPoint, movePt, pointsBounds, vertexHandles } from "../shape";
+import { distToPolyline, dragPointGrip, movePt, pointGrips, pointsBounds } from "../shape";
 import { lineEndsSpec, userPoints } from "../annotation";
 import { defineKind } from "./kind";
 
@@ -32,7 +32,7 @@ export const polyline = defineKind<PolylineMarkup>({
   },
   bounds: (m) => pointsBounds(m.vertices),
   hits: (m, p, t) => distToPolyline(p, m.vertices, false) <= t,
-  handles: (m) => vertexHandles(m.vertices),
-  dragHandle: (m, h, p, constrain) => dragPoint(m, h, p, constrain, false),
+  handles: (m) => pointGrips(m.vertices),
+  dragHandle: (m, h, p, constrain, minSize) => dragPointGrip(m, h, p, constrain, minSize, false),
   moveBy: (m, dx, dy) => ({ ...m, vertices: m.vertices.map((v) => movePt(v, dx, dy)) }),
 });

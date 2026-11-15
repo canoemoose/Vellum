@@ -153,8 +153,9 @@ export function gestureTip(def: KindDef): string {
       else if (d.max === 2) parts.push("click each end, or drag", lock);
       else {
         parts.push(`${d.closed ? "click each corner, then click the first again," : "click each point, then"} double-click or press Enter`);
-        parts.push(d.drag === "box" ? "or drag a box" : "or drag a straight one");
-        parts.push(d.drag === "box" ? `${lock}, or squares a dragged box` : lock);
+        // Stage 6: "regular" drags an equal-sided one from the centre (a box is corner to corner).
+        parts.push(d.drag === "box" ? "or drag a box corner to corner" : d.drag === "regular" ? "or drag from the centre for one with equal sides" : "or drag a straight one");
+        parts.push(d.drag === "box" ? `${lock}, or squares a dragged box` : d.drag === "regular" ? `${lock}, or puts a dragged one's flat side at the bottom` : lock);
         parts.push("Backspace takes back a point; right-click to finish or cancel");
       }
       break;

@@ -61,7 +61,7 @@ describe("rule 6: only controls that do something", () => {
     // A text box and a rectangle: fill, but no text.
     expect(of("text", "rect")).toMatchObject({ fill: true, text: false });
     // A note and a rectangle: colour only.
-    expect(of("note", "rect")).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false } satisfies Bar);
+    expect(of("note", "rect")).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false, sides: false } satisfies Bar);
     // An arrow and a polyline: ends, keeping the arrow's rule.
     expect(of("arrow", "polyline")!.ends).toBe("arrow");
     // Anything with a stamp: nothing applies to them all.

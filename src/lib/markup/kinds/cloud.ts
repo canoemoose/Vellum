@@ -3,7 +3,7 @@
 
 import { type MarkupBase, type Pt, type Style, LINE_STYLE } from "../base";
 import { type Op, type Seg, add, arc, filled, len, mul, signedArea, sub, unit } from "../draw";
-import { distToPolyline, dragVertex, insidePolygon, movePt, pointsBounds, vertexHandles } from "../shape";
+import { distToPolyline, dragPointGrip, insidePolygon, isBoxGrip, movePt, pointGrips, pointsBounds } from "../shape";
 import { userPoints } from "../annotation";
 import { defineKind } from "./kind";
 
@@ -39,11 +39,9 @@ export const cloud = defineKind<CloudMarkup>({
     // The scallops stand out from the edges by up to half a chord.
     return distToPolyline(p, m.vertices, true) <= t + cloudChord(m.intensity, m.style.width) / 2;
   },
-  handles: (m) => vertexHandles(m.vertices),
-  dragHandle(m, h, p) {
-    const vertices = dragVertex(m.vertices, h, p);
-    return vertices ? { ...m, vertices } : m;
-  },
+  handles: (m) => pointGrips(m.vertices),
+  // A corner moves freely (no Shift snap, as before); the box scales it, Shift keeping proportions.
+  dragHandle: (m, h, p, constrain, minSize) => dragPointGrip(m, h, p, constrain && isBoxGrip(h), minSize, true),
   moveBy: (m, dx, dy) => ({ ...m, vertices: m.vertices.map((v) => movePt(v, dx, dy)) }),
 });
 

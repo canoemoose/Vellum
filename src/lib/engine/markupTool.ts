@@ -13,6 +13,9 @@ import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type Text
 import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
 import { toolById, withPreset } from "../markup/tools";
+// Stage 6: shapes
+import { DEFAULT_SIDES, regularFromDrag, regularVertices } from "../markup/regular";
+import { addCorner, canRemoveCorner, cornerOfGrip, removeCorner } from "../markup/corners";
 
 export { fitText, refitText } from "../markup/textbox";
 
@@ -44,6 +47,8 @@ export interface MarkupToolOptions {
    * still draws from the file should be hidden there now, so it isn't drawn twice.
    */
   onLift?(ids: string[]): void;
+  /** Stage 6: how many sides a tool drags a regular polygon with (its remembered Sides). */
+  sides?(tool: Tool): number;
 }
 
 /** CSS px: how close the pointer must be to pick a markup, and a handle. */
@@ -377,6 +382,8 @@ export class MarkupTool {
       this.redraw();
       return false;
     }
+    // Stage 6: a double-click on an edge of a shape of points adds a corner there.
+    if (clicks === 2 && this.addCornerAt(hit, p)) return true;
     if (clicks === 2 && defOf(hit).typed) {
       this.select([hit.id]);
       this.startText(hit.id, false);
@@ -580,7 +587,11 @@ export class MarkupTool {
         // Pressed and dragged: a rectangle of points (Shift squares it, as for any box), or a
         // straight line, in one go.
         if (d.drag === "box") make(d.make(rectPts(box()), this.drawContext));
-        else make(d.make([a, lockTo(d, a, p, mods.shift)], this.drawContext));
+        else if (d.drag === "regular") {
+          // Stage 6: a regular polygon from the centre out; Shift puts a flat side at the bottom as viewed.
+          const r = regularFromDrag(a, p, this.opts.sides?.(this.tool) ?? DEFAULT_SIDES, mods.shift ? this.pageDown(g.page, sx, sy) : null);
+          make(d.make(regularVertices(r), { ...this.drawContext, regular: r }));
+        } else make(d.make([a, lockTo(d, a, p, mods.shift)], this.drawContext));
         break;
       case "freehand": {
         // Text markups: Shift draws a straight stroke from the press (the highlighter's rule,
@@ -623,7 +634,7 @@ export class MarkupTool {
         }
         break;
       case "points":
-        if (tooSmall(m, d.drag === "box")) {
+        if (tooSmall(m, d.drag !== "line")) {
           // A click (or a drag too small to count): start clicking out the shape.
           this.clicking = { def, page: g.page, points: [g.a], hover: null };
           return;
@@ -721,6 +732,70 @@ export class MarkupTool {
   }
   // End measuring
 
+  // ---------------------------------------------------------------- stage 6: shapes
+
+  /** The page direction that is down on screen at (sx, sy): follows the view's quarter turns. */
+  private pageDown(page: number, sx: number, sy: number): Pt | null {
+    const a = this.pointOn(sx, sy, page), b = this.pointOn(sx, sy + 1, page);
+    return a && b ? [b.p[0] - a.p[0], b.p[1] - a.p[1]] : null;
+  }
+
+  /** A double-click at p on markup `m`: a corner added on the edge there, as one undo step. */
+  private addCornerAt(m: Markup, p: Pt): boolean {
+    if (!this.doc?.editable(m)) return false;
+    const added = addCorner(m, p, this.tolPt(PICK_PX) + m.style.width / 2);
+    if (!added) return false;
+    this.opts.onLift?.([m.id]);
+    this.commit(this.markups.map((x) => (x.id === m.id ? touch(settle(added.markup)) : x)));
+    this.select([m.id]);
+    return true;
+  }
+
+  /**
+   * The corner of a selected markup under screen point (sx, sy), for the right-click menu:
+   * which markup, which corner, and whether it can go (not below the fewest its kind takes).
+   */
+  cornerAt(sx: number, sy: number): { id: string; index: number; removable: boolean } | null {
+    if (this.tool !== "select") return null;
+    const at = this.pointOn(sx, sy);
+    if (!at) return null;
+    for (const m of this.selected()) {
+      if (m.page !== at.page) continue;
+      const h = handleAt(m, at.p, this.tolPt(HANDLE_PX));
+      const index = h ? cornerOfGrip(m, h) : -1;
+      if (index >= 0) return { id: m.id, index, removable: canRemoveCorner(m, index) };
+    }
+    return null;
+  }
+
+  /** Remove corner `index` of markup `id`, as one undo step. */
+  removeCorner(id: string, index: number): boolean {
+    const m = this.doc?.byId(id);
+    if (!m || !this.doc!.editable(m)) return false;
+    const next = removeCorner(m, index);
+    if (!next) return false;
+    this.opts.onLift?.([id]);
+    this.commit(this.markups.map((x) => (x.id === id ? touch(settle(next)) : x)));
+    return true;
+  }
+
+  /** The selection's number of sides, where all of it can take one and agree; else null. */
+  selectedSides(): number | null {
+    const s = this.selected().map((m) => defOf(m).sides?.(m) ?? null);
+    return s.length && s.every((n) => n !== null && n === s[0]) ? s[0] : null;
+  }
+
+  /** Change the sides of every selected regular polygon, as one undo step. */
+  setSides(n: number): boolean {
+    const d = this.doc;
+    if (!d?.selection.size) return false;
+    const change = (m: Markup) => d.selection.has(m.id) && defOf(m).withSides && defOf(m).sides?.(m) != null;
+    if (!this.markups.some(change)) return false;
+    this.opts.onLift?.(this.markups.filter(change).map((m) => m.id));
+    this.commit(this.markups.map((m) => (change(m) ? touch(defOf(m).withSides!(m, n)) : m)));
+    return true;
+  }
+
   // ---------------------------------------------------------------- text boxes
 
   private startText(id: string, isNew: boolean, before?: Markup[]): void {
@@ -816,9 +891,29 @@ export class MarkupTool {
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      for (const h of handles(x)) {
+      // Stage 6: square grips (a box's) first, then round ones (corners on the shape) over them.
+      // A shape with both shows its box as a dashed outline, so the square grips read as the box's.
+      const hs = handles(x);
+      if (hs.some((q) => q.round) && hs.some((q) => !q.round)) {
+        const b = shapeBounds(x);
+        const pts = ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] as Pt[]).map(dev);
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        pts.forEach((q, i) => (i ? ctx.lineTo(Math.round(q[0]) + 0.5, Math.round(q[1]) + 0.5) : ctx.moveTo(Math.round(q[0]) + 0.5, Math.round(q[1]) + 0.5)));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      for (const h of [...hs.filter((q) => !q.round), ...hs.filter((q) => q.round)]) {
         const [hx, hy] = dev(h.at);
         ctx.fillStyle = "#ffffff";
+        if (h.round) {
+          ctx.beginPath();
+          ctx.arc(Math.round(hx - r) + 0.5 + r, Math.round(hy - r) + 0.5 + r, r, 0, 2 * Math.PI);
+          ctx.fill();
+          ctx.stroke();
+          continue;
+        }
         ctx.fillRect(Math.round(hx - r) + 0.5, Math.round(hy - r) + 0.5, 2 * r, 2 * r);
         ctx.strokeRect(Math.round(hx - r) + 0.5, Math.round(hy - r) + 0.5, 2 * r, 2 * r);
       }

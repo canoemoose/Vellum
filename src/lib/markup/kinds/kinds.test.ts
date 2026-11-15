@@ -200,7 +200,7 @@ describe("polyline", () => {
 
   it("drags each point, Shift snapping it to 15 degrees from the one before", () => {
     const p = SAMPLES.polyline();
-    expect(handles(p).map((h) => h.id)).toEqual(["v0", "v1", "v2"]);
+    expect(handles(p).filter((h) => h.round).map((h) => h.id)).toEqual(["v0", "v1", "v2"]);
     const moved = dragHandle(p, "v2", [250, 153], true) as MarkupOf<"polyline">;
     expect(moved.vertices[2][1]).toBeCloseTo(150); // level with v1
     const first = dragHandle(p, "v0", [100, 152], true) as MarkupOf<"polyline">;
