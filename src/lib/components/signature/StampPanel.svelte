@@ -15,12 +15,16 @@
   let { title, width = 380, onClose, children, footer }: Props = $props();
 
   function onKey(e: KeyboardEvent) {
-    // The viewer's shortcuts don't apply while picking.
-    e.stopPropagation();
     if (e.key === "Escape") {
+      e.stopPropagation();
       e.preventDefault();
       onClose();
+      return;
     }
+    // Typing in a field stays in it; other keys reach the app, so S pressed again steps
+    // between the Stamp and Signature tools (each opening its own picker).
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) e.stopPropagation();
   }
 
   function focusFirst(el: HTMLElement) {
