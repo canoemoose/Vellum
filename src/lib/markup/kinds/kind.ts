@@ -92,6 +92,12 @@ export interface KindDef<M extends Markup = Markup> {
   ofText?: boolean;
   /** It has no line to weigh or pattern (a text highlight, a note): the properties bar leaves those out. */
   lineless?: boolean;
+  // Existing annotations (phase 7b)
+  /**
+   * It came with the file and Vellum can't redraw it (a type it doesn't understand): it can be
+   * moved or deleted, never restyled or copied, and has no tool.
+   */
+  fixed?: boolean;
   /**
    * What Vellum's private copy in the saved annotation keeps of it (../reedit.ts), when not
    * the whole markup: an image is referred to by its hash, never carried a second time.

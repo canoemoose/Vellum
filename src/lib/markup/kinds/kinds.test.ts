@@ -43,6 +43,8 @@ const SAMPLES: { [K in MarkupKind]: () => MarkupOf<K> } = {
   measureCalibrate: () => mk("measureCalibrate", { from: [100, 100], to: [200, 150], scale: null, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
   // Stamps
   stamp: () => mk("stamp", { rect: [100, 100, 200, 150], content: { type: "text", label: "APPROVED", sub: null, colour: [0, 0.5, 0] }, signature: false }),
+  // Existing annotations
+  foreign: () => mk("foreign", { subtype: "FileAttachment", rect: [100, 100, 120, 124], moved: [0, 0], text: "" }),
 };
 
 const paths = (m: Markup) => opsFor(m).filter((o): o is PathOp => o.t === "path");
@@ -75,8 +77,9 @@ describe("the kind registry", () => {
       const mb = shapeBounds(moved);
       expect(mb[0]).toBeCloseTo(b[0] + 10);
       expect(mb[1]).toBeCloseTo(b[1] + 5);
-      // A note has no grips (it isn't resized; selected, it shows its box): every other kind has.
-      if (k === "note") continue;
+      // A note has no grips (it isn't resized; selected, it shows its box), nor does an
+      // annotation Vellum can only move (kind.ts, fixed): every other kind has.
+      if (k === "note" || kindOf(k).fixed) continue;
       expect(handles(m).length, k).toBeGreaterThan(0);
       // The first grip, dragged a little, keeps the kind.
       const h = handles(m)[0];

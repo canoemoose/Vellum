@@ -29,6 +29,9 @@ import { callout } from "./callout";
 import { textmark } from "./textmark";
 import { note } from "./note";
 
+// Existing annotations
+import { foreign } from "./foreign";
+
 export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   rect,
   arrow,
@@ -53,6 +56,9 @@ export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   callout,
   textmark,
   note,
+
+  // Existing annotations
+  foreign,
 };
 
 /** A kind's definition. */

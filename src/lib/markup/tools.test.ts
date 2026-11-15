@@ -25,7 +25,8 @@ describe("the tool registry", () => {
   it("draws only kinds that exist, and every kind has a tool", () => {
     for (const t of TOOLS) if (t.kind) expect(Object.keys(KINDS)).toContain(t.kind);
     // Text markups are made from a text selection, not with a tool (kind.ts, ofText).
-    for (const k of Object.keys(KINDS)) if (!kindOf(k as keyof typeof KINDS).ofText) expect(TOOLS.some((t) => t.kind === k), k).toBe(true);
+    // Annotations Vellum can only move came with the file, so have no tool either (kind.ts, fixed).
+    for (const k of Object.keys(KINDS)) if (!kindOf(k as keyof typeof KINDS).ofText && !kindOf(k as keyof typeof KINDS).fixed) expect(TOOLS.some((t) => t.kind === k), k).toBe(true);
     expect(toolById("select")?.kind).toBeUndefined();
   });
 
