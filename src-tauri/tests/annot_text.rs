@@ -152,3 +152,41 @@ fn quad_points_a_note_icon_and_a_callout_line_are_written() {
     assert_eq!(got[0].2, 1, "one quad");
     assert_eq!(got[1].1, "Check this");
 }
+
+#[test]
+fn pdfium_draws_a_note_and_a_callout_from_their_own_appearance() {
+    // Each alone on a white page: the note at (20, 160)-(40, 180), the callout's box at
+    // (150, 20)-(270, 60) with its leader down to (100, 100), y up.
+    let blank = make_pdf(vec![page(300.0, 200.0, &[])]);
+    let note = AnnotSpec {
+        page: 0,
+        nm: "note".into(),
+        subtype: "Text".into(),
+        rect: [20.0, 160.0, 40.0, 180.0],
+        appearance: Appearance { ops: "0 0 1 rg 20 160 20 20 re f".into(), bbox: [20.0, 160.0, 40.0, 180.0], ..Default::default() },
+        contents: Some("Check".into()),
+        icon: Some("Note".into()),
+        flags: Some(12),
+        ..Default::default()
+    };
+    let callout = AnnotSpec {
+        page: 0,
+        nm: "callout".into(),
+        subtype: "FreeText".into(),
+        rect: [99.0, 19.0, 271.0, 101.0],
+        appearance: Appearance { ops: "0 0 1 RG 2 w 100 100 m 150 40 l S 0 0 1 rg 150 20 120 40 re f".into(), bbox: [99.0, 19.0, 271.0, 101.0], ..Default::default() },
+        intent: Some("FreeTextCallout".into()),
+        callout: Some(vec![100.0, 100.0, 150.0, 40.0]),
+        line_ends: Some(vec!["OpenArrow".into()]),
+        inset: Some([51.0, 1.0, 1.0, 41.0]),
+        ..Default::default()
+    };
+    let (b, g, r) = pixel(annot::apply(blank.clone(), "", &[Change::Add { spec: note }]).unwrap(), 30.0, 30.0);
+    assert!(b > 200 && r < 60 && g < 60, "note drawn: {r} {g} {b}");
+    let out = annot::apply(blank, "", &[Change::Add { spec: callout }]).unwrap();
+    let (b, g, r) = pixel(out.clone(), 200.0, 160.0);
+    assert!(b > 200 && r < 60 && g < 60, "callout box drawn: {r} {g} {b}");
+    // The leader, halfway along: (125, 70) y up is (125, 130) y down.
+    let (b, _, r) = pixel(out, 125.0, 130.0);
+    assert!(b > 150 && r < 120, "callout leader drawn: {r} {b}");
+}
