@@ -206,3 +206,30 @@ describe("text markups from a selection", () => {
     expect(doc.markups).toHaveLength(0);
   });
 });
+
+describe("note", () => {
+  it("places a note centred on a click, selected, and keeps it when empty", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("note");
+    click(t, v, [200, 150]);
+    const m = only(doc, "note");
+    expect(m.at[0]).toBeCloseTo(190, 0);
+    expect(m.at[1]).toBeCloseTo(140, 0);
+    expect(m.text).toBe("");
+    expect(t.selected().map((x) => x.id)).toEqual([m.id]);
+    // Its wording, set by the note editor, is one undo step.
+    t.updateMarkup({ ...m, text: "Check" });
+    expect(only(doc, "note").text).toBe("Check");
+    t.undo();
+    expect(only(doc, "note").text).toBe("");
+  });
+
+  it("is dragged by its icon in Select", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("note");
+    click(t, v, [200, 150]);
+    t.setTool("select");
+    drag(t, v, [[200, 150], [260, 170]]);
+    expect(only(doc, "note").at[0]).toBeCloseTo(250, 0);
+  });
+});

@@ -1,17 +1,18 @@
 // Phase 7a's kinds (docs/editing-phase7-scope.md): the highlighter, the callout, text markups
 // and notes. Drawing operations, annotation spec, hit-testing, grips and moving.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type MarkupKind, type MarkupOf, defaultStyle } from "../types";
 import { type PathOp, opsFor } from "../ops";
 import { toSpec } from "../spec";
 import { toContent } from "../pdf";
 import type { Frame } from "../pdf";
-import { dragHandle, handles, hits, moveBy } from "../geometry";
+import { dragHandle, handles, hits, moveBy, shapeBounds } from "../geometry";
+import { pinScale, pinView } from "../pin";
 import { attachPoint, leader } from "./callout";
 import { fitText } from "./text";
 import { type MarkQuad, type TextMarkVariant, textMarkStyle } from "./textmark";
-import { labelOf } from ".";
+import { kindOf, labelOf } from ".";
 
 const A4: Frame = { quarterTurns: 0, bbox: [0, 0, 595, 842] };
 const meta = { author: "Tester", created: "2026-11-15T10:00:00Z", modified: "2026-11-15T10:00:00Z" };
@@ -198,5 +199,55 @@ describe("text markups", () => {
     expect(moveBy(m, 10, 10)).toBe(m);
     expect(labelOf(m)).toBe("Highlight");
     expect(labelOf(tm("strike"))).toBe("Strike through");
+  });
+});
+
+describe("note", () => {
+  const nt = (shape: Record<string, unknown> = {}) => mk("note", { at: [100, 100], text: "Check the fixing", ...shape });
+  afterEach(() => {
+    pinView.ptPerPx = 1;
+  });
+
+  it("draws its icon pinned at its corner, in its colour with a darker outline", () => {
+    const ops = paths(opsFor(nt()));
+    expect(ops.every((o) => o.pin && o.pin[0] === 100 && o.pin[1] === 100)).toBe(true);
+    expect(ops[0].fill).toEqual(defaultStyle("note").stroke);
+    expect(ops[0].stroke![0]).toBeLessThan(ops[0].fill![0]);
+  });
+
+  it("saves as a Text annotation: its wording, the Note icon, 20 points square, NoZoom", () => {
+    const spec = toSpec(nt(), A4);
+    expect(spec.subtype).toBe("Text");
+    expect(spec.contents).toBe("Check the fixing");
+    expect(spec.icon).toBe("Note");
+    expect(spec.flags).toBe(12);
+    expect(spec.rect[2] - spec.rect[0]).toBeGreaterThanOrEqual(20);
+    expect(spec.rect[2] - spec.rect[0]).toBeLessThan(24);
+    expect(spec.borderWidth).toBeUndefined();
+  });
+
+  it("is picked over its icon at the size it was last drawn on screen", () => {
+    const m = nt();
+    expect(hits(m, [115, 115], 0)).toBe(true);
+    expect(hits(m, [130, 115], 0)).toBe(false);
+    // Zoomed out to a quarter: the icon covers four times the page.
+    pinView.ptPerPx = 4;
+    expect(hits(m, [160, 160], 0)).toBe(true);
+    expect(shapeBounds(m)).toEqual([100, 100, 180, 180]);
+  });
+
+  it("records the pin scale from the canvas transform", () => {
+    // Two device pixels per point at a device pixel ratio of 1: half a point per CSS pixel.
+    expect(pinScale([2, 0, 0, 2, 0, 0], 1)).toBe(0.5);
+    expect(pinView.ptPerPx).toBe(0.5);
+    // Rotated a quarter, the same scale.
+    expect(pinScale([0, 2, -2, 0, 0, 0], 2)).toBe(1);
+  });
+
+  it("moves, has no grips, and has no line weight to set", () => {
+    const m = moveBy(nt(), 5, -5) as MarkupOf<"note">;
+    expect(m.at).toEqual([105, 95]);
+    expect(handles(m)).toEqual([]);
+    expect(kindOf("note").lineless).toBe(true);
   });
 });

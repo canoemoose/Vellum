@@ -44,6 +44,7 @@
 
   // Text markups
   import SelectionBar from "./lib/components/SelectionBar.svelte";
+  import NoteLayer from "./lib/components/NoteLayer.svelte";
   import { selectionEnd, selectionLines } from "./lib/engine/textTool";
   import type { Quad } from "./lib/text/quads";
   import { type TextMarkVariant, textMarkStyle, textMarksFrom } from "./lib/markup/kinds/textmark";
@@ -328,6 +329,12 @@
   // Highlight, underline and strike through from a text selection: the selection bar beside it,
   // the Edit menu and Ctrl+H / Ctrl+U / Ctrl+Shift+X. Each variant remembers its colour and
   // opacity (settings.textMarks): the last it was made or restyled with.
+
+  /** The markup tool for the notes' layer (made with the viewer; markVersion moves when it attaches). */
+  const noteTool = $derived.by(() => {
+    void markVersion;
+    return markupTool;
+  });
 
   /** Where the text selection ends (its last line), for the selection bar. */
   let selEnd = $state.raw<{ page: number; quad: Quad } | null>(null);
@@ -1755,6 +1762,9 @@
       <!-- Text markups -->
       {#if chrome && selBar}
         <SelectionBar x={selBar.x} y={selBar.y} areaW={stageW} areaH={stageH} onMark={(v) => void markText(v)} onCopy={() => void copySelection()} />
+      {/if}
+      {#if viewer && noteTool && pdfDoc}
+        <NoteLayer {viewer} markupTool={noteTool} version={markVersion} view={[ui.viewWorld.x, ui.viewWorld.y, ui.zoom, ui.rotation]} tool={toolNow} areaW={stageW} areaH={stageH} />
       {/if}
       {#if marquee}
         <MarqueeOverlay pageAt={(x, y) => viewer?.pagePointAt(x, y) ?? null} {pointOn} onDone={marquee} />

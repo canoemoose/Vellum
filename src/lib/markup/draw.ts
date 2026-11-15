@@ -27,6 +27,11 @@ export interface PathOp {
   // Text markups
   /** Multiplied into what's under it (the highlighter, text highlights): darkens, never covers. */
   blend?: "multiply";
+  /**
+   * Drawn a fixed size on screen (a note's icon): the path is in page points at its size when
+   * one point is one CSS pixel, and the painter scales it about this point to keep it so.
+   */
+  pin?: Pt;
 }
 
 export interface TextOp {

@@ -21,6 +21,7 @@ import { polygon } from "./polygon";
 import { highlighter } from "./highlighter";
 import { callout } from "./callout";
 import { textmark } from "./textmark";
+import { note } from "./note";
 
 export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   rect,
@@ -39,6 +40,7 @@ export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   highlighter,
   callout,
   textmark,
+  note,
 };
 
 /** A kind's definition. */
