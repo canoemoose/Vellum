@@ -25,6 +25,8 @@ export interface PathOp {
   /** Underline or strikethrough: square ends, and hidden with the text while it's typed. */
   decoration?: boolean;
   // Text markups
+  /** Multiplied into what's under it (the highlighter, text highlights): darkens, never covers. */
+  blend?: "multiply";
 }
 
 export interface TextOp {

@@ -43,6 +43,12 @@ export interface AnnotSpec {
   // Stamps
 
   // Text markups
+  /** The blend mode of the appearance's /GS0 (/BM), e.g. "Multiply" for highlights. */
+  blend?: string;
+  /** /QuadPoints for text markups: x1 y1 ... x4 y4 per quad, in user space. */
+  quadPoints?: number[];
+  /** /Name: a note's icon ("Comment", "Note"...). */
+  icon?: string;
 }
 
 export type Change = { op: "add"; spec: AnnotSpec } | { op: "replace"; spec: AnnotSpec } | { op: "delete"; page: number; nm: string };

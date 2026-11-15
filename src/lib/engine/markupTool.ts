@@ -512,6 +512,9 @@ export class MarkupTool {
         else make(d.make([a, mods.shift ? snapAngle(a, p) : p]));
         break;
       case "freehand": {
+        // Text markups: Shift draws a straight stroke from the press (the highlighter's rule,
+        // and the pen's too, since the gesture is shared).
+        if (mods.shift) g.points = [a, p];
         const last = g.points[g.points.length - 1];
         if (Math.hypot(p[0] - last[0], p[1] - last[1]) * this.viewer.view.scale >= 1.5) g.points.push(p);
         make(d.make([g.points.slice()]));

@@ -20,6 +20,7 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
     // Stamps
 
     // Text markups
+    if (op.t === "path" && op.blend) ctx.globalCompositeOperation = op.blend;
     if (op.t === "path") {
       if (op.decoration && hideText) {
         ctx.restore();

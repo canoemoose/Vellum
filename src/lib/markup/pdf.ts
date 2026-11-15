@@ -87,7 +87,13 @@ export function toContent(f: Frame, ops: Op[]): Content {
     out.push("q");
     // Stamps
 
-    // Text markups
+    // Text markups: a blended path uses /GS0 (which carries /BM, AnnotSpec.blend) even when
+    // it isn't see-through, so the graphics state is named here when the path won't name it.
+    if (op.t === "path" && op.blend && !((!!op.stroke && op.strokeOpacity < 1) || (!!op.fill && op.fillOpacity < 1))) {
+      out.push("/GS0 gs");
+      opacity ??= 1;
+      fillOpacity ??= 1;
+    }
     if (op.t === "path") {
       // One /GS0 serves every path: a markup's paths share its style.
       const so = !!op.stroke && op.strokeOpacity < 1, fo = !!op.fill && op.fillOpacity < 1;

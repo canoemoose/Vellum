@@ -18,6 +18,7 @@ import { polygon } from "./polygon";
 // Stamps
 
 // Text markups
+import { highlighter } from "./highlighter";
 
 export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   rect,
@@ -33,6 +34,7 @@ export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   // Stamps
 
   // Text markups
+  highlighter,
 };
 
 /** A kind's definition. */
