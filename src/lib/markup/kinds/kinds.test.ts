@@ -30,6 +30,9 @@ const SAMPLES: { [K in MarkupKind]: () => MarkupOf<K> } = {
   polygon: () => mk("polygon", { vertices: [[100, 100], [200, 100], [150, 150]] }),
   // Text markups
   highlighter: () => mk("highlighter", { strokes: [[[100, 100], [150, 130], [200, 150]]] }),
+  // A callout's tip stays put when it moves, so it points below and right of its box here,
+  // where the box's corner (which moves) is the bounds' top left.
+  callout: () => mk("callout", { tip: [250, 180], elbow: null, rect: [100, 100, 220, 130], text: "Note", textStyle: { size: 10, colour: [0, 0, 0] } }),
 };
 
 const paths = (m: Markup) => opsFor(m).filter((o): o is PathOp => o.t === "path");

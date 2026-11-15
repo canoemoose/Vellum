@@ -35,7 +35,7 @@ export type Draw<M extends Markup> =
    * way makes nothing), "line" two points (under 4 px makes nothing). `max`: it finishes by
    * itself on that many points (an angle's three).
    */
-  | { gesture: "points"; make(pts: Pt[]): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" }
+  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" }
   /** Freehand: the pointer's path while pressed, simplified when let go. */
   | { gesture: "freehand"; make(strokes: Pt[][]): Shape<M> }
   /**

@@ -508,8 +508,8 @@ export class MarkupTool {
         break;
       case "points":
         // Pressed and dragged: a rectangle of points, or a straight line, in one go.
-        if (d.drag === "box") make(d.make(rectPts(normRect([a[0], a[1], p[0], p[1]]))));
-        else make(d.make([a, mods.shift ? snapAngle(a, p) : p]));
+        if (d.drag === "box") make(d.make(rectPts(normRect([a[0], a[1], p[0], p[1]])), this.drawContext));
+        else make(d.make([a, mods.shift ? snapAngle(a, p) : p], this.drawContext));
         break;
       case "freehand": {
         // Text markups: Shift draws a straight stroke from the press (the highlighter's rule,
@@ -580,10 +580,13 @@ export class MarkupTool {
     // A double-click adds its point twice: drop repeats.
     const pts = c.points.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 1e-6);
     if (keep && pts.length >= c.def.draw.min) {
-      let m = this.newMarkup(c.def, c.page, c.def.draw.make(pts));
+      let m = this.newMarkup(c.def, c.page, c.def.draw.make(pts, this.drawContext));
       if (c.def.finish) m = c.def.finish(m);
-      this.commit([...this.markups, m]);
+      const before = this.markups;
+      this.commit([...before, m]);
       this.select([m.id]);
+      // Text markups: a callout is clicked out, then typed into.
+      if (c.def.typed) this.startText(m.id, true, before);
     }
     this.viewer.requestFrame();
   }
