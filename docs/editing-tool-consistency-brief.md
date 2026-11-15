@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 3.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -197,7 +197,7 @@ Built (as done):
 - Text markups (highlight, underline, strike) still remember a variant's colour when one
   just made is restyled, as before; their "tool" is the text selection.
 
-## Stage 4: the arrowhead
+## Stage 4: the arrowhead ✓
 
 - **A filled arrowhead doesn't meet its line** [D14]. Cause: the line is stopped half a
   line weight short of the head's base and relies on a round line end to bridge the gap
@@ -205,6 +205,15 @@ Built (as done):
   A round end only touches the base at its middle; a flat end doesn't reach at all.
   Change: the line ends flat exactly on the head's base, at every weight and opacity, on
   screen and in the saved file. Check the dot end for the same. Matt confirms by eye.
+
+Built differently: the line keeps its round end where it stopped (half a weight short of
+the base); the filled head instead reaches back to it with a neck the line's width, less
+the half disc the round end fills. Same look as a flat end on the base, with no gap at
+the corners and no overlap at any opacity, and patterned lines keep their round dashes.
+The dot had the same fault (the line's round end ran inside it): it now leaves that bite
+out, as a hole wound the other way. Tested by area in `markup/arrowhead.test.ts`. One
+thing to look for by eye: a faint seam where the line meets the head, from anti-aliasing
+two shapes edge to edge.
 
 ## Stage 5: dimensions
 

@@ -216,6 +216,18 @@ export const HEAD_ANGLE = 0.4636; // about 26.6 degrees either side: a 2:1 head
 export const dotRadius = (width: number) => 1.5 + 1.25 * width;
 
 /**
+ * The round end of a line of weight `width` stopping at `c` going along `d`: a half disc. A
+ * solid end leaves exactly this out of itself (a bite), so the line's round end fills the bite:
+ * the two meet with no gap and no overlap, at any weight and opacity (stage 4 of
+ * docs/editing-tool-consistency-brief.md).
+ */
+function capBite(c: Pt, d: Pt, width: number, side: Pt): Seg[] {
+  const r = width / 2;
+  const a = add(c, mul(side, r)), b = add(c, mul(side, -r));
+  return [["L", a[0], a[1]], ...arc(c, r, side, mul(side, -1), d), ["L", b[0], b[1]]];
+}
+
+/**
  * One end of a line at `p`, facing outwards along unit `d`: the strokes it adds (wings, a bar,
  * a slash), the solid shape it fills (a filled head, a dot), and how far back from `p` the line
  * should stop so it doesn't run under a filled shape (see-through lines would show it twice).
@@ -233,13 +245,27 @@ export function lineEnd(kind: LineEnd, p: Pt, d: Pt, width: number): { segs: Seg
     }
     case "filled": {
       const w1 = add(p, rot(back, HEAD_ANGLE)), w2 = add(p, rot(back, -HEAD_ANGLE));
-      // The line stops so its round end just meets the head's base.
-      return { segs: [], solid: [["M", p[0], p[1]], ["L", w1[0], w1[1]], ["L", w2[0], w2[1]], ["Z"]], back: len * Math.cos(HEAD_ANGLE) + width / 2 };
+      // The line stops half its weight short of the head's base, round end and all. The head
+      // reaches back to it with a neck the line's width, less the bite its round end fills, so
+      // the line looks to end flat on the base: no gap at its corners, nothing drawn twice.
+      const base = add(p, mul(d, -len * Math.cos(HEAD_ANGLE)));
+      const stop = width / 2;
+      const c = add(base, mul(d, -stop));
+      const side: Pt = (w1[0] - p[0]) * n[0] + (w1[1] - p[1]) * n[1] >= 0 ? n : mul(n, -1);
+      const b1 = add(base, mul(side, stop)), b2 = add(base, mul(side, -stop));
+      const solid: Seg[] = [["M", p[0], p[1]], ["L", w1[0], w1[1]], ["L", b1[0], b1[1]], ...capBite(c, d, width, side), ["L", b2[0], b2[1]], ["L", w2[0], w2[1]], ["Z"]];
+      return { segs: [], solid, back: len * Math.cos(HEAD_ANGLE) + stop };
     }
     case "dot": {
       const r = dotRadius(width);
-      // Where the line's sides meet the circle.
-      return { segs: [], solid: circle(p, r), back: Math.sqrt(Math.max(0, r * r - (width * width) / 4)) };
+      // The line stops where its sides meet the circle; its round end reaches inside the dot,
+      // so the dot leaves that bite out (a hole, wound the other way round from the circle).
+      const back = Math.sqrt(Math.max(0, r * r - (width * width) / 4));
+      const c = add(p, mul(d, -back));
+      const bite = capBite(c, d, width, n);
+      const hole: Seg[] = [["M", c[0], c[1]], ...bite, ["Z"]];
+      const ring = circle(p, r);
+      return { segs: [], solid: [...ring, ...(windingOf(ring) === windingOf(hole) ? reversed(hole) : hole)], back };
     }
     case "bar":
       return { segs: line(add(p, mul(n, half)), add(p, mul(n, -half))), solid: null, back: 0 };
@@ -251,6 +277,26 @@ export function lineEnd(kind: LineEnd, p: Pt, d: Pt, width: number): { segs: Seg
     default:
       return { segs: [], solid: null, back: 0 };
   }
+}
+
+/** The way a closed run of segments turns: its end points' signed area's sign (curves by their ends). */
+function windingOf(segs: Seg[]): number {
+  const pts: Pt[] = [];
+  for (const s of segs) if (s[0] !== "Z") pts.push([s[s.length - 2] as number, s[s.length - 1] as number]);
+  return Math.sign(signedArea(pts));
+}
+
+/** A closed run of lines and curves, traced the other way round. */
+function reversed(segs: Seg[]): Seg[] {
+  const body = segs.filter((s) => s[0] !== "Z");
+  const end = (s: Seg): Pt => [s[s.length - 2] as number, s[s.length - 1] as number];
+  const out: Seg[] = [["M", ...end(body[body.length - 1])]];
+  for (let i = body.length - 1; i > 0; i--) {
+    const s = body[i], to = end(body[i - 1]);
+    out.push(s[0] === "C" ? ["C", s[3], s[4], s[1], s[2], to[0], to[1]] : ["L", to[0], to[1]]);
+  }
+  out.push(["Z"]);
+  return out;
 }
 
 /** A full circle as four quarter arcs. */
