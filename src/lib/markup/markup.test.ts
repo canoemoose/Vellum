@@ -299,7 +299,7 @@ describe("history and changes", () => {
     const saved = [rect(), arrow()];
     const now = [moveBy(rect(), 10, 0), cloud()];
     const ch = changesFor(saved, now, (m) => toSpec(m, A4));
-    expect(ch.map((c) => c.op + ":" + (c.op === "delete" ? c.nm : c.spec.nm))).toEqual(["replace:r1", "add:c1", "delete:a1"]);
+    expect(ch.map((c) => c.op + ":" + (c.op === "delete" || c.op === "move" ? c.nm : c.spec.nm))).toEqual(["replace:r1", "add:c1", "delete:a1"]);
     expect(isDirty(saved, saved)).toBe(false);
     expect(isDirty(saved, [rect(), arrow()])).toBe(false); // equal values
     expect(isDirty(saved, now)).toBe(true);

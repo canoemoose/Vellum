@@ -38,6 +38,11 @@ export interface MarkupToolOptions {
   onChange(): void;
   /** Selection handles and marquee. */
   accent?: string;
+  /**
+   * Phase 7b: these markups are about to change under a drag (or a slider): any that PDFium
+   * still draws from the file should be hidden there now, so it isn't drawn twice.
+   */
+  onLift?(ids: string[]): void;
 }
 
 /** CSS px: how close the pointer must be to pick a markup, and a handle. */
@@ -132,9 +137,14 @@ export class MarkupTool {
   }
 
   select(ids: string[], add = false): void {
-    if (!this.doc) return;
-    if (!add) this.doc.selection.clear();
-    for (const id of ids) this.doc.selection.add(id);
+    const d = this.doc;
+    if (!d) return;
+    if (!add) d.selection.clear();
+    // Phase 7b: what came with the file can't be picked while the document is locked.
+    for (const id of ids) {
+      const m = d.byId(id);
+      if (!m || d.editable(m)) d.selection.add(id);
+    }
     this.redraw();
   }
 
@@ -156,13 +166,15 @@ export class MarkupTool {
 
   /** Change one markup (by id) as one undo step, stamping its modification time. */
   updateMarkup(next: Markup): void {
-    if (!this.doc?.byId(next.id)) return;
+    const was = this.doc?.byId(next.id);
+    if (!was || !this.doc!.editable(was)) return;
     this.commit(this.markups.map((m) => (m.id === next.id ? touch(next) : m)));
   }
 
   /** Remove one markup (by id) as one undo step. */
   removeMarkup(id: string): void {
-    if (!this.doc?.byId(id)) return;
+    const was = this.doc?.byId(id);
+    if (!was || !this.doc!.editable(was)) return;
     this.commit(this.markups.filter((m) => m.id !== id));
   }
 
@@ -195,13 +207,18 @@ export class MarkupTool {
   nudge(dxPx: number, dyPx: number): boolean {
     const d = this.doc;
     if (!d?.selection.size) return false;
+    // Text markups don't move: a selection of only those takes no undo step.
+    const moving = (m: Markup) => d.selection.has(m.id) && !defOf(m).ofText;
+    if (!this.markups.some(moving)) return false;
     const [dx, dy] = this.screenDeltaToPage(dxPx, dyPx);
-    this.commit(this.markups.map((m) => (d.selection.has(m.id) ? touch(moveBy(m, dx, dy)) : m)));
+    this.commit(this.markups.map((m) => (moving(m) ? touch(moveBy(m, dx, dy)) : m)));
     return true;
   }
 
   copy(): boolean {
-    const s = this.selected();
+    // Text markups belong to the text they mark, and some annotations from the file can't be
+    // redrawn: neither is copied (pasted elsewhere they'd land on nothing).
+    const s = this.selected().filter((m) => !defOf(m).ofText && !defOf(m).fixed);
     if (!s.length) return false;
     this.clipboard = s;
     return true;
@@ -211,7 +228,10 @@ export class MarkupTool {
     return this.clipboard.length > 0 && !!this.doc;
   }
 
-  /** Paste copies of the copied markups onto the current page, nudged so they're seen. */
+  /**
+   * Paste copies of the copied markups onto the current page, nudged so they're seen. (Text
+   * markups and annotations Vellum can't redraw are never copied: copy() leaves them out.)
+   */
   paste(): boolean {
     if (!this.canPaste || !this.doc) return false;
     const page = this.viewer.currentPageIndex;
@@ -233,7 +253,8 @@ export class MarkupTool {
 
   private styled(from: Markup[], sel: Set<string>, patch: Partial<Style>, text?: Partial<TextStyle>): Markup[] {
     return from.map((m) => {
-      if (!sel.has(m.id)) return m;
+      // An annotation Vellum can't redraw keeps its own look (kind.ts, fixed).
+      if (!sel.has(m.id) || defOf(m).fixed) return m;
       let next = { ...m, style: { ...m.style, ...patch } } as Markup;
       if (text && "textStyle" in next) next = { ...next, textStyle: { ...next.textStyle, ...text } };
       const def = defOf(m);
@@ -248,6 +269,7 @@ export class MarkupTool {
   preview(patch: Partial<Style>): boolean {
     const d = this.doc;
     if (!d?.selection.size) return false;
+    if (!this.previewBase) this.opts.onLift?.([...d.selection]);
     this.previewBase ??= this.markups;
     d.history.replace(this.styled(this.previewBase, d.selection, patch));
     this.redraw();
@@ -297,7 +319,9 @@ export class MarkupTool {
 
   private topAt(page: number, p: Pt): Markup | null {
     const tol = this.tolPt(PICK_PX);
-    const on = this.markups.filter((m) => m.page === page);
+    // Phase 7b: what came with the file is out of reach while the document is locked.
+    const d = this.doc;
+    const on = this.markups.filter((m) => m.page === page && (!d || d.editable(m)));
     for (let i = on.length - 1; i >= 0; i--) if (hits(on[i], p, tol)) return on[i];
     return null;
   }
@@ -378,6 +402,7 @@ export class MarkupTool {
       case "pending":
         if (Math.hypot(sx - g.sx, sy - g.sy) < DRAG_PX) return;
         this.gesture = { kind: "move", page: g.page, start: g.start, before: g.before, ids: [...this.doc!.selection], moved: true };
+        this.opts.onLift?.([...this.doc!.selection]);
         return this.move(sx, sy, mods);
       case "move": {
         let dx = p[0] - g.start[0], dy = p[1] - g.start[1];
@@ -387,6 +412,7 @@ export class MarkupTool {
         break;
       }
       case "handle":
+        if (this.markups === g.before) this.opts.onLift?.([g.id]);
         this.doc!.history.replace(g.before.map((m) => (m.id === g.id ? dragHandle(m, g.handle, p, mods.shift) : m)));
         break;
       case "marquee":
@@ -416,7 +442,8 @@ export class MarkupTool {
       }
       case "marquee": {
         const r = normRect([g.a[0], g.a[1], g.b[0], g.b[1]]);
-        const ids = this.markups.filter((m) => m.page === g.page && insideMarquee(m, r)).map((m) => m.id);
+        const d = this.doc;
+        const ids = this.markups.filter((m) => m.page === g.page && d.editable(m) && insideMarquee(m, r)).map((m) => m.id);
         this.select(ids, g.add);
         break;
       }
@@ -714,7 +741,8 @@ export class MarkupTool {
     const d = this.doc;
     if (!d) return;
     const editing = this.editing?.id;
-    for (const mk of d.markups) if (mk.page === page) paintOps(ctx, this.opsOf(mk), m, mk.id === editing);
+    // Phase 7b: an annotation from the file that hasn't changed is PDFium's to draw.
+    for (const mk of d.markups) if (mk.page === page && d.overlayDraws(mk)) paintOps(ctx, this.opsOf(mk), m, mk.id === editing);
     const g = this.gesture;
     if (g?.kind === "draw" && g.page === page && g.draft) paintOps(ctx, opsFor(g.draft), m);
     // A "place" tool's preview, following the pointer until the click.

@@ -62,6 +62,23 @@ export class History {
     this.past = this.past.map(f);
     this.future = this.future.map(f);
   }
+
+  // Existing annotations (phase 7b)
+  /**
+   * Put markups into every state, past and future, that lacks them: annotations read from the
+   * file were there all along, so undoing mustn't take them away. No undo step.
+   */
+  adopt(ms: Markup[]): void {
+    if (!ms.length) return;
+    const f = (l: Markup[]) => {
+      const have = new Set(l.map((m) => m.id));
+      const add = ms.filter((m) => !have.has(m.id));
+      return add.length ? [...l, ...add] : l;
+    };
+    this.present = f(this.present);
+    this.past = this.past.map(f);
+    this.future = this.future.map(f);
+  }
 }
 
 /**

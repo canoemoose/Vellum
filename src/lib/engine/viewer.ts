@@ -639,6 +639,22 @@ export class Viewer {
     this.requestFrame();
   }
 
+  /**
+   * Re-render one page's tiles (an annotation on it was hidden or shown in PDFium). The page's
+   * preview stays, so it shows underneath until the new tiles arrive.
+   */
+  dropPageTiles(page: number): void {
+    for (const j of [...this.active]) {
+      if (j.page !== page || j.kind !== "tiles") continue;
+      j.ac?.abort();
+      this.active.delete(j);
+      this.clearPartials(j);
+    }
+    this.queue = this.queue.filter((j) => j.page !== page || j.kind !== "tiles");
+    this.cache.dropOtherScales(page, []);
+    this.requestFrame();
+  }
+
   private relayout(): void {
     const sizes = (this.doc?.sizes ?? []).map((s) => rotatedSize(s, this.rotationDeg));
     this.layout = computeLayout(sizes, this.layoutMode, this.page, this.columns);

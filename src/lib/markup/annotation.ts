@@ -63,12 +63,18 @@ export interface AnnotSpec {
   quadPoints?: number[];
   /** /Name: a note's icon ("Comment", "Note"...). */
   icon?: string;
+
+  // Existing annotations (phase 7b)
+  /** The annotation this replaces, by its position in the page's /Annots as read: one from the file whose /NM isn't its id. */
+  at?: number;
 }
 
 export type Change =
   | { op: "add"; spec: AnnotSpec }
   | { op: "replace"; spec: AnnotSpec }
-  | { op: "delete"; page: number; nm: string }
+  | { op: "delete"; page: number; nm: string; at?: number }
+  // Existing annotations: one Vellum can't redraw, moved by (dx, dy) in user space, appearance and all.
+  | { op: "move"; page: number; nm: string; at?: number; dx: number; dy: number; modified?: string }
   // Stamps: drawn into the page's content instead of added as an annotation (a baked signature).
   | { op: "bake"; spec: AnnotSpec };
 
