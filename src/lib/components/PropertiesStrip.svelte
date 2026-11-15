@@ -45,6 +45,11 @@
     onMeasure?: (patch: { labelSize?: number; format?: MeasureFormat }) => void;
 
     // Stamps
+    /**
+     * Stage 8: the stamp's picker ("Stamp: APPROVED", components/signature/StampBar.svelte), in
+     * place of the label; given the thin column (narrow) and which way pop-outs open.
+     */
+    stamp?: import("svelte").Snippet<[boolean, import("../shell/popout").Out]>;
 
     // Text markups
     dock: Dock;
@@ -202,22 +207,34 @@
     <span class="grip" role="separator" aria-label="Move the properties bar" title={narrow ? `${p.label}: drag to move it to any edge` : "Drag to move it to any edge"} onpointerdown={grip}>
       <svg width="8" height="14" viewBox="0 0 8 14" aria-hidden="true"><g fill="currentColor"><circle cx="2" cy="2" r="1.2" /><circle cx="6" cy="2" r="1.2" /><circle cx="2" cy="7" r="1.2" /><circle cx="6" cy="7" r="1.2" /><circle cx="2" cy="12" r="1.2" /><circle cx="6" cy="12" r="1.2" /></g></svg>
     </span>
-    <span class="label">{p.label}</span>
+    <!-- Stage 8: a stamp's picker stands in for the label. -->
+    {#if p.stamp && bar.picker && idp === "mk"}
+      {@render p.stamp(narrow, out)}
+    {:else}
+      <span class="label">{p.label}</span>
+    {/if}
   </div>
 
+  <!-- Stage 8: a signature or a picture has no colour of its own, only opacity. -->
+  {#if bar.colour || bar.opacity}
   <span class="sep" aria-hidden="true"></span>
-  <div class="prop" role="group" aria-label={isText ? "Border" : "Line"}>
-    <span class="k">{isText ? "Border" : "Colour"}</span>
+  <div class="prop" role="group" aria-label={isText ? "Border" : bar.colour ? "Line" : "Opacity"}>
+    <span class="k">{isText ? "Border" : bar.colour ? "Colour" : "Opacity"}</span>
     <div class="pal">
+      {#if bar.colour}
       <div class="swatches" role="radiogroup" aria-label={isText ? "Border colour" : "Line colour"}>
         {#each COLOURS as col (col.name)}
           <button type="button" role="radio" class="sw" class:on={same(p.style.stroke, col.c)} aria-checked={same(p.style.stroke, col.c)} aria-label={col.name} title={col.name} style:--c={css(col.c)} onclick={() => p.onStyle({ stroke: col.c })}></button>
         {/each}
         {@render custom("stroke", p.style.stroke, COLOURS)}
       </div>
-      {@render opacity(isText ? "Border opacity" : "Line opacity", p.style.opacity, p.style.stroke, false, (o, live) => p.onStyle({ opacity: o }, live))}
+      {/if}
+      {#if bar.opacity}
+        {@render opacity(isText ? "Border opacity" : bar.colour ? "Line opacity" : "Opacity", p.style.opacity, bar.colour ? p.style.stroke : null, false, (o, live) => p.onStyle({ opacity: o }, live))}
+      {/if}
     </div>
   </div>
+  {/if}
 
   <!-- No weight or pattern for markups without a line (kind.ts, lineless); no pattern for the
        highlighter (rule 6, markup/bar.ts). -->

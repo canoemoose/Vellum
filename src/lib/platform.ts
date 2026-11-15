@@ -14,6 +14,8 @@ export interface LaunchArgs {
   /** Benchmark this page (zero-based) instead of the first. */
   benchPage?: number | null;
   processStartEpochMs: number;
+  /** Stage 8: VELLUM_STAMP_POPOUTS=1, the stamp tools' old pickers in place of the context bar's. */
+  stampPopouts?: boolean;
 }
 
 export interface MemSample {
