@@ -261,6 +261,9 @@
   });
 
   function setTool(t: Tool) {
+    // Calibrate goes back to the measuring tool that was out before it (else Length).
+    const was = markupTool?.tool;
+    if (t === "measureCalibrate" && was !== "measureCalibrate") calibrateFrom = was && toolById(was)?.group === "measure" ? was : "measureLength";
     markupTool?.setTool(t);
     stampToolPicked(t); // Stamps: the Signature and Stamp tools open their pickers
     // A collapsed palette shows each group's last tool, remembered between runs.
@@ -396,9 +399,18 @@
     save();
   }
 
+  /** The measuring tool to return to once a calibration is done or cancelled. */
+  let calibrateFrom: Tool = "measureLength";
+
+  /** Calibrating finished or cancelled: back to the measuring tool that was out before. */
+  function calibrationDone() {
+    calib = null;
+    if (markupTool?.tool === "measureCalibrate") setTool(calibrateFrom);
+  }
+
   function applyCalibration(ratio: number, pageOnly: boolean) {
     const c = calib;
-    calib = null;
+    calibrationDone();
     const t = c ? tabById(c.tabId) : null;
     if (!c || !t) return;
     if (pageOnly) setPageScale(t, c.page, ratio);
@@ -1503,7 +1515,7 @@
       {
         label: "Edit",
         items: [
-          { label: "Undo", shortcut: "Ctrl+Z", disabled: !markupTool?.doc?.history.canUndo, action: () => markupTool?.undo() },
+          { label: "Undo", shortcut: "Ctrl+Z", disabled: !markupTool?.drawingPoints && !markupTool?.doc?.history.canUndo, action: () => (markupTool?.drawingPoints ? markupTool.removeLastPoint() : markupTool?.undo()) },
           { label: "Redo", shortcut: "Ctrl+Y", disabled: !markupTool?.doc?.history.canRedo, action: () => markupTool?.redo() },
           { separator: true },
           { label: "Copy", shortcut: "Ctrl+C", disabled: !textUi.hasSelection && !markupTool?.hasSelection, action: () => (markupTool?.hasSelection ? markupTool.copy() : copySelection()) },
@@ -1688,7 +1700,9 @@
     } else if (ctrl && !e.shiftKey && k === "b") {
       toggleSidebar();
     } else if (ctrl && !e.shiftKey && k === "z" && !isTyping(e)) {
-      markupTool?.undo();
+      // While a shape is being clicked out, undo takes back its last point.
+      if (markupTool?.drawingPoints) markupTool.removeLastPoint();
+      else markupTool?.undo();
     } else if (ctrl && (k === "y" || (e.shiftKey && k === "z")) && !isTyping(e)) {
       markupTool?.redo();
     } else if (ctrl && !e.shiftKey && k === "c" && !isTyping(e)) {
@@ -1697,6 +1711,8 @@
       else handled = false;
     } else if (ctrl && !e.shiftKey && k === "v" && !isTyping(e)) {
       if (!markupTool?.paste()) handled = false;
+    } else if (e.key === "Backspace" && !isTyping(e) && markupTool?.drawingPoints) {
+      markupTool.removeLastPoint();
     } else if ((e.key === "Delete" || e.key === "Backspace") && !isTyping(e)) {
       if (!markupTool?.deleteSelection()) handled = false;
     } else if (e.key.startsWith("Arrow") && !ctrl && !isTyping(e) && markupTool?.hasSelection) {
@@ -1889,6 +1905,18 @@
           cursor: () => (pdfDoc ? mt.cursor() : null) ?? (textDoc && mt.tool === "select" ? tt.cursor() : null),
         },
         contextMenu: (x, y) => {
+          // Clicking out a shape: finish it, take back a point, or cancel, by mouse.
+          if (mt.drawingPoints) {
+            contextMenu = {
+              x, y,
+              items: [
+                { label: "Finish", shortcut: "Enter", disabled: !mt.canFinishPoints, action: () => mt.finishPoints(true) },
+                { label: "Remove last point", shortcut: "Backspace", action: () => mt.removeLastPoint() },
+                { label: "Cancel", shortcut: "Esc", action: () => mt.finishPoints(false) },
+              ],
+            };
+            return;
+          }
           if (!tt.hasSelection) return;
           contextMenu = { items: [{ label: "Copy", shortcut: "Ctrl+C", action: copySelection }], x, y };
         },
@@ -2232,7 +2260,7 @@
       {#if calib && active?.info && calib.tabId === active.id}
         <CalibrateDialog
           paperMm={calib.paperMm} page={calib.page + 1} numPages={active.info.numPages} current={pageMeasure(active, calib.page).ratio}
-          onApply={applyCalibration} onClose={() => (calib = null)}
+          onApply={applyCalibration} onClose={calibrationDone}
         />
       {/if}
       <!-- End measuring -->

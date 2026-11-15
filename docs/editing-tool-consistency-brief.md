@@ -1,6 +1,7 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026 and ready to build. Nothing built.** Parent:
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stage 1.
+Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
 from tool to tool, and some tools needed rethinking once Matt had used them. This brief is
@@ -68,7 +69,7 @@ These are what the changes below add up to. Where a case isn't listed, follow th
    Shift+letter steps back.
 9. **If PDF has no way to say it, don't build it.**
 
-## Stage 1: gestures and Shift
+## Stage 1: gestures and Shift ✓
 
 Rules 1 to 5. Where: `engine/markupTool.ts`, `markup/tools.ts`, `markup/shape.ts`,
 `engine/input.ts`.
@@ -96,6 +97,24 @@ Already consistent, keep it so: every tool selects what it just drew and stays i
 tool; Esc abandons a half-clicked shape, then returns to Select, then clears the
 selection; switching tools abandons a half-clicked shape; double-click to edit works only
 from Select, for text boxes, callouts and notes alike.
+
+Built (as done):
+
+- The "line" gesture is gone: Arrow and Line draw with the clicked-points gesture, two
+  points at most, as Length does. A drag too small to count is now taken as a click (it
+  starts clicking out the shape) rather than making nothing.
+- The gesture's lock lives in one function (`lockTo` in `engine/markupTool.ts`); a kind
+  sets `lock: "ortho"` to start locked (stage 5 uses it).
+- A text box clicked rather than dragged: a drag under 4 px either way makes the clicked
+  box (was 8 px both ways).
+- Rule 3 applies in Select too: a click away from a text box being edited (opened with a
+  double-click) ends the typing and doesn't select anything. The note editor hands its
+  "end typing" to the markup tool (`typingElsewhere`), so the click that ends it never
+  places another note.
+- Tooltips: `gestureTip` in `markup/tools.ts`; a tool adds only `before` ("pick a stamp")
+  or `after` (Calibrate's "then type its real length", the note's double-click). The
+  callout and the angle carry `say`, the wording of what their clicks mean.
+- The Edit menu's Undo also takes back a point while a shape is being clicked out.
 
 ## Stage 2: shortcut letters
 
