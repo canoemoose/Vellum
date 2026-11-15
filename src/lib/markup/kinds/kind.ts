@@ -32,9 +32,10 @@ export type Draw<M extends Markup> =
    * degrees from the last. `closed`: a shape (the rubber band shows the closing edge, and a
    * click on the first point also finishes). `min`: the fewest points it takes. Pressing and
    * dragging instead makes one in a go: `drag` "box" a rectangle of points (under 4 px either
-   * way makes nothing), "line" two points (under 4 px makes nothing).
+   * way makes nothing), "line" two points (under 4 px makes nothing). `max`: it finishes by
+   * itself on that many points (an angle's three).
    */
-  | { gesture: "points"; make(pts: Pt[]): Shape<M>; closed: boolean; min: number; drag: "box" | "line" }
+  | { gesture: "points"; make(pts: Pt[]): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" }
   /** Freehand: the pointer's path while pressed, simplified when let go. */
   | { gesture: "freehand"; make(strokes: Pt[][]): Shape<M> }
   /**

@@ -158,6 +158,34 @@ describe("points gesture", () => {
   });
 });
 
+describe("points gesture with a most", () => {
+  // A stand-in kind: an open line of exactly three points (as an angle will be).
+  const three = defineKind<MarkupOf<"polyline">>({
+    ...KINDS.polyline,
+    draw: { gesture: "points", make: (vertices) => ({ vertices }), closed: false, min: 3, max: 3, drag: "line" },
+  });
+  const reg = KINDS as unknown as Record<string, unknown>;
+  const tool = { id: "three", group: "measure", label: "Three", key: "m", kind: "three", tip: "", icon: "<path />" } as unknown as ToolDef;
+
+  it("finishes by itself on its last point", async () => {
+    reg.three = three;
+    TOOLS.push(tool);
+    try {
+      const { v, doc, t } = await setup();
+      t.setTool("three" as Tool);
+      click(t, v, [100, 100]);
+      click(t, v, [200, 100]);
+      expect(t.drawingPoints).toBe(true);
+      click(t, v, [200, 200]);
+      expect(t.drawingPoints).toBe(false);
+      expect((doc.markups[0] as MarkupOf<"polyline">).vertices.length).toBe(3);
+    } finally {
+      delete reg.three;
+      TOOLS.splice(TOOLS.indexOf(tool), 1);
+    }
+  });
+});
+
 describe("line gesture", () => {
   it("draws a line with the Line tool: the arrow kind with no ends", async () => {
     const { v, doc, t } = await setup();

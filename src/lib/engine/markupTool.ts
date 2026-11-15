@@ -475,7 +475,10 @@ export class MarkupTool {
       const first = c.points[0];
       const onFirst = def.draw.closed && c.points.length >= def.draw.min && Math.hypot(p[0] - first[0], p[1] - first[1]) <= this.tolPt(HANDLE_PX);
       if (clicks >= 2 || onFirst) this.finishPoints(true);
-      else c.points.push(p);
+      else {
+        c.points.push(p);
+        if (def.draw.max && c.points.length >= def.draw.max) this.finishPoints(true);
+      }
       this.viewer.requestFrame();
       return true;
     }
