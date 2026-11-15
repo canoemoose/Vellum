@@ -14,7 +14,7 @@ import { type TextMarkVariant, sanitiseTextMarks } from "./markup/kinds/textmark
 const KEY = "vellum.settings.v1";
 
 // Text markups: the Markups tab joins SidebarTab (and its check in sanitiseSettings).
-export type SidebarTab = "pages" | "outline";
+export type SidebarTab = "pages" | "outline" | "markups";
 
 export interface WindowState extends Bounds {
   maximised: boolean;
@@ -91,7 +91,7 @@ export function sanitiseSettings(raw: unknown): Settings {
     theme: s.theme === "light" || s.theme === "system" ? s.theme : "dark",
     sidebarOpen: typeof s.sidebarOpen === "boolean" ? s.sidebarOpen : DEFAULTS.sidebarOpen,
     sidebarWidth: num(s.sidebarWidth) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, s.sidebarWidth)) : SIDEBAR_DEFAULT,
-    sidebarTab: s.sidebarTab === "outline" ? "outline" : "pages",
+    sidebarTab: s.sidebarTab === "outline" || s.sidebarTab === "markups" ? s.sidebarTab : "pages",
     units: s.units === "imperial" ? "imperial" : "metric",
     recent: Array.isArray(s.recent) ? s.recent.filter((p): p is string => typeof p === "string").slice(0, 10) : [],
     scales,

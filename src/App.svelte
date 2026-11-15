@@ -45,6 +45,8 @@
   // Text markups
   import SelectionBar from "./lib/components/SelectionBar.svelte";
   import NoteLayer from "./lib/components/NoteLayer.svelte";
+  import { markupPages } from "./lib/markup/listing";
+  import { shapeBounds } from "./lib/markup/geometry";
   import { selectionEnd, selectionLines } from "./lib/engine/textTool";
   import type { Quad } from "./lib/text/quads";
   import { type TextMarkVariant, textMarkStyle, textMarksFrom } from "./lib/markup/kinds/textmark";
@@ -329,6 +331,30 @@
   // Highlight, underline and strike through from a text selection: the selection bar beside it,
   // the Edit menu and Ctrl+H / Ctrl+U / Ctrl+Shift+X. Each variant remembers its colour and
   // opacity (settings.textMarks): the last it was made or restyled with.
+
+  /** The sidebar's Markups tab: the active tab's markups by page, the selection, their colours. */
+  const markupsTab = $derived.by(() => {
+    void markVersion;
+    const d = markupTool?.doc;
+    const ms = d?.markups ?? [];
+    const css = (c: [number, number, number]) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
+    return {
+      pages: markupPages(ms),
+      selected: new Set(d?.selection ?? []),
+      colours: new Map(ms.map((m) => [m.id, css(m.style.stroke)])),
+      editable: !!pdfDoc,
+    };
+  });
+
+  /** A row in the Markups tab clicked: back to Select, select it and bring it into view. */
+  function pickMarkup(id: string) {
+    const mt = markupTool;
+    const m = mt?.doc?.byId(id);
+    if (!mt || !m || !viewer) return;
+    if (mt.tool !== "select") setTool("select");
+    mt.select([id]);
+    viewer.revealRect(m.page, shapeBounds(m));
+  }
 
   /** The markup tool for the notes' layer (made with the viewer; markVersion moves when it attaches). */
   const noteTool = $derived.by(() => {
@@ -1656,6 +1682,9 @@
         }}
         onGoto={(p) => viewer?.gotoPage(p)}
         onGotoPoint={(p, y) => viewer?.gotoPagePoint(p, y)}
+        markups={markupsTab}
+        onPickMarkup={pickMarkup}
+        onDeleteMarkup={(id) => markupTool?.removeMarkup(id)}
       />
     {/if}
 
