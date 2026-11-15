@@ -43,7 +43,7 @@ export const highlighter = defineKind<HighlighterMarkup>({
   kind: "highlighter",
   label: "Highlighter",
   defaultStyle: () => ({ ...LINE_STYLE, stroke: HIGHLIGHT_YELLOW, width: 12, opacity: 0.4 }),
-  controls: { fill: false, ends: false, text: false },
+  controls: { fill: false, ends: false, text: false, pattern: false },
   draw: { gesture: "freehand", make: (strokes) => ({ strokes }) },
   ops: (m) => [{ ...path(smoothStrokes(m.strokes), m.style, null), blend: "multiply" }],
   spec(m, f, spec) {

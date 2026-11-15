@@ -33,6 +33,8 @@ export const measureCalibrate = defineKind<MeasureCalibrateMarkup>({
   label: "Calibrate",
   defaultStyle: () => ({ ...MEASURE_STYLE, dash: [3, 2] }),
   controls: { fill: false, ends: false, text: false },
+  // It's never kept, so nothing in the bar does anything for it.
+  noBar: true,
   draw: { gesture: "points", make: (pts) => ({ from: pts[0], to: pts[pts.length - 1], ...newMeasure() }), closed: false, min: 2, max: 2, drag: "line" },
   ops: (m) => [
     ...dimensionLine([m.from, m.to], m.style),

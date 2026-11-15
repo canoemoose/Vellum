@@ -68,8 +68,13 @@ export interface KindDef<M extends Markup = Markup> {
   labelOf?(m: M): string;
   /** The style its tools start with, before one is remembered. */
   defaultStyle(): Style;
-  /** Which of the properties bar's optional controls apply (line colour, weight, pattern always do). */
-  controls: { fill: boolean; ends: boolean; text: boolean };
+  /**
+   * Which of the context bar's optional controls apply (../bar.ts). Line colour always does;
+   * weight and pattern unless it's lineless; `pattern: false` leaves out the pattern alone.
+   */
+  controls: { fill: boolean; ends: boolean; text: boolean; pattern?: boolean };
+  /** Nothing in the context bar does anything for it (Calibrate): no bar (rule 6). */
+  noBar?: boolean;
   /** How it's drawn on the canvas. */
   draw: Draw<M>;
   /** Its drawing operations: the overlay, and the saved appearance stream. */

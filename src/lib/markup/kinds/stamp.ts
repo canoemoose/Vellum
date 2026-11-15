@@ -95,6 +95,9 @@ export const stamp = defineKind<StampMarkup>({
   labelOf: (m) => (m.signature ? "Signature" : m.content.type === "text" ? "Text stamp" : "Image stamp"),
   defaultStyle: () => ({ ...LINE_STYLE, width: 0 }),
   controls: { fill: false, ends: false, text: false },
+  // Colour, opacity and weight do nothing to a stamp's drawn appearance (stage 8 gives stamps
+  // their own bar).
+  noBar: true,
   draw: {
     gesture: "place",
     make: (at) => ({ rect: boxAt(armed.content, at, widthFor(armed.signature, armed.content)), content: armed.content, signature: armed.signature }),

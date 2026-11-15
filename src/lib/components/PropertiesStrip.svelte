@@ -16,26 +16,29 @@
   import PopChoice from "./PopChoice.svelte";
   import { DASHES, dashOption } from "../markup/dash";
   import { outFrom } from "../shell/popout";
-  import { kindOf } from "../markup/kinds";
+  import { type Bar, barFor, endChoices } from "../markup/bar";
   // Measuring
   import { type MeasureFormat, type UnitMode, MAX_DECIMALS } from "../markup/measure";
+  // Each choice's sample shows its effect on a value; its name says what it is (not the same
+  // thing twice).
   const UNIT_OPTS: { key: UnitMode; name: string }[] = [
-    { key: "auto", name: "m from 1 m, else mm" },
-    { key: "mm", name: "Always mm" },
-    { key: "m", name: "Always m" },
+    { key: "auto", name: "Auto: metres from 1 m, else millimetres" },
+    { key: "mm", name: "Millimetres" },
+    { key: "m", name: "Metres" },
   ];
-  const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 1 ? "1 decimal" : `${i} decimals` }));
+  const UNIT_SAMPLE: Record<string, [string, string]> = { auto: ["Auto", "mm / m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"] };
+  const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 0 ? "Whole numbers" : i === 1 ? "1 decimal place" : `${i} decimal places` }));
   // End measuring
 
   interface Props {
+    /** Which controls show (markup/bar.ts, rule 6). */
+    bar: Bar;
     /** The kinds involved: the tool's, or the selected markups'. */
     kinds: MarkupKind[];
     style: Style;
     text: TextStyle | null;
     /** "Arrow tool" or "2 markups selected". */
     label: string;
-    /** Hide the line-end choices (a tool whose ends are fixed, such as Line). */
-    noEnds?: boolean;
     // Measuring
     /** Measurements: the label size and number format (what the tool draws, or the selection's). */
     measure?: { labelSize: number; format: MeasureFormat } | null;
@@ -184,17 +187,17 @@
   style:left="{pos.left}px"
   style:top="{pos.top}px"
 >
-  {@render body(p.kinds, p.text, "mk", column)}
+  {@render body(p.bar, p.text, "mk", column)}
 </div>
 
 <!-- Measures the thin column with every section (a text box's bar), to decide whether it fits. -->
 <div class="strip vertical column measure" aria-hidden="true" inert bind:clientWidth={colW} bind:clientHeight={colH}>
-  {@render body(["text"], p.text ?? DEFAULT_TEXT, "mk-measure", true)}
+  {@render body(barFor([{ kind: "text" }])!, p.text ?? DEFAULT_TEXT, "mk-measure", true)}
 </div>
 
-{#snippet body(kinds: MarkupKind[], text: TextStyle | null, idp: string, narrow: boolean)}
-  {@const fillable = kinds.some((k) => kindOf(k).controls.fill)}
-  {@const isText = kinds.some((k) => kindOf(k).controls.text)}
+{#snippet body(bar: Bar, text: TextStyle | null, idp: string, narrow: boolean)}
+  {@const fillable = bar.fill}
+  {@const isText = bar.text}
   <div class="head">
     <span class="grip" role="separator" aria-label="Move the properties bar" title={narrow ? `${p.label}: drag to move it to any edge` : "Drag to move it to any edge"} onpointerdown={grip}>
       <svg width="8" height="14" viewBox="0 0 8 14" aria-hidden="true"><g fill="currentColor"><circle cx="2" cy="2" r="1.2" /><circle cx="6" cy="2" r="1.2" /><circle cx="2" cy="7" r="1.2" /><circle cx="6" cy="7" r="1.2" /><circle cx="2" cy="12" r="1.2" /><circle cx="6" cy="12" r="1.2" /></g></svg>
@@ -216,26 +219,33 @@
     </div>
   </div>
 
-  <!-- Text markups: no weight or pattern for markups without a line (kind.ts, lineless) -->
-  {#if !kinds.every((k) => kindOf(k).lineless)}
+  <!-- No weight or pattern for markups without a line (kind.ts, lineless); no pattern for the
+       highlighter (rule 6, markup/bar.ts). -->
+  {#if bar.weight}
   <span class="sep" aria-hidden="true"></span>
   <div class="prop">
     <label class="k" for="{idp}-weight">Weight</label>
     <div class="controls">
       <WeightControl id="{idp}-weight" value={p.style.width} min={isText ? 0 : 0.25} compact={narrow} {out} onChange={(wt) => p.onStyle({ width: wt })} onPreview={(wt) => p.onStyle({ width: wt }, true)} />
-      <PopChoice label="Line pattern" options={PATTERNS} value={dashOption(p.style.dash)?.name ?? null} compact={narrow} {out} sample={dashSample} onChange={(k) => p.onStyle({ dash: DASHES.find((o) => o.name === k)?.dash ?? null })} />
+      {#if bar.pattern}
+        <PopChoice label="Line pattern" options={PATTERNS} value={dashOption(p.style.dash)?.name ?? null} compact={narrow} {out} sample={dashSample} onChange={(k) => p.onStyle({ dash: DASHES.find((o) => o.name === k)?.dash ?? null })} />
+      {/if}
     </div>
   </div>
   {/if}
 
-  {#if !p.noEnds && kinds.some((k) => kindOf(k).controls.ends)}
+  {#if bar.ends !== "none"}
     {@const ends = arrowEnds(p.style)}
+    {@const keys = ENDS.map((e) => e.key)}
+    <!-- An arrow never offers "None" at both ends: that would make it a line (rule A1). -->
+    {@const tails = endChoices(keys, bar.ends, ends[1])}
+    {@const heads = endChoices(keys, bar.ends, ends[0])}
     <span class="sep" aria-hidden="true"></span>
     <div class="prop" role="group" aria-label="Ends">
       <span class="k">Ends</span>
       <div class="controls">
-        <PopChoice label="Tail" options={ENDS} value={ends[0]} compact={narrow} {out} sample={tailSample} onChange={(k) => setEnd(0, k)} />
-        <PopChoice label="Head" options={ENDS} value={ends[1]} compact={narrow} {out} sample={headSample} onChange={(k) => setEnd(1, k)} />
+        <PopChoice label="Tail" options={ENDS.filter((e) => tails.includes(e.key))} value={ends[0]} compact={narrow} {out} sample={tailSample} onChange={(k) => setEnd(0, k)} />
+        <PopChoice label="Head" options={ENDS.filter((e) => heads.includes(e.key))} value={ends[1]} compact={narrow} {out} sample={headSample} onChange={(k) => setEnd(1, k)} />
       </div>
     </div>
   {/if}
@@ -295,8 +305,8 @@
       <span class="k">Value</span>
       <div class="controls">
         <PopChoice label="Label size" options={SIZE_OPTS} value={SIZES.includes(ms.labelSize) ? String(ms.labelSize) : null} compact={narrow} {out} sample={labelSizeSample} onChange={(k) => on({ labelSize: Number(k) })} />
-        <PopChoice label="Units" options={UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={wordSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
-        <PopChoice label="Decimal places in metres" options={DECIMAL_OPTS} value={String(ms.format.decimals)} compact={narrow} {out} sample={wordSample} onChange={(k) => on({ format: { ...ms.format, decimals: Number(k) } })} />
+        <PopChoice label="Units" options={UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
+        <PopChoice label="Decimal places" options={DECIMAL_OPTS} value={String(ms.format.decimals)} compact={narrow} {out} sample={decimalSample} onChange={(k) => on({ format: { ...ms.format, decimals: Number(k) } })} />
       </div>
     </div>
   {/if}
@@ -310,8 +320,15 @@
     <span class="sz-a" style:font-size="{Math.min(22, 7 + Number(k) * 0.45)}px">A</span>
   {/if}
 {/snippet}
-{#snippet wordSample(k: string | null, _w: number)}
-  <span class="num sz">{k === "auto" ? "Auto" : k === null ? "" : /^\d$/.test(k) ? `${k} dp` : k}</span>
+<!-- Units: the unit in the box; in the list, a length written that way. -->
+{#snippet unitSample(k: string | null, w: number)}
+  {@const s = UNIT_SAMPLE[k ?? p.measure?.format.units ?? "auto"] ?? ["", ""]}
+  <span class="num sz">{w < 60 ? s[0] : s[1]}</span>
+{/snippet}
+<!-- Decimal places: a number written with that many. -->
+{#snippet decimalSample(k: string | null, w: number)}
+  {@const d = Number(k ?? p.measure?.format.decimals ?? 2)}
+  <span class="num sz">{(w < 60 ? 0 : 12.4).toFixed(d)}</span>
 {/snippet}
 
 <!-- A small on/off button with an icon (bold, italic, alignment...). -->
