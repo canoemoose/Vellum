@@ -3,7 +3,7 @@
 import { type MarkupBase, type Rect, LINE_STYLE, normRect } from "../base";
 import { box, filled } from "../draw";
 import { boxHandles, distToPolyline, dragBox, insidePolygon, rectPts } from "../shape";
-import { r3 } from "../annotation";
+import { boxInset } from "../annotation";
 import { rectToUser } from "../pdf";
 import { defineKind } from "./kind";
 
@@ -46,8 +46,3 @@ export const rect = defineKind<RectMarkup>({
   dragHandle: (m, h, p, constrain, minSize) => ({ ...m, rect: dragBox(normRect(m.rect), h, p, constrain, minSize) }),
   moveBy: (m, dx, dy) => ({ ...m, rect: [m.rect[0] + dx, m.rect[1] + dy, m.rect[2] + dx, m.rect[3] + dy] }),
 });
-
-/** /RD: how far `inner` (user space) sits inside /Rect `box`, each side. */
-export function boxInset(inner: [number, number, number, number], box: [number, number, number, number]): [number, number, number, number] {
-  return [inner[0] - box[0], inner[1] - box[1], box[2] - inner[2], box[3] - inner[3]].map((v) => r3(Math.max(0, v))) as [number, number, number, number];
-}

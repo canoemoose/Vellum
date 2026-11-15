@@ -2,7 +2,7 @@
 // the small pieces each kind uses to fill in its part of one. spec.ts builds the common part
 // and hands the rest to the kind's file under kinds/. Pure, and a leaf: never imports a kind.
 
-import type { LineEnd, Pt } from "./base";
+import { type LineEnd, type Pt, type Style, arrowEnds } from "./base";
 import { type Frame, toUser } from "./pdf";
 
 export interface AnnotSpec {
@@ -60,3 +60,19 @@ export const userPoints = (f: Frame, pts: Pt[]) => pts.flatMap((p) => toUser(f, 
 
 /** "#RRGGBB". */
 export const hex = (c: [number, number, number]) => "#" + c.map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
+
+/** /RD: how far `inner` (user space) sits inside /Rect `box`, each side. */
+export function boxInset(inner: [number, number, number, number], box: [number, number, number, number]): [number, number, number, number] {
+  return [inner[0] - box[0], inner[1] - box[1], box[2] - inner[2], box[3] - inner[3]].map((v) => r3(Math.max(0, v))) as [number, number, number, number];
+}
+
+/**
+ * /LE for a line with ends, and /IC: filled heads and dots are filled with the line's colour
+ * (as PDF draws them); otherwise a line has no interior.
+ */
+export function lineEndsSpec(spec: { lineEnds?: string[]; interior?: [number, number, number] }, s: Style): void {
+  const ends = arrowEnds(s);
+  spec.lineEnds = ends.map((e) => LE[e]);
+  if (ends.some((e) => e === "filled" || e === "dot")) spec.interior = s.stroke;
+  else delete spec.interior;
+}

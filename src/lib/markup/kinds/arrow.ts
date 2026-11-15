@@ -4,7 +4,7 @@
 import { type MarkupBase, type Pt, DEFAULT_ENDS, LINE_STYLE, arrowEnds, normRect } from "../base";
 import { endedLine } from "../draw";
 import { distToSegment, movePt, snapAngle } from "../shape";
-import { LE, r3 } from "../annotation";
+import { lineEndsSpec, r3 } from "../annotation";
 import { toUser } from "../pdf";
 import { defineKind } from "./kind";
 
@@ -45,14 +45,3 @@ export const arrow = defineKind<ArrowMarkup>({
   },
   moveBy: (m, dx, dy) => ({ ...m, from: movePt(m.from, dx, dy), to: movePt(m.to, dx, dy) }),
 });
-
-/**
- * /LE for a line with ends, and /IC: filled heads and dots are filled with the line's colour
- * (as PDF draws them); otherwise a line has no interior.
- */
-export function lineEndsSpec(spec: { lineEnds?: string[]; interior?: [number, number, number] }, s: MarkupBase["style"]): void {
-  const ends = arrowEnds(s);
-  spec.lineEnds = ends.map((e) => LE[e]);
-  if (ends.some((e) => e === "filled" || e === "dot")) spec.interior = s.stroke;
-  else delete spec.interior;
-}

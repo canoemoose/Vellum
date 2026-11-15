@@ -16,6 +16,7 @@
   import PopChoice from "./PopChoice.svelte";
   import { DASHES, dashOption } from "../markup/dash";
   import { outFrom } from "../shell/popout";
+  import { kindOf } from "../markup/kinds";
 
   interface Props {
     /** The kinds involved: the tool's, or the selected markups'. */
@@ -24,6 +25,8 @@
     text: TextStyle | null;
     /** "Arrow tool" or "2 markups selected". */
     label: string;
+    /** Hide the line-end choices (a tool whose ends are fixed, such as Line). */
+    noEnds?: boolean;
     dock: Dock;
     /** The drawing area's size, CSS px. */
     areaW: number;
@@ -173,8 +176,8 @@
 </div>
 
 {#snippet body(kinds: MarkupKind[], text: TextStyle | null, idp: string, narrow: boolean)}
-  {@const fillable = kinds.some((k) => k === "rect" || k === "cloud" || k === "text")}
-  {@const isText = kinds.includes("text")}
+  {@const fillable = kinds.some((k) => kindOf(k).controls.fill)}
+  {@const isText = kinds.some((k) => kindOf(k).controls.text)}
   <div class="head">
     <span class="grip" role="separator" aria-label="Move the properties bar" title={narrow ? `${p.label}: drag to move it to any edge` : "Drag to move it to any edge"} onpointerdown={grip}>
       <svg width="8" height="14" viewBox="0 0 8 14" aria-hidden="true"><g fill="currentColor"><circle cx="2" cy="2" r="1.2" /><circle cx="6" cy="2" r="1.2" /><circle cx="2" cy="7" r="1.2" /><circle cx="6" cy="7" r="1.2" /><circle cx="2" cy="12" r="1.2" /><circle cx="6" cy="12" r="1.2" /></g></svg>
@@ -205,7 +208,7 @@
     </div>
   </div>
 
-  {#if kinds.includes("arrow")}
+  {#if !p.noEnds && kinds.some((k) => kindOf(k).controls.ends)}
     {@const ends = arrowEnds(p.style)}
     <span class="sep" aria-hidden="true"></span>
     <div class="prop" role="group" aria-label="Ends">

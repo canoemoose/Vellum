@@ -75,6 +75,19 @@ export function dragVertex(pts: Pt[], h: HandleId, p: Pt): Pt[] | null {
   return out;
 }
 
+/**
+ * A shape's point under grip `h` dragged to p. Shift snaps it to 15 degrees from the point
+ * before it (the one after, for the first point of an open line).
+ */
+export function dragPoint<M extends { vertices: Pt[] }>(m: M, h: HandleId, p: Pt, constrain: boolean, closed: boolean): M {
+  const v = m.vertices;
+  const i = vertexIndex(h, v.length);
+  if (i < 0) return m;
+  const prev = i > 0 ? v[i - 1] : closed ? v[v.length - 1] : v[1];
+  const vertices = dragVertex(v, h, constrain && prev ? snapAngle(prev, p) : p);
+  return vertices ? { ...m, vertices } : m;
+}
+
 export const movePt = (p: Pt, dx: number, dy: number): Pt => [p[0] + dx, p[1] + dy];
 
 /** Snap the vector from `a` to `b` to the nearest 15 degrees. */

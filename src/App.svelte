@@ -17,11 +17,12 @@
   import TextEditor from "./lib/components/TextEditor.svelte";
   import ChoiceDialog, { type Choice } from "./lib/components/dialogs/ChoiceDialog.svelte";
   import { MarkupTool, type Tool } from "./lib/engine/markupTool";
+  import { kindOf, labelOf } from "./lib/markup/kinds";
   import { MarkupDoc } from "./lib/engine/markupDoc";
   import { confirm as confirmSave, styleFor } from "./lib/markup/prefs";
   import type { Frame } from "./lib/markup/pdf";
   import { TEXT_PAD } from "./lib/markup/ops";
-  import type { Markup, MarkupKind, Style, TextStyle } from "./lib/markup/types";
+  import type { Markup, Style, TextStyle } from "./lib/markup/types";
   import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unsavedMessage } from "./lib/shell/save";
   import type { Dock } from "./lib/shell/dock";
   import { invoke } from "@tauri-apps/api/core";
@@ -234,8 +235,6 @@
     scheduleRecovery();
   }
 
-  const KIND_LABEL: Record<MarkupKind, string> = { rect: "Rectangle", arrow: "Arrow", cloud: "Revision cloud", text: "Text box", ink: "Pen" };
-
   /** What the properties strip shows: the tool's style, or the selection's. */
   const strip = $derived.by(() => {
     void markVersion;
@@ -243,13 +242,13 @@
     if (!mt || !pdfDoc) return null;
     if (mt.tool !== "select") {
       const k = mt.tool;
-      return { kinds: [k], style: styleFor(settings.markup, k), text: k === "text" ? settings.markup.text : null, label: `${KIND_LABEL[k]} tool` };
+      return { kinds: [k], style: styleFor(settings.markup, k), text: k === "text" ? settings.markup.text : null, label: `${kindOf(k).label} tool` };
     }
     const sel = mt.selected();
     if (!sel.length) return null;
     const kinds = [...new Set(sel.map((m) => m.kind))];
     const t = sel.find((m) => m.kind === "text") as Extract<Markup, { kind: "text" }> | undefined;
-    return { kinds, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? KIND_LABEL[sel[0].kind] : `${sel.length} markups selected` };
+    return { kinds, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected` };
   });
 
   /** The properties bar's dock while it's being dragged (saved when let go). */

@@ -10,6 +10,9 @@ import { arrow } from "./arrow";
 import { cloud } from "./cloud";
 import { text } from "./text";
 import { ink } from "./ink";
+import { ellipse } from "./ellipse";
+import { polyline } from "./polyline";
+import { polygon } from "./polygon";
 // Measuring
 
 // Stamps
@@ -22,6 +25,9 @@ export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   cloud,
   text,
   ink,
+  ellipse,
+  polyline,
+  polygon,
   // Measuring
 
   // Stamps
@@ -38,3 +44,9 @@ export function kindOf<K extends MarkupKind>(kind: K): KindDef<MarkupOf<K>> {
 
 /** A markup's kind's definition, typed for calling with that markup. */
 export const defOf = (m: Markup): KindDef<Markup> => kindOf(m.kind) as unknown as KindDef<Markup>;
+
+/** What a markup is called ("Rectangle"; an arrow with no ends is a "Line"). */
+export function labelOf(m: Markup): string {
+  const def = defOf(m);
+  return def.labelOf ? def.labelOf(m) : def.label;
+}
