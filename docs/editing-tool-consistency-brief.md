@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4, 6, 7 and 9.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4, 6, 7 and 9, and stage 5's Imperial.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -252,6 +252,21 @@ Where: `markup/kinds/measure*.ts`, `markup/measure.ts`, `markup/dimension.ts`,
     system.
 - **A measurement pasted onto a page with another scale** takes that page's scale at once
   [A14]. `revalue` exists; make sure paste goes through it.
+
+Built (as done), Imperial [A9]: `markup/imperial.ts` writes and reads feet and inches. With
+a fractional unit the decimals control becomes Precision, 1/2" to 1/64" (default 1/16");
+fractions reduce and rounding carries (11' 11 63/64" at 1/32" reads 12' 0"). Areas in ft²
+(two decimals where the control is a precision). Auto is resolved when the text is made:
+each measurement carries the view's system (`fmt.system`), and App rewrites Auto ones in
+place, with no undo step, when View > Units changes, so drawing stays pure (this marks the
+file changed, as a scale change does). Auto in an imperial view is feet and inches from a
+foot up and inches below (6 1/2", not 0' 6 1/2"), decided on the rounded value. Halves now
+round away from zero after unit conversion, metric too (12.375 ft reads 12.38). The scale
+box reads 1/4" = 1'-0" and 1" = 20' (held as a ratio), shows them that way in an imperial
+view with architectural and engineering presets; the status bar, readouts and `/R` follow.
+Calibrate takes either system; a bare number is still millimetres. The saved `/Measure`
+writes feet and inches as whole feet (`/F /T`) then inches as a fraction (`/F /F`, `/D` the
+denominator), and areas as sq ft (not checked in Acrobat). Paper read-outs stay in mm.
 
 ## Stage 6: shapes ✓
 
