@@ -67,4 +67,12 @@ describe("listDate", () => {
     expect(listDate(new Date(2025, 11, 31).toISOString(), now)).toBe("31 Dec 2025");
     expect(listDate("nonsense", now)).toBe("");
   });
+
+  // Measuring
+  it("show a measurement's two values", () => {
+    const m = mk("measureLength", 0, { from: [100, 100], to: [200, 100], scale: 100, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 });
+    const text = listText(m);
+    expect(text).toContain("at 1:100");
+    expect(text).toContain("on paper");
+  });
 });

@@ -7,6 +7,7 @@ import type { Markup, MarkupKind } from "./base";
 import { defOf, labelOf } from "./kinds";
 import { shapeBounds } from "./geometry";
 import { toolForMarkup } from "./tools";
+import { MEASURE_KINDS, measurementLine } from "./measurements"; // Measuring
 
 export interface MarkupRow {
   id: string;
@@ -38,6 +39,7 @@ export interface MarkupPage {
  */
 export const LIST_TEXT: Partial<Record<MarkupKind, (m: Markup) => string>> = {
   // Measuring
+  ...Object.fromEntries(MEASURE_KINDS.map((k) => [k, (m: Markup) => measurementLine(m) ?? ""])),
 };
 
 const MAX_TEXT = 160;

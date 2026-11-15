@@ -660,7 +660,7 @@ export class MarkupTool {
     const pts = c.hover ? [...c.points, c.hover] : c.points;
     if (pts.length < 2) return null;
     const last = c.points[c.points.length - 1];
-    return { markup: this.newMarkup(c.def, c.page, c.def.draw.make(pts)), segment: c.hover ? { from: last, to: c.hover } : null };
+    return { markup: this.newMarkup(c.def, c.page, c.def.draw.make(pts, this.drawContext)), segment: c.hover ? { from: last, to: c.hover } : null };
   }
   // End measuring
 
