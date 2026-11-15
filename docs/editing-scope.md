@@ -1,7 +1,7 @@
 # Editing, markup and reading: scope
 
-Status: **phases 0 to 3 done and reviewed by Matt; phase 4 (measuring) is next**
-(15 November 2026). The signatures back end (part of phase 5) and the OCR search spike
+Status: **phases 0 to 3 done and reviewed by Matt; phases 4, 5 and 7 scoped and ready to
+build** (15 November 2026; see "Phases 4, 5 and 7: how they run"). The signatures back end (part of phase 5) and the OCR search spike
 (phase 9) were built on side branches and are merged into `editing`, along with `main` at
 0.1.4. See "Phase 0 results" below,
 [editing-phase1-scope.md](editing-phase1-scope.md) and
@@ -287,17 +287,63 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    built, and phase 2 has nothing to review on its own):** see
    [editing-phase2-scope.md](editing-phase2-scope.md). Not yet built from phase 2: the edit
    lock's padlock (nothing to unlock until lifting or page operations exist).
-4. **Measuring** and calibration. **Next.**
+4. **Measuring** and calibration. **Scoped:** [editing-phase4-scope.md](editing-phase4-scope.md).
 5. **Stamps and signatures.** The capture side is built but stands alone (photo import,
    encrypted library, drawing pad, framing view; `npm run dev:signatures`): see
    [signatures-backend.md](signatures-backend.md). Still to do: reach it from the main
    window and place a signature on a page as a stamp.
+   **Scoped:** [editing-phase5-scope.md](editing-phase5-scope.md).
 6. **Form filling.**
 7. **Remaining markup tools** (line, ellipse, polyline, polygon, callout, highlighter), the
    markups list, and **reading, part two** (text highlight, underline, strikethrough, notes).
+   **Scoped:** [editing-phase7-scope.md](editing-phase7-scope.md), which also takes on
+   editing annotations already in the file and the padlock (part 7b).
 8. **Page operations.**
 9. **Later phases**, each scoped when reached. OCR search has its spike and design in
    [ocr-search-scope.md](ocr-search-scope.md); nothing is wired into the app.
+
+## Phases 4, 5 and 7: how they run (scoped 15 November 2026)
+
+Built autonomously by Opus sessions, each from its own scope document. Phase 6 (form
+filling) and phase 8 (page operations) are not part of this round.
+
+| Order | Work | Where | Scope |
+|---|---|---|---|
+| 1 | Groundwork: one file per markup kind, grouped tool palette, the four plain shapes | `editing`, one session, alone | [editing-groundwork-scope.md](editing-groundwork-scope.md) |
+| 2, together | Phase 4, measuring | worktree, branch `editing-measure` | [editing-phase4-scope.md](editing-phase4-scope.md) |
+| 2, together | Phase 5, stamps and signatures | worktree, branch `editing-stamps` | [editing-phase5-scope.md](editing-phase5-scope.md) |
+| 2, together | Phase 7a, remaining tools, text markups, markups list | worktree, branch `editing-tools` | [editing-phase7-scope.md](editing-phase7-scope.md) |
+| 3 | Merge the three into `editing`; type check, every test, one build, run it | `editing` | |
+| 4 | Phase 7b, annotations already in the file, the padlock | `editing`, one session | [editing-phase7-scope.md](editing-phase7-scope.md) |
+
+Why the groundwork is alone and first: a markup kind is spread across switch statements in
+six files today, so three sessions adding kinds at once would collide throughout. Why 7b is
+last: it brings saved markups of every kind back into the model, so it needs every kind.
+
+Rules for every session in this round:
+
+- **Autonomous** (Matt's call): work the whole scope, state assumptions under "Assumed" in
+  its scope file, batch questions for the end. Where the answer depends on how something
+  looks or feels, don't guess: note it for Matt, park it, carry on.
+- **Commit as steps finish,** split by concern. **Never push, never merge into `editing`
+  or `main`:** Matt asks for those. Before handing over, a parallel session merges the
+  current `editing` into its own branch and re-runs the checks, so the merge back is clean.
+- **Stay in your files.** New kinds go in their own files under `src/lib/markup/kinds/`;
+  in shared files, add only inside your phase's marked block. If a shared piece needs to
+  change shape, say so in the hand-over instead of changing it under the other sessions.
+- **Keep the scope file current** and commit it with the work: progress, what was assumed,
+  what's covered by tests in plain terms, what couldn't be verified, the one command to run
+  the tests.
+- **Run the app, not only the build.** A release build that compiles proves little; draw,
+  save and reopen before handing over, and say so if that wasn't possible.
+- **Speed is the product.** Opening and viewing must not get slower: check with
+  `npm run bench` before and after anything that touches opening a file or the painter.
+- **Test files** are at `C:\Users\matt.james\Documents\Repos\Vellum\test-files`: client
+  drawings, read only, never copied into the repo, nothing derived from them committed.
+- **This machine** builds with the GNU toolchain: `source ~/.vellum-toolchain/env.sh`
+  before any cargo or tauri command. A fresh worktree needs `npm install` and
+  `node tools/fetch-pdfium.mjs`. Each worktree's build output runs to many gigabytes, so
+  work in debug builds and make one release build at the end.
 
 ## Phase 0 results (13 November 2026)
 
