@@ -14,6 +14,7 @@ pub mod scale;
 pub mod shell; // WP-Shell
 pub mod signature; // signatures: import and library
 pub mod snap;
+pub mod stamps; // Stamps: your own image stamps (phase 5)
 pub mod text; // reading: text layer, links, search
 pub mod update; // in-app updates
 
@@ -500,6 +501,10 @@ pub fn run() {
             // Measuring
 
             // Stamps
+            stamps::stamp_list,
+            stamps::stamp_add,
+            stamps::stamp_get,
+            stamps::stamp_delete,
 
             // Text markups
         ])
