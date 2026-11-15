@@ -1,7 +1,7 @@
 # A v* tag becomes a DRAFT GitHub Release holding the installer (and, once the updater is
 # configured, its signature and latest.json). Nothing reaches an installed copy until the
 # draft is published by hand. See docs/release-pipeline-scope.md.
-name: Release
+name: Release (checks, installer, draft)
 
 on:
   push:

@@ -1,8 +1,11 @@
 # Release pipeline: GitHub Actions build and in-app updates
 
-Status: **phases 1 to 3 built and green in CI** on branch `release-pipeline` (13 November
-2026). Not merged. Phase 4 (the real releases) and phase 5 (docs) remain; the steps for phase 4
-are under "Phase 4, step by step". This is the source of truth for the work.
+Status: **phases 1 to 4 done and merged to `main`** (14 November 2026). 0.1.1 and 0.1.2 are
+published, and an installed 0.1.1 updated itself to 0.1.2 and came back with its tabs. 0.1.3
+and 0.1.4 then proved the quiet install (below): 0.1.3 updated to 0.1.4 with no installer
+window and came back with its tabs. Phase 5 (docs) is done: Releasing in `CLAUDE.md`, and
+"Installing and updates" in the README. Nothing remains. This is the
+source of truth for the work.
 
 ## Objective
 
@@ -28,6 +31,10 @@ merges, so 0.2.0 reaches installed copies through the updater.
 Where the build differs from, or adds to, the design below. The design sections are left as
 scoped; this section wins where they disagree.
 
+- **CI runs on demand, not on every push** (Matt, 14 November 2026: it isn't needed unless a
+  release is being built). `ci.yml` has only a manual trigger; the Release workflow runs the
+  same type check and tests before it builds. The cost: a break is found when a tag is
+  pushed rather than when the commit is, and the tag then has to be deleted and pushed again.
 - **A shared setup step.** `.github/actions/setup` (Volta, caches, Rust, `npm ci`, PDFium) is
   used by both workflows so they can't drift. Rust comes from the runner's own rustup, not a
   third-party action.
@@ -52,6 +59,11 @@ scoped; this section wins where they disagree.
   not in the WebView's storage: the install step ends the process at once and that storage
   isn't certain to be on disk. The note is read once, removed, and ignored if it is more than
   ten minutes old. Tabs that had failed to open aren't carried over.
+- **The install is quiet, not passive** (Matt, 14 November 2026, after seeing the installer's
+  progress window during the 0.1.1 to 0.1.2 update). No installer window: Vellum says
+  "Installing Vellum x. Vellum will restart.", closes, and reopens a few seconds later. The
+  cost is that a failed install shows nothing; Vellum just doesn't come back. The mode is read
+  by the copy doing the updating, so it first shows when 0.1.3 updates to 0.1.4.
 - **Order of the install:** download (with progress), then ask the shell to close
   (`closeForUpdate` in `App.svelte`, where the unsaved-changes prompt goes), then install. So
   the prompt appears at the moment it matters, and cancelling it keeps the download.
@@ -67,8 +79,8 @@ scoped; this section wins where they disagree.
   (three small jobs the plugin doesn't do), beyond the files listed under "Files in play".
 - **A local installer build now needs the signing key,** because the configuration asks for
   signed update artefacts. Without `TAURI_SIGNING_PRIVATE_KEY` set, build the exe only
-  (`npm run tauri build -- --no-bundle`, which is what the benchmarks use), or pass
-  `--config "{\"bundle\":{\"createUpdaterArtifacts\":false}}"` for an unsigned installer.
+  (`npm run tauri build -- --no-bundle`, which is what the benchmarks use). Confirmed: without
+  the key the installer is built and the command then fails at the signing step.
 
 ## What has been proved, and what hasn't
 
@@ -84,7 +96,12 @@ Proved:
 - **The app starts** with the updater plugin (release build, run locally), and a local
   installer build signs its update artefact.
 
-Not proved until phase 4, because it needs a published release and an installed copy:
+Proved in phase 4 (Matt, on his machine): 0.1.1 installed over 0.1.0, found 0.1.2 once it was
+published, installed it and came back with the same tabs. One thing learnt, and measured when 0.1.4 was published: GitHub goes on serving the previous
+`latest.json` for up to about a minute after a release is published (still the old file at
+32 seconds, the new one at 52). Wait a minute after publishing before testing an update.
+
+What phase 4 was needed for, because it takes a published release and an installed copy:
 
 - A real check finding a real update, the download, the signature check and the install.
 - The restart, and the tabs coming back.
