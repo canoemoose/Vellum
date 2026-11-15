@@ -4,7 +4,7 @@
 // imports the measuring kinds, as kinds/index.ts does. See docs/editing-phase4-scope.md.
 
 import type { Markup, MarkupKind } from "./base";
-import { type MeasureFormat, type PageMeasure, formatPaper, formatScale } from "./measure";
+import { type MeasureFormat, type PageMeasure, type UnitSystem, formatPaper, formatScale, isImperial, sameFormat } from "./measure";
 import { pageMeasureOf } from "./dimension";
 import { type MeasureLengthMarkup, lengthValues } from "./kinds/measureLength";
 import { type MeasurePathMarkup, pathValues } from "./kinds/measurePath";
@@ -20,7 +20,8 @@ export type Measurement = MeasureLengthMarkup | MeasurePathMarkup | MeasureAreaM
 export const isMeasurement = (m: Markup): m is Measurement => MEASURE_KINDS.includes(m.kind);
 
 /** The scale part of a readout: "at 1:100", or "no scale set". */
-const atScale = (pm: PageMeasure) => (pm.ratio === null ? "no scale set" : `at ${formatScale(pm.ratio)}`);
+// Imperial (stage 5 [A9]): an imperial measurement reads its scale the imperial way (1/4" = 1'-0").
+const atScale = (pm: PageMeasure, fmt: MeasureFormat) => (pm.ratio === null ? "no scale set" : `at ${formatScale(pm.ratio, isImperial(fmt) ? "imperial" : "metric")}`);
 
 /**
  * A measurement's two values as text: real-world at its scale ("12.40 m at 1:100"; with no
@@ -35,13 +36,13 @@ export function measurementText(m: Markup): { real: string; paper: string | null
     case "measureLength":
     case "measurePath": {
       const v = m.kind === "measureLength" ? lengthValues(m) : pathValues(m);
-      return { real: v.real === null ? "No scale set" : `${v.real} ${atScale(pm)}`, paper: `${v.paper} on paper` };
+      return { real: v.real === null ? "No scale set" : `${v.real} ${atScale(pm, m.fmt)}`, paper: `${v.paper} on paper` };
     }
     case "measureArea": {
       const v = areaValues(m);
       const crosses = v.crosses ? " (the outline crosses itself)" : "";
       return {
-        real: v.real === null ? "No scale set" : `${v.real}, perimeter ${v.realPerimeter} ${atScale(pm)}${crosses}`,
+        real: v.real === null ? "No scale set" : `${v.real}, perimeter ${v.realPerimeter} ${atScale(pm, m.fmt)}${crosses}`,
         paper: `${v.paper}, perimeter ${v.paperPerimeter} on paper${v.real === null ? crosses : ""}`,
       };
     }
@@ -96,11 +97,30 @@ export function revalue(markups: Markup[], pages: Set<number> | null, pageOf: (p
 export function reformat(markups: Markup[], fmt: MeasureFormat, ids?: ReadonlySet<string>): { markups: Markup[]; changed: number } {
   let changed = 0;
   const out = markups.map((m) => {
-    if (!isMeasurement(m) || (ids && !ids.has(m.id)) || JSON.stringify(m.fmt) === JSON.stringify(fmt)) return m;
+    if (!isMeasurement(m) || (ids && !ids.has(m.id))) return m;
+    // A format without the view's system keeps the measurement's (what its Auto is now).
+    const next: MeasureFormat = { ...fmt, system: fmt.system ?? m.fmt.system };
+    if (sameFormat(m.fmt, next)) return m;
     changed++;
-    return { ...m, fmt: { ...fmt }, meta: { ...m.meta, modified: new Date().toISOString() } };
+    return { ...m, fmt: next, meta: { ...m.meta, modified: new Date().toISOString() } };
   });
   return { markups: changed ? out : markups, changed };
+}
+
+/**
+ * Imperial (stage 5 [A9]): every measurement with its Auto resolved to View > Units, `system`.
+ * The app calls it when View > Units changes (and whenever the markups do, as it re-values them
+ * for a scale), so Auto follows the view while each measurement's text stays a pure function of
+ * the markup. The same list when none changed.
+ */
+export function resolveAuto(markups: Markup[], system: UnitSystem): Markup[] {
+  let any = false;
+  const out = markups.map((m) => {
+    if (!isMeasurement(m) || m.fmt.units !== "auto" || (m.fmt.system ?? "metric") === system) return m;
+    any = true;
+    return { ...m, fmt: { ...m.fmt, system } };
+  });
+  return any ? out : markups;
 }
 
 /** The markups with every selected measurement's label at `size` points. */
