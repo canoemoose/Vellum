@@ -1,6 +1,6 @@
 # Phase 5, stamps and signatures: scope
 
-Status: **built 15 November 2026**, autonomous, on branch `claude/editing-stamps-391fb7`
+Status: **built 15 November 2026 and merged into `editing`**, autonomous, on branch `claude/editing-stamps-391fb7`
 (the worktree's own name for `editing-stamps`). Progress, the bake spike's result, tests and
 what isn't verified are at the end. One session, in its own worktree, branch
 `editing-stamps` cut from `editing` after the groundwork

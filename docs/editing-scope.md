@@ -1,7 +1,8 @@
 # Editing, markup and reading: scope
 
-Status: **phases 0 to 3 done and reviewed by Matt; phases 4, 5 and 7 scoped and ready to
-build** (15 November 2026; see "Phases 4, 5 and 7: how they run"). The signatures back end (part of phase 5) and the OCR search spike
+Status: **phases 0 to 3 done and reviewed by Matt; phases 4, 5 and 7a built and merged
+into `editing`, not yet reviewed by Matt; phase 7b next** (15 November 2026; see
+"Phases 4, 5 and 7: how they run"). The signatures back end (part of phase 5) and the OCR search spike
 (phase 9) were built on side branches and are merged into `editing`, along with `main` at
 0.1.4. See "Phase 0 results" below,
 [editing-phase1-scope.md](editing-phase1-scope.md) and
@@ -287,17 +288,19 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    built, and phase 2 has nothing to review on its own):** see
    [editing-phase2-scope.md](editing-phase2-scope.md). Not yet built from phase 2: the edit
    lock's padlock (nothing to unlock until lifting or page operations exist).
-4. **Measuring** and calibration. **Scoped:** [editing-phase4-scope.md](editing-phase4-scope.md).
+4. **Measuring** and calibration. **Built, not yet reviewed:**
+   [editing-phase4-scope.md](editing-phase4-scope.md).
 5. **Stamps and signatures.** The capture side is built but stands alone (photo import,
    encrypted library, drawing pad, framing view; `npm run dev:signatures`): see
    [signatures-backend.md](signatures-backend.md). Still to do: reach it from the main
    window and place a signature on a page as a stamp.
-   **Scoped:** [editing-phase5-scope.md](editing-phase5-scope.md).
+   **Built, not yet reviewed** (pickers in the main window, stamps, baking in, encrypted
+   recovery): [editing-phase5-scope.md](editing-phase5-scope.md).
 6. **Form filling.**
 7. **Remaining markup tools** (line, ellipse, polyline, polygon, callout, highlighter), the
    markups list, and **reading, part two** (text highlight, underline, strikethrough, notes).
-   **Scoped:** [editing-phase7-scope.md](editing-phase7-scope.md), which also takes on
-   editing annotations already in the file and the padlock (part 7b).
+   **7a built, not yet reviewed; 7b (editing annotations already in the file, the
+   padlock) next:** [editing-phase7-scope.md](editing-phase7-scope.md).
 8. **Page operations.**
 9. **Later phases**, each scoped when reached. OCR search has its spike and design in
    [ocr-search-scope.md](ocr-search-scope.md); nothing is wired into the app.
@@ -313,8 +316,18 @@ filling) and phase 8 (page operations) are not part of this round.
 | 2, together | Phase 4, measuring | worktree, branch `editing-measure` | [editing-phase4-scope.md](editing-phase4-scope.md) |
 | 2, together | Phase 5, stamps and signatures | worktree, branch `editing-stamps` | [editing-phase5-scope.md](editing-phase5-scope.md) |
 | 2, together | Phase 7a, remaining tools, text markups, markups list | worktree, branch `editing-tools` | [editing-phase7-scope.md](editing-phase7-scope.md) |
-| 3 | Merge the three into `editing`; type check, every test, one build, run it | `editing` | |
+| 3 | Merge the three into `editing`; type check, every test, one build, run it. **Done 15 November** (see below) | `editing` | |
 | 4 | Phase 7b, annotations already in the file, the padlock | `editing`, one session | [editing-phase7-scope.md](editing-phase7-scope.md) |
+
+**The merge (15 November 2026).** Steps 1 and 2 are done; the three branches merged with
+conflicts only where each phase added lines in the same place (`kinds.test.ts`,
+`settings.ts`, the painter's imports, and one spot in `engine/markupTool.ts`), all resolved
+by keeping both sides. Two joins were made by hand: the live readout phase 4 added now
+passes the draw context phase 7a added to the points gesture, and the Markups list shows a
+measurement's values (`LIST_TEXT` in `markup/listing.ts`, from `measurementLine`). Left for
+later: the callout imports the text box's drawing from `kinds/text.ts`, against the "a kind
+never imports another kind" rule; move that drawing into a shared file when next in there.
+What each phase assumed and couldn't verify is at the end of its own scope file.
 
 Why the groundwork is alone and first: a markup kind is spread across switch statements in
 six files today, so three sessions adding kinds at once would collide throughout. Why 7b is

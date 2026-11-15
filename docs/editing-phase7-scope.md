@@ -1,7 +1,7 @@
 # Phase 7, remaining markup tools, text markups and the markups list: scope
 
-Status: **7a built 15 November 2026** (branch `claude/editing-tools-c878a5`, not yet merged
-into `editing`; progress, tests and what isn't verified are at the end of the 7a part).
+Status: **7a built 15 November 2026** (branch `claude/editing-tools-c878a5`, merged
+into `editing` the same day; progress, tests and what isn't verified are at the end of the 7a part).
 **7b not started.** Two parts. **7a** is one session in its
 own worktree, branch `editing-tools`, cut from `editing` after the groundwork
 ([editing-groundwork-scope.md](editing-groundwork-scope.md)) lands, alongside phases 4 and 5.

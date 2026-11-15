@@ -1,7 +1,7 @@
 # Phase 4, measuring and calibration: scope
 
 Status: **built 15 November 2026** (autonomous, one session) on branch
-`claude/editing-measure-803243`, ready to merge into `editing`. Progress, tests, what was
+`claude/editing-measure-803243`, merged into `editing` the same day. Progress, tests, what was
 assumed and what isn't verified are at the end. One session, in its own worktree, branch
 `editing-measure` cut from `editing` after the groundwork
 ([editing-groundwork-scope.md](editing-groundwork-scope.md)) lands. Parent:
