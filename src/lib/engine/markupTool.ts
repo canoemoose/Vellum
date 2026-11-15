@@ -7,14 +7,14 @@ import type { Viewer } from "./viewer";
 import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor } from "../markup/ops";
-import { fitText } from "../markup/kinds/text";
+import { fitText } from "../markup/textbox";
 import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, rectPts, shapeBounds, simplify, snapAngle, squareFrom } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
 import type { DrawContext, KindDef, Shape } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
 import { toolById, withPreset } from "../markup/tools";
 
-export { fitText, refitText } from "../markup/kinds/text";
+export { fitText, refitText } from "../markup/textbox";
 
 /** "select", or a drawing tool's id (markup/tools.ts). */
 export type Tool = string;

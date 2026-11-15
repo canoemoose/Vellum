@@ -6,8 +6,8 @@
 // the box and its elbow; the tip stays on what it points at. The tip and elbow have their own
 // grips; with no elbow, the grip halfway along the leader makes one.
 //
-// The text box itself is drawn and saved exactly as a text box is (./text.ts, reused: the box
-// is the same thing, with a leader added).
+// The text box itself is drawn and saved exactly as a text box is (../textbox.ts, shared with
+// the text box kind: the box is the same thing, with a leader added).
 
 import { type MarkupBase, type Pt, type Rect, type TextStyle, LINE_STYLE, WHITE, arrowEnds, normRect } from "../base";
 import { type Op, endedLine, textHeight } from "../draw";
@@ -15,7 +15,7 @@ import { boxHandles, distToPolyline, insidePolygon, movePt, pointsBounds, rectPt
 import { LE, boxInset, userPoints } from "../annotation";
 import { rectToUser } from "../pdf";
 import { defineKind } from "./kind";
-import { type TextMarkup, fitText, refitText, text as textKind, textOps } from "./text";
+import { dragTextBox, fitText, refitText, textBoxSpec, textOps } from "../textbox";
 
 export interface CalloutMarkup extends MarkupBase {
   kind: "callout";
@@ -59,9 +59,6 @@ export function leader(m: CalloutMarkup): Pt[] {
   return end ? [...pts, end] : pts;
 }
 
-/** A callout as its text box (for the text box's own drawing, spec and grips). */
-const asText = (m: CalloutMarkup): TextMarkup => ({ ...m, kind: "text" }) as unknown as TextMarkup;
-
 /** The box for a callout whose box goes at `at`, coming from `from`: beside it, on the far side, centred on it. */
 function boxAt(from: Pt, at: Pt, t: TextStyle): Rect {
   const h = textHeight(1, t, 1);
@@ -96,7 +93,7 @@ export const callout = defineKind<CalloutMarkup>({
   },
   spec(m, f, spec) {
     // The text box's keys (FreeText, its text, /DA, /DS, /Q, background), then the callout's.
-    textKind.spec(asText(m), f, spec);
+    textBoxSpec(m, f, spec);
     spec.intent = "FreeTextCallout";
     const line = leader(m);
     if (line.length >= 2) {
@@ -123,12 +120,12 @@ export const callout = defineKind<CalloutMarkup>({
     }
     if (h === "to") return { ...m, elbow: constrain ? snapAngle(m.tip, p) : p };
     // The box's grips resize it as a text box's do (never smaller than its text).
-    return { ...m, rect: textKind.dragHandle(asText(m), h, p, constrain, minSize).rect };
+    return { ...m, rect: dragTextBox(m, h, p, constrain, minSize) };
   },
   // The tip stays on what it points at; the box and its elbow move.
   moveBy: (m, dx, dy) => ({ ...m, rect: [m.rect[0] + dx, m.rect[1] + dy, m.rect[2] + dx, m.rect[3] + dy], elbow: m.elbow ? movePt(m.elbow, dx, dy) : null }),
   finish: (m) => fitText(m),
   settle: (m) => fitText(m),
-  restyled: (before, after) => ({ ...after, rect: refitText(asText(before), asText(after)).rect }),
+  restyled: (before, after) => refitText(before, after),
   typed: true,
 });

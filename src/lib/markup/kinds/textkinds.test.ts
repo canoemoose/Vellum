@@ -10,7 +10,7 @@ import type { Frame } from "../pdf";
 import { dragHandle, handles, hits, moveBy, shapeBounds } from "../geometry";
 import { pinScale, pinView } from "../pin";
 import { attachPoint, leader } from "./callout";
-import { fitText } from "./text";
+import { fitText } from "../textbox";
 import { type MarkQuad, type TextMarkVariant, textMarkStyle } from "./textmark";
 import { kindOf, labelOf } from ".";
 
