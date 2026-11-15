@@ -1,5 +1,5 @@
 // Calibrate: two clicks (or a drag) along a dimension whose real length you know, then type it
-// in (App.svelte's calibrate dialog). Shift snaps to 15 degrees. Never kept as a markup: the
+// in (App.svelte's calibrate dialog). Level or upright, Shift frees it. Never kept as a markup: the
 // drawing tool hands it to the app (MarkupTool.keep), which sets the scale from it. A kind so
 // that it's drawn with the same gesture, preview and snapping as the measurements.
 
@@ -35,7 +35,8 @@ export const measureCalibrate = defineKind<MeasureCalibrateMarkup>({
   controls: { fill: false, ends: false, text: false },
   // It's never kept, so nothing in the bar does anything for it.
   noBar: true,
-  draw: { gesture: "points", make: (pts) => ({ from: pts[0], to: pts[pts.length - 1], ...newMeasure() }), closed: false, min: 2, max: 2, drag: "line" },
+  // Stage 5: level or upright like a dimension, Shift frees it; two clicks, no offset.
+  draw: { gesture: "points", make: (pts) => ({ from: pts[0], to: pts[pts.length - 1], ...newMeasure() }), closed: false, min: 2, max: 2, drag: "line", lock: "ortho", preview: true },
   ops: (m) => [
     ...dimensionLine([m.from, m.to], m.style),
     labelAlong(`${formatPaper(calibratePaperMm(m))} on paper`, m.from, m.to, m.labelSize, m.style.stroke, barHalf(m.style.width) * 0.5 + 1, uprightDir(m.from, m.to)),

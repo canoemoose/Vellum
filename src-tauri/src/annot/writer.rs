@@ -389,6 +389,20 @@ impl Writer {
             d.set("Cap", true);
             d.set("CP", Object::Name(b"Top".to_vec()));
         }
+        // Dimensions (stage 5): the pulled-out line and the moved value, as ISO 32000-1 12.5.6.7
+        // has them, so other apps draw the same. /LLE and /LLO only with a non-zero /LL.
+        if let Some([ll, lle, llo]) = s.leader.filter(|l| l[0] != 0.0) {
+            d.set("LL", real(ll));
+            if lle > 0.0 {
+                d.set("LLE", real(lle));
+            }
+            if llo > 0.0 {
+                d.set("LLO", real(llo));
+            }
+        }
+        if let Some(co) = s.caption_offset {
+            d.set("CO", reals(&co));
+        }
 
         // Stamps
         if let Some(n) = s.stamp_name.as_deref().filter(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_alphanumeric())) {

@@ -9,7 +9,8 @@ import { MarkupTool, type Mods } from "./markupTool";
 import { MarkupDoc } from "./markupDoc";
 import { type Markup, type Pt, defaultStyle, DEFAULT_TEXT } from "../markup/types";
 import { kindOf } from "../markup/kinds";
-import type { KindDef } from "../markup/kinds/kind";
+import { type KindDef, pointLock } from "../markup/kinds/kind";
+import { isBoxGrip } from "../markup/shape";
 import { type ToolDef, TOOLS, gestureTip, toolById } from "../markup/tools";
 import { handles, shapeBounds } from "../markup/geometry";
 import { barFor, subjectOf, subjectOfTool } from "../markup/bar";
@@ -47,10 +48,10 @@ function drag(t: MarkupTool, v: Viewer, a: Pt, b: Pt, mods = none) {
   t.up(ex, ey, mods);
 }
 
-function click(t: MarkupTool, v: Viewer, a: Pt, clicks = 1) {
+function click(t: MarkupTool, v: Viewer, a: Pt, clicks = 1, mods = none) {
   const [sx, sy] = scr(v, a[0], a[1]);
-  t.down(sx, sy, clicks, none);
-  t.up(sx, sy, none);
+  t.down(sx, sy, clicks, mods);
+  t.up(sx, sy, mods);
 }
 
 const def = (t: ToolDef) => kindOf(t.kind!) as unknown as KindDef;
@@ -81,7 +82,9 @@ const regularOf = (m: Markup) => (m as unknown as { regular?: Regular }).regular
 async function drawn(tool: ToolDef, pts: Pt[]) {
   const s = await setup();
   s.t.setTool(tool.id);
-  for (const p of pts) click(s.t, s.v, p);
+  // Exactly these points: where a kind starts ortho-locked (dimensions, stage 5), Shift frees each.
+  const d = def(tool).draw;
+  pts.forEach((p, i) => click(s.t, s.v, p, 1, i > 0 && d.gesture === "points" && pointLock(d.lock, i).lock === "ortho" ? shift : none));
   s.t.finishPoints(true);
   s.t.setTool("select");
   s.t.select([s.doc.markups[0].id]);
@@ -100,7 +103,8 @@ describe("stage 6: shapes of points resize by a box and by their corners [A11]",
       const { doc } = await drawn(tool, SHAPE);
       const hs = handles(doc.markups[0]);
       near(hs.filter((h) => h.round).map((h) => h.at), SHAPE);
-      expect(hs.filter((h) => !h.round).length).toBe(8);
+      // The box's eight (a measurement's value grip, stage 5, is besides these).
+      expect(hs.filter((h) => !h.round && isBoxGrip(h.id)).length).toBe(8);
     });
 
     it(`${tool.label}: Shift keeps proportions when its box is resized`, async () => {

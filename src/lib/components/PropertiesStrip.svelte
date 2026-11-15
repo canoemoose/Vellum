@@ -56,6 +56,18 @@
     });
     return `M${pts.join("L")}Z`;
   }
+  // Dimensions (stage 5)
+  import type { DimEnds, DimFont } from "../markup/dimension";
+  const DIM_END_OPTS: { key: DimEnds; name: string }[] = [
+    { key: "bar", name: "Bars" },
+    { key: "tick", name: "Ticks" },
+    { key: "arrow", name: "Arrows" },
+  ];
+  const DIM_FONT_OPTS: { key: DimFont; name: string }[] = [
+    { key: "helvetica", name: "Helvetica" },
+    { key: "courier", name: "Courier" },
+    { key: "courierBold", name: "Courier Bold" },
+  ];
 
   interface Props {
     /** Which controls show (markup/bar.ts, rule 6). */
@@ -70,6 +82,10 @@
     /** Measurements: the label size and number format (what the tool draws, or the selection's). */
     measure?: { labelSize: number; format: MeasureFormat } | null;
     onMeasure?: (patch: { labelSize?: number; format?: MeasureFormat }) => void;
+    // Dimensions (stage 5)
+    /** A dimension's ends (null where none of those involved has a dimension line) and its value's font. */
+    dimension?: { ends: DimEnds | null; font: DimFont } | null;
+    onDimension?: (patch: { ends?: DimEnds; font?: DimFont }) => void;
 
     // Stamps
 
@@ -358,6 +374,21 @@
       </div>
     </div>
   {/if}
+  <!-- Dimensions (stage 5): the ends and the value's font. -->
+  {#if p.dimension && p.onDimension && idp === "mk"}
+    {@const dm = p.dimension}
+    {@const on = p.onDimension}
+    <span class="sep" aria-hidden="true"></span>
+    <div class="prop" role="group" aria-label="Dimension">
+      <span class="k">Dimension</span>
+      <div class="controls">
+        {#if dm.ends}
+          <PopChoice label="Dimension ends" options={DIM_END_OPTS} value={dm.ends} compact={narrow} {out} sample={dimEndSample} onChange={(k) => on({ ends: k })} />
+        {/if}
+        <PopChoice label="Value font" options={DIM_FONT_OPTS} value={dm.font} compact={narrow} {out} sample={dimFontSample} onChange={(k) => on({ font: k })} />
+      </div>
+    </div>
+  {/if}
 {/snippet}
 
 <!-- Measuring -->
@@ -392,6 +423,25 @@
   {:else}
     <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d={polyPath(Number(k))} fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
   {/if}
+{/snippet}
+<!-- Dimensions (stage 5): a short dimension line with the end at each end; the font as "12.4". -->
+{#snippet dimEndSample(k: DimEnds | null, w: number)}
+  {@const e = k ?? p.dimension?.ends ?? "bar"}
+  {@const x1 = Math.min(w, 34) - 4}
+  <svg width={Math.min(w, 34)} height="12" viewBox="0 0 {Math.min(w, 34)} 12" aria-hidden="true">
+    <path d="M4 6H{x1}" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+    {#if e === "bar"}
+      <path d="M4 2V10M{x1} 2V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+    {:else if e === "tick"}
+      <path d="M1.5 9.5L6.5 2.5M{x1 - 2.5} 9.5L{x1 + 2.5} 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else}
+      <path d="M3.5 6L9 3V9ZM{x1 + 0.5} 6L{x1 - 5} 3V9Z" fill="currentColor" />
+    {/if}
+  </svg>
+{/snippet}
+{#snippet dimFontSample(k: DimFont | null, w: number)}
+  {@const f = k ?? p.dimension?.font ?? "helvetica"}
+  <span class="aa" style:font-family={cssFamily(f === "helvetica" ? "helvetica" : "courier")} style:font-weight={f === "courierBold" ? "bold" : "normal"} style:width="{Math.min(w, 30)}px">12.4</span>
 {/snippet}
 
 <!-- A small on/off button with an icon (bold, italic, alignment...). -->

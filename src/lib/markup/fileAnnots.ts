@@ -13,6 +13,9 @@ import { readReedit } from "./reedit";
 import { KINDS, defOf, kindOf } from "./kinds";
 import type { MarkQuad, TextMarkVariant } from "./kinds/textmark";
 import { textMarkStyle } from "./kinds/textmark";
+// Dimensions (stage 5)
+import { type DimEnds, newMeasure } from "./dimension";
+import { type MeasureLengthMarkup, valueFromCaption } from "./kinds/measureLength";
 
 /** One annotation as annot_read gives it (read.rs FileAnnot), in user space. */
 export interface FileAnnot {
@@ -49,6 +52,11 @@ export interface FileAnnot {
   // Notes (tool consistency stage 7)
   /** A Text annotation's pop-up's /Open: true pinned open, false closed, null or absent when it has no pop-up. */
   popupOpen?: boolean | null;
+  // Dimensions (stage 5): optional, so readers older than it still type-check.
+  /** A Line's /LL, /LLE, /LLO (0 where absent), when it has /LL. */
+  leader?: [number, number, number] | null;
+  /** A Line's /CO. */
+  captionOffset?: [number, number] | null;
 }
 
 export interface PageAnnots {
@@ -234,6 +242,8 @@ function fromKeys(a: FileAnnot, f: Frame): (Record<string, unknown> & { kind: Ma
     case "Line": {
       if (!a.line) return null;
       const [from, to] = pts(f, a.line);
+      // Dimensions (stage 5): a line dimension is a Length, pulled out and its value moved as saved.
+      if (a.intent === "LineDimension") return lineDimension(a, from, to, style);
       return { kind: "arrow", from, to, style: { ...style, fill: null, ends: [endOf(a.lineEnds?.[0]), endOf(a.lineEnds?.[1])] } };
     }
     case "PolyLine": {
@@ -286,6 +296,32 @@ function fromKeys(a: FileAnnot, f: Frame): (Record<string, unknown> & { kind: Ma
     default:
       return null;
   }
+}
+
+// Dimensions (stage 5)
+/** /LE back to a dimension's ends. */
+const DIM_END_OF: Record<string, DimEnds> = { Butt: "bar", Slash: "tick", ClosedArrow: "arrow", OpenArrow: "arrow", RClosedArrow: "arrow", ROpenArrow: "arrow" };
+
+/**
+ * A file's line dimension as a Length: /LL (same units as /L, and the same anticlockwise
+ * normal: see measureLength.ts lengthFrame) is its offset, /CO where its value was moved to. Its
+ * scale is left for the app to fill in from the page, as for one being drawn, and its look is
+ * the measuring tools' for the parts the file doesn't say.
+ */
+function lineDimension(a: FileAnnot, from: Pt, to: Pt, style: Style): Record<string, unknown> & { kind: MarkupKind; style: Style } {
+  const m = {
+    kind: "measureLength" as const,
+    from,
+    to,
+    offset: a.leader?.[0] ?? 0,
+    ...newMeasure(),
+    ...(a.lineEnds?.[0] && DIM_END_OF[a.lineEnds[0]] ? { ends: DIM_END_OF[a.lineEnds[0]] } : {}),
+    style: { ...style, fill: null },
+  };
+  const co = a.captionOffset;
+  if (!co || (Math.abs(co[0]) < 0.01 && Math.abs(co[1]) < 0.01)) return m;
+  const value = valueFromCaption({ ...m, id: "", page: 0, meta: { author: "", created: "", modified: "" } } as MeasureLengthMarkup, co);
+  return Math.hypot(...value) > 0.05 ? { ...m, value } : m;
 }
 
 /** The id an annotation gets: its /NM when it has one not already taken, else one from its place. */

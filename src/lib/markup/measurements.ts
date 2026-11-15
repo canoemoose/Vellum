@@ -5,7 +5,7 @@
 
 import type { Markup, MarkupKind } from "./base";
 import { type MeasureFormat, type PageMeasure, type UnitSystem, formatPaper, formatScale, isImperial, sameFormat } from "./measure";
-import { pageMeasureOf } from "./dimension";
+import { type DimensionLook, pageMeasureOf } from "./dimension";
 import { type MeasureLengthMarkup, lengthValues } from "./kinds/measureLength";
 import { type MeasurePathMarkup, pathValues } from "./kinds/measurePath";
 import { type MeasureAreaMarkup, areaValues } from "./kinds/measureArea";
@@ -119,6 +119,28 @@ export function resolveAuto(markups: Markup[], system: UnitSystem): Markup[] {
     if (!isMeasurement(m) || m.fmt.units !== "auto" || (m.fmt.system ?? "metric") === system) return m;
     any = true;
     return { ...m, fmt: { ...m.fmt, system } };
+  });
+  return any ? out : markups;
+}
+
+// Dimensions (stage 5)
+/** The measurements that have ends to choose (a dimension line): length and polyline length. */
+export const hasEnds = (m: { kind: MarkupKind }): boolean => m.kind === "measureLength" || m.kind === "measurePath";
+
+/**
+ * The markups with every selected measurement given the look `patch` sets: its ends (those with
+ * a dimension line) and its value's font. The same list when nothing changes.
+ */
+export function relook(markups: Markup[], ids: ReadonlySet<string>, patch: Partial<DimensionLook>): Markup[] {
+  let any = false;
+  const out = markups.map((m) => {
+    if (!ids.has(m.id) || !isMeasurement(m)) return m;
+    const next: Partial<DimensionLook> = {};
+    if (patch.font && (m.font ?? "helvetica") !== patch.font) next.font = patch.font;
+    if (patch.ends && hasEnds(m) && (m.ends ?? "bar") !== patch.ends) next.ends = patch.ends;
+    if (!Object.keys(next).length) return m;
+    any = true;
+    return { ...m, ...next, meta: { ...m.meta, modified: new Date().toISOString() } };
   });
   return any ? out : markups;
 }

@@ -39,7 +39,9 @@ export function insidePolygon(p: Pt, v: Pt[]): boolean {
 /** A box's corners, clockwise from the top left. */
 export const rectPts = (r: Rect): Pt[] => [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
 
-export type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "from" | "to" | `v${number}`;
+export type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "from" | "to" | `v${number}`
+  // Dimensions (stage 5): a dimension line pulled off its points, and a measurement's value.
+  | "offset" | "value";
 
 export interface Handle {
   id: HandleId;

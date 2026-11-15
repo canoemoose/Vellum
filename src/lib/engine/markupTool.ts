@@ -10,7 +10,7 @@ import { type Op, opsFor } from "../markup/ops";
 import { fitText } from "../markup/textbox";
 import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, orthoFrom, rectPts, shapeBounds, simplify, snapAngle, squareFrom } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
-import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX } from "../markup/kinds/kind";
+import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX, pointLock } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
 import { toolById, withPreset } from "../markup/tools";
 import { centredOn, fromClip, newSession, toClip } from "../markup/clip";
@@ -444,6 +444,12 @@ export class MarkupTool {
     for (const m of this.selected()) {
       if (m.page !== page) continue;
       const h = handleAt(m, p, this.tolPt(HANDLE_PX));
+      // Dimensions (stage 5): a double-click on a grip puts back what it holds (a moved value).
+      const reset = h && clicks === 2 ? defOf(m).resetHandle?.(m, h) : null;
+      if (reset) {
+        this.updateMarkup(reset);
+        return true;
+      }
       if (h) {
         this.gesture = { kind: "handle", page, id: m.id, handle: h, before: this.markups };
         return true;
@@ -584,8 +590,7 @@ export class MarkupTool {
     const c0 = this.clicking;
     if (c0) {
       const at = this.pointOn(sx, sy, c0.page);
-      const last = c0.points[c0.points.length - 1];
-      c0.hover = at ? lockTo(c0.def.draw, last, at.p, mods.shift) : null;
+      c0.hover = at ? lockTo(c0.def.draw, c0.points, at.p, mods.shift) : null;
       this.viewer.requestFrame();
     } else if (this.def?.draw.gesture === "place") {
       const at = this.pointOn(sx, sy);
@@ -612,7 +617,7 @@ export class MarkupTool {
   }
 
   private get drawContext(): DrawContext {
-    return { textStyle: this.opts.textStyle(this.tool) };
+    return { textStyle: this.opts.textStyle(this.tool), pick: this.tolPt(HANDLE_PX) };
   }
 
   private newMarkup(def: KindDef, page: number, shape: Shape<Markup>): Markup {
@@ -633,10 +638,11 @@ export class MarkupTool {
     if (c && def.draw.gesture === "points") {
       // Clicking out a shape: a double-click (or Enter) finishes it; so does a click on the
       // first point of a closed one.
-      const last = c.points[c.points.length - 1];
-      const p = lockTo(def.draw, last, at.p, mods.shift);
+      const p = lockTo(def.draw, c.points, at.p, mods.shift);
       const first = c.points[0];
-      const onFirst = def.draw.closed && c.points.length >= def.draw.min && Math.hypot(p[0] - first[0], p[1] - first[1]) <= this.tolPt(HANDLE_PX);
+      // On the first point as clicked, or as locked (an ortho-locked corner may not reach it).
+      const near = (q: Pt) => Math.hypot(q[0] - first[0], q[1] - first[1]) <= this.tolPt(HANDLE_PX);
+      const onFirst = def.draw.closed && c.points.length >= def.draw.min && (near(p) || near(at.p));
       if (clicks >= 2 || onFirst) this.finishPoints(true);
       else {
         c.points.push(p);
@@ -674,7 +680,7 @@ export class MarkupTool {
           // Stage 6: a regular polygon from the centre out; Shift puts a flat side at the bottom as viewed.
           const r = regularFromDrag(a, p, this.opts.sides?.(this.tool) ?? DEFAULT_SIDES, mods.shift ? this.pageDown(g.page, sx, sy) : null);
           make(d.make(regularVertices(r), { ...this.drawContext, regular: r }));
-        } else make(d.make([a, lockTo(d, a, p, mods.shift)], this.drawContext));
+        } else make(d.make([a, lockTo(d, [a], p, mods.shift)], this.drawContext));
         break;
       case "freehand": {
         // Text markups: Shift draws a straight stroke from the press (the highlighter's rule,
@@ -944,7 +950,12 @@ export class MarkupTool {
     // Clicking out a shape: the points so far and a rubber band to the pointer (and back to the
     // first point, for a closed shape).
     const c = this.clicking;
-    if (c?.page === page) {
+    // Dimensions (stage 5): a kind with `preview` shows itself as it would be made, not a rubber band.
+    const shown = c?.page === page && c.def.draw.gesture === "points" && c.def.draw.preview ? this.drawingShape() : null;
+    if (shown) {
+      paintOps(ctx, opsFor(shown.markup), m);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    } else if (c?.page === page) {
       const closed = c.def.draw.gesture === "points" && c.def.draw.closed && c.points.length >= 2;
       const pts = [...c.points, ...(c.hover ? [c.hover] : []), ...(closed ? [c.points[0]] : [])].map(dev);
       ctx.strokeStyle = accent;
@@ -1016,11 +1027,16 @@ export class MarkupTool {
 }
 
 /**
- * A point placed from `from` with the gesture's lock (rule 2): Shift snaps to 15 degree steps;
- * a kind that starts ortho-locked (dimensions) is held horizontal or vertical, and Shift frees it.
+ * The next point after `placed` (the points so far, at least one) with the gesture's lock
+ * (rule 2): Shift snaps to 15 degree steps; a point that starts ortho-locked (dimensions) is
+ * held horizontal or vertical, and Shift frees it; one with no lock is taken as it is. Which
+ * point it's locked from, and how, is the kind's per point (kinds/kind.ts, pointLock).
  */
-export function lockTo(d: Draw<Markup>, from: Pt, p: Pt, shift: boolean): Pt {
-  if (d.gesture === "points" && d.lock === "ortho") return shift ? p : orthoFrom(from, p);
+export function lockTo(d: Draw<Markup>, placed: Pt[], p: Pt, shift: boolean): Pt {
+  const rule = pointLock(d.gesture === "points" ? d.lock : undefined, placed.length);
+  const from = placed[rule.from] ?? placed[placed.length - 1];
+  if (rule.lock === "none") return p;
+  if (rule.lock === "ortho") return shift ? p : orthoFrom(from, p);
   return shift ? snapAngle(from, p) : p;
 }
 

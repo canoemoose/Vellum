@@ -19,6 +19,25 @@ export interface DrawContext {
   textStyle: TextStyle;
   /** Stage 6: dragged out as a regular polygon (`drag: "regular"`): its centre, size, turn and sides. */
   regular?: Regular;
+  // Dimensions (stage 5)
+  /** Page points the pointer may be off and still be "on" a point (a grip's reach). */
+  pick?: number;
+}
+
+// Dimensions (stage 5)
+/**
+ * A clicked point's lock (rule 2): "snap" starts free and Shift snaps it to 15 degree steps;
+ * "ortho" starts held horizontal or vertical on the page and Shift frees it; "none" is never
+ * locked (a dimension's offset, which only its distance from the line matters for).
+ */
+export type Lock = "snap" | "ortho" | "none";
+/** One point's lock, and which earlier point (by index) it's taken from: the one before, if not given. */
+export type PointLock = Lock | { lock: Lock; from: number };
+/** The lock on the point at `index` (from 1) and the index of the point it's taken from. */
+export function pointLock(lock: Lock | PointLock[] | undefined, index: number): { lock: Lock; from: number } {
+  const l = Array.isArray(lock) ? lock[Math.min(index, lock.length) - 1] : lock;
+  if (l === undefined) return { lock: "snap", from: index - 1 };
+  return typeof l === "string" ? { lock: l, from: index - 1 } : l;
 }
 
 /**
@@ -29,7 +48,9 @@ export interface DrawContext {
  * Every dragged box is under MIN_BOX_PX either way makes nothing (or, with `click`, the clicked
  * one). Shift toggles the lock (rule 2): 15 degree steps for a line or a clicked point, square
  * for a box being drawn; a kind with `lock: "ortho"` starts locked to horizontal and vertical on
- * the page and Shift frees it.
+ * the page and Shift frees it. `lock` may instead give each point after the first its own
+ * (PointLock, by index from 1; the last carries on), as the angle's arms and a dimension's
+ * offset need.
  */
 export type Draw<M extends Markup> =
   /**
@@ -49,9 +70,10 @@ export type Draw<M extends Markup> =
    * `ctx.regular`.
    * `max`: it finishes by itself on that many points (a line's two, an angle's three).
    * `say`: how its points read in the tooltip, where `max` gives them meanings ("click the
-   * corner, then each arm's end").
+   * corner, then each arm's end"). `preview`: while it's clicked out, the shape itself is drawn
+   * as it would be made with the pointer's point (a dimension and its value), not a rubber band.
    */
-  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" | "regular"; lock?: "ortho"; say?: string }
+  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" | "regular"; lock?: Lock | PointLock[]; say?: string; preview?: boolean }
   /** Freehand: the pointer's path while pressed, simplified when let go. Shift draws it straight. */
   | { gesture: "freehand"; make(strokes: Pt[][]): Shape<M> }
   /**
@@ -111,6 +133,9 @@ export interface KindDef<M extends Markup = Markup> {
   finish?(m: M): M;
   /** After it's moved or a grip is let go. */
   settle?(m: M): M;
+  // Dimensions (stage 5)
+  /** Grip `h` double-clicked: the markup with what it holds put back (a dimension's value), or null for nothing. */
+  resetHandle?(m: M, h: HandleId): M | null;
   /** After a restyle: `after` is `before` with the new style (a snug text box stays snug). */
   restyled?(before: M, after: M): M;
   /** It holds text typed on the canvas: typing starts once it's drawn, and a double-click edits it. */

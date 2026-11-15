@@ -8,7 +8,7 @@ import type { MarkupKind, Style } from "./base";
 import type { Markup } from "./base";
 import { arrowEnds } from "./base";
 import { kindOf } from "./kinds";
-import type { KindDef } from "./kinds/kind";
+import { type KindDef, type Lock, type PointLock, pointLock } from "./kinds/kind";
 
 export type GroupId = "select" | "lines" | "shapes" | "text" | "pen" | "measure" | "stamp";
 
@@ -148,7 +148,7 @@ export function gestureTip(def: KindDef): string {
       parts.push(d.click ? "drag corner to corner, or click" : "drag corner to corner", "Shift keeps it square");
       break;
     case "points": {
-      const lock = d.lock === "ortho" ? "it stays level or upright, Shift frees it" : "Shift snaps to 15°";
+      const lock = lockTip(d.lock, d.max);
       if (d.say) parts.push(d.say, lock);
       else if (d.max === 2) parts.push("click each end, or drag", lock);
       else {
@@ -169,6 +169,28 @@ export function gestureTip(def: KindDef): string {
   }
   if (def.typesAfter) parts.push("then type: Esc, Ctrl+Enter or a click elsewhere finishes");
   return parts.join("; ");
+}
+
+const ORDINAL = ["first", "second", "third", "fourth", "fifth", "sixth"];
+
+/**
+ * What Shift does while clicking points out, from the gesture's lock alone (rule 4): one phrase
+ * when every point is locked alike, else one per click ("the second click stays level or
+ * upright, Shift frees it"), leaving out clicks that are never locked.
+ */
+export function lockTip(lock: Lock | PointLock[] | undefined, max: number | undefined): string {
+  const say = (l: Lock, who: string | null, many = false): string =>
+    l === "ortho" ? `${who ?? "it"} ${many ? "stay" : "stays"} level or upright, Shift frees ${many ? "them" : "it"}` : l === "snap" ? `Shift snaps ${who ? `${who} ` : ""}to 15°` : "";
+  const rules = Array.isArray(lock) ? lock.map((_, i) => pointLock(lock, i + 1).lock) : [pointLock(lock, 1).lock];
+  if (rules.every((r) => r === rules[0])) return say(rules[0], null);
+  return rules
+    .map((r, i) => {
+      // The last rule carries on for every click after it, unless the kind stops there.
+      const later = i === rules.length - 1 && (max === undefined || max > i + 2);
+      return say(r, `the ${ORDINAL[i + 1] ?? `click ${i + 2}`} click${later ? " and later ones" : ""}`, later);
+    })
+    .filter(Boolean)
+    .join("; ");
 }
 
 /** A tool's how-to: Select's own words, or its gesture's (with anything the tool adds). */
