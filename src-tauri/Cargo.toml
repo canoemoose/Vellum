@@ -60,6 +60,10 @@ windows-sys = { version = "0.61", features = [
   # annot/commands.rs: the account's display name for markups' author (GetUserNameExW).
   "Win32_Security",
   "Win32_Security_Authentication_Identity",
+  # clipboard.rs: markups and pictures on the system clipboard.
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
 ] }
 
 # WP-Print: printer enumeration, capabilities and GDI output (StartDoc / StretchDIBits), and

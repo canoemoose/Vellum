@@ -1,4 +1,5 @@
 pub mod annot; // editing: markups saved as annotations
+pub mod clipboard; // markups and pictures on the system clipboard
 pub mod docs;
 pub mod errcode;
 pub mod imagedoc;
@@ -430,6 +431,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             launch_args,
+            clipboard::clipboard_put_markups,
+            clipboard::clipboard_take,
             read_file,
             append_perf_log,
             write_text_file,
