@@ -340,6 +340,14 @@ impl PdfiumState {
                         let f = unsafe { b.FPDFAnnot_GetFlags(a) };
                         let f = if hidden { f | HIDDEN } else { f & !HIDDEN };
                         unsafe { b.FPDFAnnot_SetFlags(a, f) };
+                        // Notes (stage 7): its pop-up goes with it, so PDFium never draws an open
+                        // pop-up beside a note the overlay draws (with its own pinned box).
+                        let pop = unsafe { b.FPDFAnnot_GetLinkedAnnot(a, "Popup") };
+                        if !pop.is_null() {
+                            let pf = unsafe { b.FPDFAnnot_GetFlags(pop) };
+                            unsafe { b.FPDFAnnot_SetFlags(pop, if hidden { pf | HIDDEN } else { pf & !HIDDEN }) };
+                            unsafe { b.FPDFPage_CloseAnnot(pop) };
+                        }
                         n += 1;
                     }
                     unsafe { b.FPDFPage_CloseAnnot(a) };
