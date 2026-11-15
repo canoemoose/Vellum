@@ -1,6 +1,6 @@
 # Phase 5, stamps and signatures: scope
 
-Status: **in progress (15 November 2026)**, autonomous, on branch `claude/editing-stamps-391fb7`
+Status: **built 15 November 2026**, autonomous, on branch `claude/editing-stamps-391fb7`
 (the worktree's own name for `editing-stamps`). Progress, the bake spike's result, tests and
 what isn't verified are at the end. One session, in its own worktree, branch
 `editing-stamps` cut from `editing` after the groundwork
@@ -118,6 +118,38 @@ A signature is the one thing in Vellum that's sensitive, so:
 6. Encrypting every recovery record, not only ones holding a signature: one code path, and
    nothing lost by it.
 
+Added while building (15 November 2026):
+
+7. **A drawn signature is placed as its strokes** (vector paths, crisp at any zoom); an
+   imported one as its picture. The ink colour is the one saved with the signature.
+8. **The stamp tools open their pickers each time they're chosen** (palette, or S, which
+   steps between Stamp and Signature). A panel drops from the top of the drawing area and
+   catches clicks until something is picked, so nothing is placed by accident; closing it
+   without picking goes back to Select. After placing, the tool stays on and places the same
+   thing again (tools stay active, the agreed default).
+9. **The properties bar is hidden for the stamp tools and for stamps on their own**: none of
+   its controls (colour, weight, pattern) apply. A text stamp's colour is chosen in the
+   picker before placing; to change it, place it again.
+10. **Text stamps**: Helvetica Bold capitals, a 2.5 pt rounded border, the second line in
+    Helvetica (an editable "Name, 15 Nov 2026", on by default), all scaled together with the
+    box. Colours: each stamp's own (APPROVED green, FOR COMMENT blue, SUPERSEDED red, your
+    own wording red) or one of green, blue, red, black. The picker remembers the second line
+    on or off, the colour and your last wording (settings `stamps`), never the name and date
+    text itself.
+11. **Saved as**: /Subtype /Stamp, /Name /Approved, /ForComment (Acrobat's standard names),
+    /Superseded, /Custom, /Signature or /Image, with /Contents "APPROVED" (plus the second
+    line), "Signature" or "Image". The print flag as every markup.
+12. **The bake question comes after the first-save confirmation** (so its warnings for
+    signed and certified files come first), and on "Save a copy" too; Cancel cancels the
+    save. It's asked only when the save has signatures placed since the last save.
+13. **A baked signature is forgotten by undo** once the save succeeds: it's taken out of
+    every undo and redo state, so undo can't bring back a copy as a markup over the baked
+    one. Other undo steps still work.
+14. **Image stamps keep up to 2000 px a side** (scaled down beyond), stored as PNG whether
+    they came in as PNG or JPEG, named after the file. No rename (delete and add again).
+15. **`VELLUM_DATA_DIR`** points the signature and stamp libraries at another folder, so
+    scripted runs never touch the real library. Unset, nothing changes.
+
 ## Known gap this phase doesn't close
 
 Printing and "Save as PDF" from the print dialog read the file from disk, so an unsaved
@@ -202,3 +234,188 @@ Proved on (`cargo test --test stamps_bake`):
   the original file too.
 
 Fallback not needed.
+
+### Steps 2 to 7
+
+One commit per concern (`git log editing..` on the branch):
+
+2. **Image operation** (5afd442): `ImageOp` in `markup/draw.ts`; the overlay decodes each
+   picture once per hash (`engine/stampImages.ts`, at most 24 kept, a faint box until
+   decoded); `pdf.ts` writes `cm` and `/Im<hash> Do`, upright on rotated pages; the writer
+   (`annot/image.rs`) makes an image XObject with a `/SMask` from the alpha (none when the
+   picture is opaque), keeps the hash under `/Vellum_Image`, and finds it again, so one
+   picture in one save is written once. Stamp annotations get `/Name`.
+3. **The stamp kind** (73cc946): `markup/kinds/stamp.ts` and `markup/stamps.ts` (what a stamp
+   holds, text stamp layout, strokes as paths, base64 and hashing). Tools Stamp and Signature
+   in the Stamp group, both on S.
+4. **Signatures in the main window** (05fe245, 3a4fc5f): `SignaturePopover.svelte` (the
+   library, "New signature…"), `SignatureDialog.svelte` (the pad, 920 x 720, resizable by its
+   corner), both framed by a shared `StampPanel.svelte` or a modal. The `signature_*`
+   messages moved into `shell/messages.ts`; the dev page still works on its own.
+5. **Recovery records sealed with DPAPI** (035b4c7): `<key>.vrec`, a magic header and a DPAPI
+   blob with its own entropy; a plain `<key>.json` from before is read once and sealed as
+   it's read.
+6. **The bake question and the bake save** (d87abf6, 05fe245): `shell/save.ts`
+   (`bakeQuestion`, `newSignatureIds`, `withBakes`), `History.forget`, and the save path in
+   `App.svelte`.
+7. **Text stamps and image stamps** (4e4f75e, 05fe245): `StampPicker.svelte`; the image stamp
+   library is `src-tauri/src/stamps.rs` (`stamp_list`, `_add`, `_get`, `_delete`).
+
+Then `VELLUM_DATA_DIR` (149ba1d), and a fix found in the release run (27f689a): the picker
+took every key, so S couldn't step from Stamp to Signature once it was open.
+
+## Tests (for Matt)
+
+One command each: `npm test`, `cd src-tauri && cargo test` (on this machine
+`source ~/.vellum-toolchain/env.sh` first), `npm run check`.
+
+What they cover, in plain terms:
+
+- **Baking** (`src-tauri/tests/stamps_bake.rs`): see step 1. Every content layout named in
+  the scope, the original bytes kept, nothing outside the stamp's box changing by a single
+  pixel, the stamp at full size even when the old content leaves a scale and a clip behind,
+  a name clash in inherited resources, shared resources left alone, baking over an
+  annotation, two bakes on one page. `real_files` (ignored) runs the same on a folder of
+  real drawings by hand.
+- **Images in the file** (`stamps_image.rs`): a synthetic PNG with clear, half-clear and
+  opaque parts, drawn by PDFium: the ink opaque over both white paper and a black block, the
+  clear parts showing the page beneath, the half-clear part blended; the soft mask is there
+  (and absent for an opaque picture); three placements of one picture write one image and
+  one mask; a baked picture draws the same pixels as the annotation; a broken PNG or a bad
+  hash is `[stamp_image]`.
+- **Recovery records** (`stamps_recovery.rs`): a record holding a signature's strokes and
+  picture has none of it readable on disk (the PNG's bytes, its base64, the stroke numbers,
+  the words "signature" and "strokes", the file's path; UTF-8 or UTF-16), reads back
+  exactly and leaves no temporary file; an old plain record loads and is sealed; a tampered
+  record, or one with no header, is `[recovery_unreadable]` without its contents in the
+  message; delete removes both kinds.
+- **Image stamp library** (`stamps_library.rs`): transparency kept as it is (no knock-out),
+  JPEG in and PNG out, big pictures scaled to 2000 px, tiny ones and junk refused; add, list
+  in order, get, delete (twice is fine); ids that could escape the folder refused; names from
+  the file.
+- **Stamps in the model** (`src/lib/markup/stamps.test.ts`): text stamp layout (rounded
+  border, bold capitals centred, the second line below, sizes with and without it),
+  Acrobat's names, cleaning custom wording, the date and the default second line; strokes as
+  curves through the midpoints with a dot for a single point, cropped to the ink, read from
+  the library's stored form; a PNG's size from its header, hashing, base64 both ways; the
+  image operation's bounds and its matrix on an upright and a turned page; placing at the
+  default widths centred on the pointer with the content's aspect; fitting a dragged box;
+  resizing from a corner with the opposite corner fixed and the aspect kept (never turned
+  inside out); corner grips only; picking inside the box; drawing scaled into the box; the
+  annotation (Stamp, /Name, no border, print flag, contents, fonts); the picture in the
+  appearance once and the private copy holding only its hash. The registry test
+  (`kinds.test.ts`) puts a text stamp through every kind's checks.
+- **The bake question and the history** (`src/lib/shell/bake.test.ts`): the wording for one
+  and several, and for a copy; only signatures placed since the last save count; the chosen
+  additions become bakes and nothing else changes; a baked markup is forgotten from the
+  present, the past and the future; the picker's remembered settings.
+- **Messages**: the existing signature message tests pass against the moved codes.
+
+Not covered by automated tests: the Svelte components (the project has no component test
+set-up; their logic is in the tested modules), and anything about how it looks.
+
+## Run in the release build
+
+`npm run tauri build -- --no-bundle`, then `vellum.exe --new-instance --debug` driven over
+the DevTools protocol by a throwaway script (not in the repo), on copies of the synthetic
+`3-a3-40-pages.pdf`, **against a scratch profile**: `VELLUM_DATA_DIR` (signature and stamp
+libraries), `LOCALAPPDATA` (recovery records) and `WEBVIEW2_USER_DATA_FOLDER` (the app's
+settings) all pointed at a scratch folder. The scratch folders filled, so the app used
+them; Matt's real signature library was never listed or read, and his settings weren't used.
+
+- A synthetic drawn signature was added to the scratch library through `signature_add`.
+- **Movable:** the Signature tool (from the collapsed palette's flyout) opened the picker
+  showing it; picked; a click on the page placed it as strokes, 50 mm wide. A second later
+  the recovery folder held one `.vrec` with none of "strokes", "signature", "stamp",
+  "markups" or the ink colour readable. Ctrl+S: the first-save question, Save, then "Bake in
+  the signature?" with Keep movable, Bake in, Cancel; Keep movable. The file: a Stamp
+  annotation, /Name /Signature, with the re-edit entry; qpdf found no problems; the recovery
+  record was gone.
+- **Text stamp:** the Stamp tool's picker listed APPROVED, FOR COMMENT and SUPERSEDED with
+  "Matt James, 15 Nov 2026" (the account's name: the scratch profile has no author set).
+  APPROVED placed with a click and saved with Ctrl+S, no bake question (no new signature).
+  The file: a second Stamp, /Name /Approved, /Contents with both lines; qpdf clean.
+- **Baked:** on another copy, the signature placed and saved with Bake in. The file: no
+  annotation, page 1's content now three streams, `/VellumStamp0` in its resources; qpdf
+  clean. The overlay was empty after the save, and undo went back to an empty page, not to
+  the signature.
+- **Reopened** both files, each in a fresh instance: 40 pages, nothing left in the overlay
+  (saved stamps are PDFium's to draw), no console errors or warnings in any run, nothing in
+  the app's log.
+- Found and fixed: with a picker open, pressing S again didn't step to the other stamp tool
+  (27f689a).
+
+**Not run:** "Save a copy" (its file picker is a Windows dialog the script can't drive; it
+shares `askBake` and `saveChanges` with Save), "New signature…" and the pad in its dialog,
+an image stamp (adding one goes through a Windows file picker too; the library and the image
+path through the writer are covered by tests), dragging to size, and moving and resizing a
+placed stamp by hand.
+
+## Speed
+
+The painter's operation loop gained one check (`op.t === "image"`), so `npm run bench -- --runs 3`
+was run on the five synthetic files (this worktree has no `test-files`) with the `editing`
+release exe (the groundwork's, read from its worktree) as "before" and this branch's as
+"after". Medians of three, before / after:
+
+| File | Cold start ms | First page ms | Settle fit / 400% / 1600% ms | Peak MB |
+|---|---|---|---|---|
+| 1-a1-200k-lines | 372 / 648 | 364 / 331 | 167 / 109 / 116 → 164 / 103 / 117 | 349 / 1044 |
+| 2-a1-50k-text | 360 / 657 | 331 / 314 | 105 / 101 / 205 → 114 / 90 / 224 | 498 / 1162 |
+| 3-a3-40-pages | 345 / 707 | 147 / 115 | 72 / 100 / 85 → 69 / 95 / 78 | 145 / 885 |
+| 4-a1-raster | 343 / 661 | 681 / 814 | 155 / 102 / 246 → 152 / 110 / 241 | 1051 / 1441 |
+| 5-a4-300-pages | 641 / 627 | 97 / 115 | 50 / 93 / 111 → 54 / 85 / 82 | 796 / 838 |
+
+Pan held 60 fps everywhere in both. The cold start and memory columns looked like a
+regression, but the "before" run was the odd one: the groundwork measured the same exe at
+about 640 ms and 1050 MB, as this branch measures now. To settle it, both exes were run
+again, interleaved (before, after, before, after; two runs each, `3-a3-40-pages`): cold start
+628, 612, 820, 621 ms; first page 147, 131, 131, 131 ms; peak 923, 918, 906, 860 MB. No
+difference beyond run-to-run noise. Three other sessions were building on this machine at the
+same time, which is the likely cause of the spread. Nothing in this work is on the open path.
+
+## Not verified (for Matt)
+
+- **How everything looks and feels**: the two pickers (a panel dropped from the top of the
+  drawing area), the text stamp previews in the picker (HTML likenesses, not the real
+  drawing), the new icons for Stamp and Signature, the place preview following the pointer,
+  the pad's dialog and whether its framing view has the room it needs (920 x 720 to start,
+  resizable from the bottom-right corner).
+- **Placing and sizing by hand**: click, drag to size, move, resize from the corners.
+- **Text stamps' proportions**: 2.5 pt border, 6 pt corners and spacing were set by
+  reasoning, never seen.
+- **The signed file in Acrobat, Edge and a phone's PDF viewer**, both baked and movable. The
+  movable one is a standard Stamp annotation with its own appearance; Acrobat may show its
+  stamp icon in the comments list.
+- **An imported (photo) signature and an image stamp in the app**: covered by tests through
+  the writer and PDFium, never placed in the running app (both need a Windows file picker).
+- **"Save a copy"** in the app (same reason).
+
+To try: open a PDF, press S (Stamp) or S twice (Signature), or use the palette. In
+Signature, "New signature…" opens the pad; save one and it's ready to place. Click on the
+page to place, or drag to size. Ctrl+S asks about baking in. Esc goes back to Select.
+
+## For the merge into `editing`
+
+Edits outside the `// Stamps` blocks, each small and marked with a `// Stamps` comment:
+
+- `markup/draw.ts`: the `Op` union line itself (`| ImageOp`) and one line in `opsBounds`.
+- `markup/annotation.ts`: `appearance` gained `images?`; `Change` gained `{ op: "bake" }`.
+- `markup/kinds/kinds.test.ts`: a `stamp:` line in `SAMPLES`. Every session that adds a kind
+  must add a line there (the type demands one per kind), so expect a trivial conflict.
+- `markup/history.ts`: a new `forget(ids)` method.
+- `App.svelte`: one line in `setTool`, one in the `strip` derived, and the save path
+  (`saveActive`, `writeSave`, `saveCopy`: the bake question and `saveChanges` in place of
+  `t.marks.changes()`, `afterBake` after `markSaved()`); `<SignatureDialog>` before
+  `{#if choice}`.
+- `annot/writer.rs`: `get`, `resolve`, `appearance_stream` made `pub(super)`; the images
+  call in `appearance_stream`; the `Change::Bake` arm. `annot/spec.rs`: `Change::Bake`.
+  `annot/mod.rs`: two `pub mod` lines. `annot/commands.rs`: the three `recovery_*` command
+  bodies now call the sealed versions.
+- `lib.rs`: `pub mod stamps;`. `signature/mod.rs`: its library folder from
+  `stamps::data_dir`. `signature/api.ts`: its messages now come from `shell/messages.ts`.
+
+A shared piece that might want a different shape later: `DrawContext` (kinds/kind.ts) has
+no way to say what a "place" tool places, so the stamp kind keeps what's armed in its own
+module (`armStamp`). If another phase needs the same, a field on `DrawContext` would be the
+tidier home.
