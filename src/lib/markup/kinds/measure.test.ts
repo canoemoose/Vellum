@@ -162,10 +162,13 @@ describe("area", () => {
     expect(s * sp.measure!.factor).toBeCloseTo(10, 9);
   });
 
-  it("takes a fill, and is picked inside only when filled", () => {
+  it("takes a fill, and is picked inside only when filled (or on its value)", () => {
     expect(kindOf("measureArea").controls.fill).toBe(true);
-    expect(kindOf("measureArea").hits(m, [s / 2, s / 2], 1)).toBe(false);
-    expect(kindOf("measureArea").hits({ ...m, style: { ...m.style, fill: [1, 1, 1] } }, [s / 2, s / 2], 1)).toBe(true);
+    expect(kindOf("measureArea").hits(m, [s / 2, s / 5], 1)).toBe(false);
+    expect(kindOf("measureArea").hits({ ...m, style: { ...m.style, fill: [1, 1, 1] } }, [s / 2, s / 5], 1)).toBe(true);
+    // Stage 5: its value picks it, filled or not, wherever it's been moved.
+    expect(kindOf("measureArea").hits(m, [s / 2, s / 2], 1)).toBe(true);
+    expect(kindOf("measureArea").hits({ ...m, value: [s, 0] }, [s * 1.5, s / 2], 1)).toBe(true);
   });
 });
 

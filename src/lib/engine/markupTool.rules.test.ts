@@ -61,8 +61,8 @@ const withGesture = (pred: (d: KindDef["draw"]) => boolean) => drawing.filter((t
 
 describe("rule 1: one gesture, one behaviour", () => {
   const twoPoint = withGesture((d) => d.gesture === "points" && d.max === 2);
-  it("covers Line and Arrow as well as Length", () => {
-    expect(twoPoint.map((t) => t.id)).toEqual(expect.arrayContaining(["arrow", "line", "measureLength"]));
+  it("covers Line and Arrow as well as Calibrate", () => {
+    expect(twoPoint.map((t) => t.id)).toEqual(expect.arrayContaining(["arrow", "line", "measureCalibrate"]));
   });
 
   for (const tool of twoPoint) {
@@ -139,11 +139,70 @@ describe("rule 2: Shift toggles the lock", () => {
   it("snaps to 15 degrees with Shift, unless the kind starts ortho-locked, when Shift frees it", () => {
     const free = { gesture: "points", closed: false, min: 2, drag: "line", make: () => ({}) } as unknown as KindDef["draw"];
     const ortho = { ...free, lock: "ortho" } as unknown as KindDef["draw"];
-    expect(lockTo(free, [0, 0], [100, 4], false)).toEqual([100, 4]);
-    expect(lockTo(free, [0, 0], [100, 4], true)[1]).toBeCloseTo(0);
-    expect(lockTo(ortho, [0, 0], [100, 30], false)).toEqual([100, 0]);
-    expect(lockTo(ortho, [0, 0], [10, 30], false)).toEqual([0, 30]);
-    expect(lockTo(ortho, [0, 0], [100, 30], true)).toEqual([100, 30]);
+    expect(lockTo(free, [[0, 0]], [100, 4], false)).toEqual([100, 4]);
+    expect(lockTo(free, [[0, 0]], [100, 4], true)[1]).toBeCloseTo(0);
+    expect(lockTo(ortho, [[0, 0]], [100, 30], false)).toEqual([100, 0]);
+    expect(lockTo(ortho, [[0, 0]], [10, 30], false)).toEqual([0, 30]);
+    expect(lockTo(ortho, [[0, 0]], [100, 30], true)).toEqual([100, 30]);
+    // From the last point placed, every point alike.
+    expect(lockTo(ortho, [[0, 0], [100, 0]], [130, 60], false)).toEqual([100, 60]);
+  });
+
+  it("locks each point as its kind says: ortho, snapped, or never, from the point it names", () => {
+    const d = { gesture: "points", closed: false, min: 2, max: 4, drag: "line", make: () => ({}), lock: ["ortho", "none", { lock: "snap", from: 0 }] } as unknown as KindDef["draw"];
+    const placed: [number, number][] = [[0, 0]];
+    // The second point: held level or upright with the first; Shift frees it.
+    expect(lockTo(d, placed, [100, 30], false)).toEqual([100, 0]);
+    expect(lockTo(d, placed, [100, 30], true)).toEqual([100, 30]);
+    placed.push([100, 0]);
+    // The third: never locked, Shift or not.
+    expect(lockTo(d, placed, [140, 33], false)).toEqual([140, 33]);
+    expect(lockTo(d, placed, [140, 33], true)).toEqual([140, 33]);
+    placed.push([140, 33]);
+    // The fourth: free, and with Shift snapped to 15 degrees from the first point, not the third.
+    expect(lockTo(d, placed, [100, 4], false)).toEqual([100, 4]);
+    const s = lockTo(d, placed, [100, 4], true);
+    expect(s[1]).toBeCloseTo(0);
+    expect(s[0]).toBeCloseTo(Math.hypot(100, 4));
+  });
+
+  it("every dimension starts ortho-locked on its second point (rule 2: dimensions start locked)", () => {
+    for (const tool of drawing.filter((t) => t.group === "measure")) {
+      const d = def(tool).draw;
+      expect(d.gesture, tool.id).toBe("points");
+      expect(lockTo(d, [[0, 0]], [100, 30], false), tool.id).toEqual([100, 0]);
+      expect(lockTo(d, [[0, 0]], [100, 30], true), tool.id).toEqual([100, 30]);
+    }
+  });
+
+  const ortho2 = withGesture((d) => d.gesture === "points" && lockTo(d, [[0, 0]], [100, 30], false)[1] === 0);
+  for (const tool of ortho2) {
+    it(`${tool.label}: clicked points stay level or upright on the page, whichever way the view is turned`, async () => {
+      for (const turn of [0, 90, 180, 270]) {
+        const { v, doc, t } = await setup();
+        v.setRotation(turn);
+        t.setTool(tool.id);
+        click(t, v, [100, 100]);
+        t.move(...scr(v, 200, 130), none);
+        // The shape as it would be made with the pointer's point: both points on one level.
+        const m = t.drawingShape()!.markup;
+        const pts = "vertices" in m ? (m.vertices as [number, number][]) : [(m as MarkupOf<"measureLength">).from, (m as MarkupOf<"measureLength">).to];
+        expect(pts.map((p) => Math.round(p[1])), `${tool.id} at ${turn}`).toEqual([100, 100]);
+        expect(doc.markups.length).toBe(0);
+      }
+    });
+  }
+
+  it("Shift frees a dimension's point, clicked or dragged", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("measureCalibrate");
+    click(t, v, [100, 100]);
+    click(t, v, [200, 130], 1, shift);
+    expect((doc.markups[0] as MarkupOf<"measureCalibrate">).to).toEqual([200, 130]);
+    drag(t, v, [100, 300], [220, 330], shift);
+    expect((doc.markups[1] as MarkupOf<"measureCalibrate">).to[1]).toBeCloseTo(330);
+    drag(t, v, [100, 300], [220, 330]);
+    expect((doc.markups[2] as MarkupOf<"measureCalibrate">).to[1]).toBeCloseTo(300);
   });
 
   for (const tool of withGesture((d) => d.gesture === "freehand")) {

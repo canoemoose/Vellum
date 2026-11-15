@@ -51,6 +51,11 @@ export interface AnnotSpec {
   measure?: { ratio: string; unit: string; factor: number; precision: number };
   /** /Cap true and /CP /Top: a Line dimension shows its value as a caption above it. */
   caption?: boolean;
+  // Dimensions (stage 5)
+  /** A Line dimension pulled off its points: [/LL, /LLE, /LLO], user space units. */
+  leader?: [number, number, number];
+  /** /CO: its caption moved from the normal place, [along the line, square to it]. */
+  captionOffset?: [number, number];
 
   // Stamps
   /** /Name of a Stamp annotation ("Approved", "Signature"). */
