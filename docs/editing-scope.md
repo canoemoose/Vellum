@@ -2,7 +2,12 @@
 
 Status: **phases 0 to 3 done and reviewed by Matt; phases 4, 5, 7a and 7b built on
 `editing`, not yet reviewed by Matt** (15 November 2026; see "Phases 4, 5 and 7: how they
-run"). Phase 7b brings a file's own annotations, and markups saved in an earlier session, back
+run"). **The tool consistency changes are built on `editing` too**: one behaviour per
+gesture, the new shortcut letters (R Rectangle, G Polygon, P Pen, D measuring, I Image, ]
+and [ rotate the view), per-tool memory, imperial measuring and CAD-style dimensions,
+regular polygons, pinned notes, turning stamps, the Image tool and the system clipboard.
+Where they differ from the phase scopes, the brief wins: see
+[the tool consistency brief](editing-tool-consistency-brief.md). Phase 7b brings a file's own annotations, and markups saved in an earlier session, back
 for editing behind the padlock. The signatures back end (part of phase 5) and the OCR search spike
 (phase 9) were built on side branches and are merged into `editing`, along with `main` at
 0.1.4. See "Phase 0 results" below,

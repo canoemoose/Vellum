@@ -68,6 +68,13 @@ shape's geometry.
 
 ### Units and format (metric only)
 
+*Superseded by [the tool consistency brief](editing-tool-consistency-brief.md), stage 5: imperial units (feet and inches with
+fractions, inches, decimal feet and inches, ft², architectural scales), Auto following
+View > Units, and units and decimals set per measurement from the bar (no longer file-wide;
+"Apply its units and decimals to all measurements" is on the right-click menu). Dimensions
+are now ortho-locked, placed in three clicks with an offset, with ends and a value font of
+their own, saved with /LL, /LLE, /LLO and /CO; the angle is clicked corner first.*
+
 - Real-world lengths: metres with two decimals from 1 m up, whole millimetres below.
   Areas: m² with two decimals. Angles: degrees with one decimal. Paper: mm with one decimal.
 - A setting for units (automatic, always mm, always m) and decimals. Pure formatting
@@ -78,7 +85,8 @@ shape's geometry.
 - Navigation keeps working mid-measurement (wheel zoom, middle-drag pan, Space-drag), so
   zooming in on each end is the main way to be precise. Verify this holds for every gesture.
 - Shift constrains to 15 degree steps (existing behaviour), which gives horizontal and
-  vertical.
+  vertical. *(Superseded: measurements now start ortho-locked and Shift frees them; tool
+  consistency brief, stage 5.)*
 - A loupe: a magnified inset by the pointer while picking, taken from the canvas as drawn.
   It magnifies pixels rather than re-rendering, so it helps placement but adds no detail.
 - Out: snapping to the drawing's own endpoints and intersections (its own later piece, per
@@ -98,7 +106,8 @@ ordinary style controls still apply, plus text size.
 
 ## Assumed (Matt to correct)
 
-1. Metric only. Imperial (feet and inches) is left out until asked for.
+1. Metric only. Imperial (feet and inches) is left out until asked for. *(Superseded:
+   imperial was added in the tool consistency brief, stage 5.)*
 2. The format rules above (m from 1 m, mm below; two decimals).
 3. Measurements are blue, 0.75 pt, with bar ends, by default.
 4. A measurement keeps following the page's scale; it isn't frozen at the scale it was made

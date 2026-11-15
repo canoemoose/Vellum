@@ -57,7 +57,8 @@ straight stroke.
   annotation with its wording in `/Contents`. Double-click to edit; hover shows the text.
 - The icon is a fixed size on screen at any zoom, as other apps draw it.
 - No separate Popup annotation is written; other apps make their own when the note is
-  opened.
+  opened. *(Superseded by [the tool consistency brief](editing-tool-consistency-brief.md), stage 7: a note can be pinned
+  open, and every note is written with a Popup, /Open when pinned, never printed.)*
 
 ### Markups list
 
@@ -335,6 +336,8 @@ about 400 ms. Worth a look by whoever next touches the bench's memory sampling.
 - **After saving**, notes and text markups are PDFium's to draw: a note then scales with the
   zoom (PDFium ignores NoZoom) until 7b brings it back into the overlay.
 - The note icon turns with the view's rotation (R); other apps keep notes upright.
+  *(The view now rotates with ] and [; the tool consistency brief's stage 10 asks Matt to
+  check in the running app that the icon and its pinned box stay upright as viewed.)*
 - Quads on diagonal (not square) text are approximate: character boxes are upright, so a
   quad round diagonal text is fatter than the text.
 

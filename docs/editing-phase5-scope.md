@@ -39,7 +39,9 @@ One kind, `stamp`, a box on the page holding one of three things:
 
 - Place with a click (a sensible default size, centred on the pointer) or drag to size it.
   A preview follows the pointer before the click.
-- Move and resize keep the aspect ratio. No rotation in this phase.
+- Move and resize keep the aspect ratio. No rotation in this phase. *(Superseded: stamps,
+  signatures and images turn by a rotate grip, and start upright as viewed; [the tool consistency brief](editing-tool-consistency-brief.md),
+  stage 8.)*
 - Saved as a Stamp annotation with the print flag, like every markup.
 
 ### Images in the drawing pipeline
@@ -108,7 +110,8 @@ A signature is the one thing in Vellum that's sensitive, so:
 ## Assumed (Matt to correct)
 
 1. No rotation for stamps yet. A signature on a slanted line is rare; the framing view
-   already levels the signature itself.
+   already levels the signature itself. *(Superseded by the tool consistency brief, stage 8:
+   a rotate grip, Shift for 15° steps.)*
 2. Default placed size: 50 mm wide for a signature, 60 mm for a text stamp, aspect kept.
 3. The bake question offers "Bake in" and "Keep movable", with "Keep movable" as the safer
    default button, since baking can't be undone once saved.
@@ -122,7 +125,10 @@ Added while building (15 November 2026):
 
 7. **A drawn signature is placed as its strokes** (vector paths, crisp at any zoom); an
    imported one as its picture. The ink colour is the one saved with the signature.
-8. **The stamp tools open their pickers each time they're chosen** (palette, or S, which
+8. *(Superseded by the tool consistency brief, stage 8: the stamp and signature pickers are
+   in the context bar, with an Image tool (I) beside them; the panels below open only for
+   managing the libraries, or for choosing when `VELLUM_STAMP_POPOUTS=1` is set.)*
+   **The stamp tools open their pickers each time they're chosen** (palette, or S, which
    steps between Stamp and Signature). A panel drops from the top of the drawing area and
    catches clicks until something is picked, so nothing is placed by accident; closing it
    without picking goes back to Select. After placing, the tool stays on and places the same
