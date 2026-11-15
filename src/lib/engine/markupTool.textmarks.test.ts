@@ -3,11 +3,14 @@
 // outside a gesture.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installFakes, openViewer } from "./testkit";
+import { StubRenderer, doc as stubDoc, installFakes, openViewer, stubCanvas } from "./testkit";
+import { Viewer } from "./viewer";
+import { TextTool, selectionEnd, selectionLines } from "./textTool";
+import type { TextLayer } from "../text/layer";
+import { textMarkStyle, textMarksFrom } from "../markup/kinds/textmark";
 import { MarkupTool, type Mods } from "./markupTool";
 import { MarkupDoc } from "./markupDoc";
 import { type Markup, type MarkupOf, defaultStyle, DEFAULT_TEXT } from "../markup/types";
-import type { Viewer } from "./viewer";
 
 beforeEach(installFakes);
 afterEach(() => {
@@ -128,5 +131,78 @@ describe("callout", () => {
     const moved = only(doc, "callout");
     expect(moved.tip).toEqual(m.tip);
     expect(moved.rect[0]).toBeCloseTo(m.rect[0] + 40, 0);
+  });
+});
+
+describe("text markups from a selection", () => {
+  /** One line of text per page at (100, 100), 6 x 10 pt per character. */
+  function lineLayer(text: string): TextLayer {
+    const n = text.length;
+    const boxes = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) boxes.set([100 + 6 * i, 100, 106 + 6 * i, 110], i * 4);
+    return { n, codes: Uint32Array.from([...text].map((c) => c.codePointAt(0)!)), boxes, flags: new Uint8Array(n).fill(2), links: [] };
+  }
+  class TextRenderer extends StubRenderer {
+    constructor(private pages: string[]) {
+      super(stubDoc(pages.map(() => ({ w: 600, h: 400 }))));
+      this.auto = true;
+    }
+    async textLayer(_docId: number, page: number): Promise<TextLayer> {
+      return lineLayer(this.pages[page]);
+    }
+  }
+  async function withText(pages: string[]) {
+    const r = new TextRenderer(pages);
+    const v = new Viewer(stubCanvas(), {}, r);
+    v.resize(800, 600, 1);
+    await v.open("C:/x/doc.pdf", undefined, r);
+    v.setZoom(1);
+    v.centreOn(0, 150, 105);
+    const tt = new TextTool(v, { openUrl: () => {} });
+    const doc = new MarkupDoc();
+    const t = new MarkupTool(v, { styleFor: (k) => defaultStyle(k), textStyle: () => DEFAULT_TEXT, author: () => "Tester", onChange: () => {} });
+    t.attach(doc);
+    return { v, tt, t, doc };
+  }
+
+  it("makes one markup per page from the selection's lines, with its text", async () => {
+    const { tt, t, doc } = await withText(["Stage left rigging", "Truss and motors"]);
+    tt.selection = { anchor: { page: 0, index: 6 }, focus: { page: 1, index: 5 } };
+    const lines = await selectionLines(tt);
+    expect(lines.map((l) => l.page)).toEqual([0, 1]);
+    expect(lines[0].text).toBe("left rigging");
+    expect(lines[0].quads[0][0]).toEqual([136, 100]);
+    expect(lines[1].text).toBe("Truss");
+    t.addMarkups(textMarksFrom(lines, "underline", textMarkStyle("underline"), "Tester"));
+    expect(doc.markups.map((m) => [m.kind, m.page])).toEqual([["textmark", 0], ["textmark", 1]]);
+    expect(t.selected()).toHaveLength(2);
+    // One undo step for the lot.
+    t.undo();
+    expect(doc.markups).toHaveLength(0);
+    // Where the bar goes: the end of the last line.
+    tt.selection = { anchor: { page: 0, index: 0 }, focus: { page: 0, index: 5 } };
+    expect((await selectionEnd(tt))?.quad[3]).toEqual([130, 110]);
+  });
+
+  it("selects a text markup on a press and leaves the press to text selection; it never moves", async () => {
+    const { v, tt, t, doc } = await withText(["Stage left rigging"]);
+    tt.selection = { anchor: { page: 0, index: 0 }, focus: { page: 0, index: 5 } };
+    t.addMarkups(textMarksFrom(await selectionLines(tt), "highlight", textMarkStyle("highlight"), "Tester"));
+    t.clearSelection();
+    const m = doc.markups[0];
+    const [sx, sy] = v.pageToScreen(0, 110, 105)!;
+    expect(t.down(sx, sy, 1, none)).toBe(false);
+    expect(t.selected().map((x) => x.id)).toEqual([m.id]);
+    t.move(sx + 20, sy, none);
+    t.up(sx + 20, sy, none);
+    expect(doc.markups[0]).toBe(m);
+    // Over it, the markup tool leaves the cursor to the text tool.
+    t.move(sx, sy, none);
+    expect(t.cursor()).toBeNull();
+    // Nudging and Delete: it stays put, and goes.
+    t.nudge(10, 0);
+    expect((doc.markups[0] as MarkupOf<"textmark">).quads).toEqual((m as MarkupOf<"textmark">).quads);
+    t.deleteSelection();
+    expect(doc.markups).toHaveLength(0);
   });
 });

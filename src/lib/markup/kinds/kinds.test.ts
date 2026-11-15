@@ -33,6 +33,7 @@ const SAMPLES: { [K in MarkupKind]: () => MarkupOf<K> } = {
   // A callout's tip stays put when it moves, so it points below and right of its box here,
   // where the box's corner (which moves) is the bounds' top left.
   callout: () => mk("callout", { tip: [250, 180], elbow: null, rect: [100, 100, 220, 130], text: "Note", textStyle: { size: 10, colour: [0, 0, 0] } }),
+  textmark: () => mk("textmark", { variant: "highlight", quads: [[[100, 100], [200, 100], [100, 110], [200, 110]]], text: "Hello" }),
 };
 
 const paths = (m: Markup) => opsFor(m).filter((o): o is PathOp => o.t === "path");
@@ -59,6 +60,8 @@ describe("the kind registry", () => {
       expect(spec.subtype.length).toBeGreaterThan(0);
       const b = shapeBounds(m);
       expect(b[2]).toBeGreaterThan(b[0]);
+      // Text markups belong to the text: no grips, and they don't move (kind.ts, ofText).
+      if (kindOf(k).ofText) continue;
       expect(handles(m).length, k).toBeGreaterThan(0);
       const moved = moveBy(m, 10, 5);
       const mb = shapeBounds(moved);

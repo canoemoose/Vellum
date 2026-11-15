@@ -8,6 +8,8 @@ import { type DocMemory, sanitiseDocs } from "./shell/docMemory";
 import type { Units } from "./shell/paper";
 import type { ThemePref } from "./shell/theme";
 import type { Bounds } from "./shell/windowPlacement";
+import type { Style } from "./markup/base";
+import { type TextMarkVariant, sanitiseTextMarks } from "./markup/kinds/textmark"; // Text markups
 
 const KEY = "vellum.settings.v1";
 
@@ -43,6 +45,8 @@ export interface Settings {
   // Stamps
 
   // Text markups
+  /** Each text markup variant's colour and opacity, as last made or restyled. */
+  textMarks: Partial<Record<TextMarkVariant, Style>>;
 }
 
 export const SIDEBAR_MIN = 160;
@@ -68,6 +72,7 @@ export const DEFAULTS: Settings = {
   // Stamps
 
   // Text markups
+  textMarks: {},
 };
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -102,6 +107,7 @@ export function sanitiseSettings(raw: unknown): Settings {
     // Stamps
 
     // Text markups
+    textMarks: sanitiseTextMarks(s.textMarks),
   };
 }
 

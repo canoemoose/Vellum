@@ -43,6 +43,10 @@
   // Stamps
 
   // Text markups
+  import SelectionBar from "./lib/components/SelectionBar.svelte";
+  import { selectionEnd, selectionLines } from "./lib/engine/textTool";
+  import type { Quad } from "./lib/text/quads";
+  import { type TextMarkVariant, textMarkStyle, textMarksFrom } from "./lib/markup/kinds/textmark";
   import PasswordDialog from "./lib/components/dialogs/PasswordDialog.svelte";
   import ScaleDialog from "./lib/components/dialogs/ScaleDialog.svelte";
   import PropertiesDialog from "./lib/components/dialogs/PropertiesDialog.svelte";
@@ -320,6 +324,83 @@
   // Stamps
 
   // Text markups
+  //
+  // Highlight, underline and strike through from a text selection: the selection bar beside it,
+  // the Edit menu and Ctrl+H / Ctrl+U / Ctrl+Shift+X. Each variant remembers its colour and
+  // opacity (settings.textMarks): the last it was made or restyled with.
+
+  /** Where the text selection ends (its last line), for the selection bar. */
+  let selEnd = $state.raw<{ page: number; quad: Quad } | null>(null);
+  let selSeen: unknown = null;
+  $effect(() => {
+    void textUi;
+    const tt = textTool;
+    const s = tt?.selection ?? null;
+    if (!tt || s === selSeen) return;
+    selSeen = s;
+    if (!s) {
+      selEnd = null;
+      return;
+    }
+    void selectionEnd(tt).then((e) => {
+      if (tt.selection === s) selEnd = e;
+    });
+  });
+
+  /** The selection bar's place: just past the end of the selection's last line, below it. */
+  const selBar = $derived.by(() => {
+    void [ui.viewWorld.x, ui.viewWorld.y, ui.zoom, ui.rotation];
+    const v = viewer;
+    const e = selEnd;
+    if (!v || !e || !textUi.hasSelection || toolNow !== "select") return null;
+    const pts = e.quad.map((q) => v.pageToScreen(e.page, q[0], q[1]));
+    if (pts.some((q) => !q)) return null;
+    const xs = pts.map((q) => q![0]), ys = pts.map((q) => q![1]);
+    if (Math.max(...xs) < 0 || Math.min(...xs) > stageW || Math.max(...ys) < 0 || Math.min(...ys) > stageH) return null;
+    return { x: Math.max(...xs) + 4, y: Math.max(...ys) + 6 };
+  });
+
+  /** Mark up the selected text: one markup per page, selected so the bar can restyle it. */
+  async function markText(variant: TextMarkVariant) {
+    const tt = textTool;
+    const mt = markupTool;
+    if (!tt || !mt || !pdfDoc || !tt.hasSelection) return;
+    const lines = await selectionLines(tt);
+    const style = settings.textMarks[variant] ?? textMarkStyle(variant);
+    const marks = textMarksFrom(lines, variant, style, settings.markup.author ?? author);
+    if (!marks.length) return;
+    mt.addMarkups(marks);
+    tt.clear();
+  }
+
+  // A text markup restyled while selected: its variant remembers the style for next time.
+  let markStyles = new Map<string, string>();
+  $effect(() => {
+    void markVersion;
+    const sel = (markupTool?.selected() ?? []).filter((m) => m.kind === "textmark");
+    const next = new Map(sel.map((m) => [m.id, JSON.stringify([m.style.stroke, m.style.opacity])]));
+    for (const m of sel) {
+      const was = markStyles.get(m.id);
+      if (was !== undefined && was !== next.get(m.id) && m.kind === "textmark") {
+        settings.textMarks = { ...settings.textMarks, [m.variant]: { ...textMarkStyle(m.variant), stroke: m.style.stroke, opacity: m.style.opacity } };
+        save();
+      }
+    }
+    markStyles = next;
+  });
+
+  function textMarkKeys(e: KeyboardEvent) {
+    if (modalOpen || isTyping(e) || e.altKey || !(e.ctrlKey || e.metaKey) || !textUi.hasSelection) return;
+    const k = e.key.toLowerCase();
+    const v: TextMarkVariant | null = !e.shiftKey && k === "h" ? "highlight" : !e.shiftKey && k === "u" ? "underline" : e.shiftKey && k === "x" ? "strike" : null;
+    if (!v) return;
+    e.preventDefault();
+    if (!e.repeat) void markText(v);
+  }
+  $effect(() => {
+    window.addEventListener("keydown", textMarkKeys);
+    return () => window.removeEventListener("keydown", textMarkKeys);
+  });
 
   // ---------------------------------------------------------------- saving
 
@@ -970,6 +1051,10 @@
           { label: "Delete markups", shortcut: "Delete", disabled: !markupTool?.hasSelection, action: () => markupTool?.deleteSelection() },
           { separator: true },
           { label: "Select all text on the page", shortcut: "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
+          // Text markups
+          { label: "Highlight text", shortcut: "Ctrl+H", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("highlight") },
+          { label: "Underline text", shortcut: "Ctrl+U", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("underline") },
+          { label: "Strike through text", shortcut: "Ctrl+Shift+X", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("strike") },
           { separator: true },
           { label: "Find…", shortcut: "Ctrl+F", disabled: !textDoc, action: () => searchField?.focus() },
           { label: "Find next", shortcut: "F3", disabled: !searchView?.hits.length, action: () => search?.step(1) },
@@ -1668,6 +1753,9 @@
       <!-- Measuring -->
       <!-- Stamps -->
       <!-- Text markups -->
+      {#if chrome && selBar}
+        <SelectionBar x={selBar.x} y={selBar.y} areaW={stageW} areaH={stageH} onMark={(v) => void markText(v)} onCopy={() => void copySelection()} />
+      {/if}
       {#if marquee}
         <MarqueeOverlay pageAt={(x, y) => viewer?.pagePointAt(x, y) ?? null} {pointOn} onDone={marquee} />
       {/if}

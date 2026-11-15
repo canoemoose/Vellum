@@ -10,6 +10,8 @@ import type { Frame } from "../pdf";
 import { dragHandle, handles, hits, moveBy } from "../geometry";
 import { attachPoint, leader } from "./callout";
 import { fitText } from "./text";
+import { type MarkQuad, type TextMarkVariant, textMarkStyle } from "./textmark";
+import { labelOf } from ".";
 
 const A4: Frame = { quarterTurns: 0, bbox: [0, 0, 595, 842] };
 const meta = { author: "Tester", created: "2026-11-15T10:00:00Z", modified: "2026-11-15T10:00:00Z" };
@@ -138,5 +140,63 @@ describe("callout", () => {
   it("grows to fit its text, as a text box does", () => {
     const m = fitText(co({ text: "A much longer note that wraps over several lines in a box this narrow" }));
     expect(m.rect[3] - m.rect[1]).toBeGreaterThan(30);
+  });
+});
+
+describe("text markups", () => {
+  const q1: MarkQuad = [[100, 100], [200, 100], [100, 114], [200, 114]];
+  const q2: MarkQuad = [[100, 120], [160, 120], [100, 134], [160, 134]];
+  const tm = (variant: TextMarkVariant, quads = [q1, q2]) => mk("textmark", { variant, quads, text: "Some text" }, { ...textMarkStyle(variant) });
+
+  it("highlights by filling each line's quad, multiplied", () => {
+    const ops = paths(opsFor(tm("highlight")));
+    expect(ops).toHaveLength(1);
+    expect(ops[0].blend).toBe("multiply");
+    expect(ops[0].stroke).toBeNull();
+    expect(ops[0].fill).toEqual(textMarkStyle("highlight").stroke);
+    expect(ops[0].segs.filter((s) => s[0] === "Z")).toHaveLength(2);
+  });
+
+  it("underlines and strikes through each line, across the quad and as thick as a fourteenth of it", () => {
+    const u = paths(opsFor(tm("underline")));
+    expect(u).toHaveLength(2);
+    expect(u[0].segs[0]).toEqual(["M", 100, 100 + 14 * 0.88]);
+    expect(u[0].width).toBeCloseTo(1);
+    expect(u[0].blend).toBeUndefined();
+    const s = paths(opsFor(tm("strike")));
+    expect(s[1].segs[1]).toEqual(["L", 160, 120 + 14 * 0.58]);
+  });
+
+  it("follows the quad's direction: a line reading down the page is struck down the page", () => {
+    // Glyph tops facing right: top left at x 60, bottom left at x 50.
+    const down: MarkQuad = [[60, 100], [60, 124], [50, 100], [50, 124]];
+    const s = paths(opsFor(tm("strike", [down])))[0];
+    expect(s.segs[0][1]).toBeCloseTo(60 - 10 * 0.58);
+    expect(s.segs[0][2]).toBeCloseTo(100);
+    expect(s.segs[1][2]).toBeCloseTo(124);
+  });
+
+  it("saves as Highlight, Underline or StrikeOut with /QuadPoints in user space", () => {
+    const h = toSpec(tm("highlight"), A4);
+    expect(h.subtype).toBe("Highlight");
+    expect(h.blend).toBe("Multiply");
+    expect(h.quadPoints).toEqual([100, 742, 200, 742, 100, 728, 200, 728, 100, 722, 160, 722, 100, 708, 160, 708]);
+    expect(h.borderWidth).toBeUndefined();
+    expect(toSpec(tm("underline"), A4).subtype).toBe("Underline");
+    const s = toSpec(tm("strike"), A4);
+    expect(s.subtype).toBe("StrikeOut");
+    expect(s.blend).toBeUndefined();
+    // On a page turned a quarter, the points turn with it (toUser: (x, y) -> (y, x)).
+    expect(toSpec(tm("highlight"), { quarterTurns: 1, bbox: [0, 0, 595, 842] }).quadPoints!.slice(0, 4)).toEqual([100, 100, 100, 200]);
+  });
+
+  it("is picked inside its quads, has no grips and doesn't move", () => {
+    const m = tm("highlight");
+    expect(hits(m, [150, 107], 1)).toBe(true);
+    expect(hits(m, [150, 140], 1)).toBe(false);
+    expect(handles(m)).toEqual([]);
+    expect(moveBy(m, 10, 10)).toBe(m);
+    expect(labelOf(m)).toBe("Highlight");
+    expect(labelOf(tm("strike"))).toBe("Strike through");
   });
 });
