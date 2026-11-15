@@ -2,7 +2,8 @@
 
 Status: **7a built 15 November 2026** (branch `claude/editing-tools-c878a5`, merged
 into `editing` the same day; progress, tests and what isn't verified are at the end of the 7a part).
-**7b not started.** Two parts. **7a** is one session in its
+**7b built 15 November 2026** on `editing` (progress, assumptions, tests and what isn't
+verified are at the end of the 7b part). Two parts. **7a** is one session in its
 own worktree, branch `editing-tools`, cut from `editing` after the groundwork
 ([editing-groundwork-scope.md](editing-groundwork-scope.md)) lands, alongside phases 4 and 5.
 **7b** runs after 4, 5 and 7a are merged, on `editing`. Parent:
@@ -400,3 +401,223 @@ other apps' annotations, behind the padlock.
 
 Reopen a file saved yesterday and move, restyle and delete its markups; unlock a file
 marked up in Acrobat and move one of its annotations; save; both apps show the result.
+
+### Progress (7b)
+
+Built 15 November 2026, autonomous, one session, directly on `editing`. One commit per step:
+
+1. c42603d: reading a file's annotations (`src-tauri/src/annot/read.rs`, `annot_read`), and the
+   writer finding, replacing, deleting and moving an annotation by its position as read;
+   `doc_hide_annots` also hides by position; a stamp's picture already in the file is reused.
+2. e12d1b9: the 7a tidy-up: the text box's drawing, keys and sizing moved into
+   `markup/textbox.ts`, so the callout no longer imports the text box kind.
+3. b0661d8: the mapping into the model (`markup/fileAnnots.ts`) and the `foreign` kind.
+4. b926343: the tab's model (`engine/markupDoc.ts`): reading in, the lock, lifting, what a save
+   writes for them, finding them again after a save; the tool honours the lock; 7a's paste and
+   nudge gaps.
+5. 48ba349: the app: reading on open, lifting, the save path, the padlock, the list, the bench.
+6. bc44e97: ids unique across pages (found reviewing).
+7. This file, the runs and the bench.
+
+### How it's built (7b)
+
+- **Read with `lopdf`, not PDFium.** The scope said `FPDFAnnot_Get*`; two things changed that.
+  PDFium's annotation API has no getter for /LE, /BS /D, /BE, /IT, /CL, /RD or /DA, which a
+  faithful mapping needs; and every PDFium read loads (parses) the page on a render worker,
+  which on a heavy drawing costs as much as rendering it, so reading every page for the list
+  would load every page. `annot_read` reads the whole file once, straight from disk, on a
+  blocking thread off the render workers, dropping stream contents as they load (a filter on
+  `lopdf`'s loader), so a big drawing costs little more than its dictionaries. An encrypted file
+  is read whole (`lopdf` ignores the filter there). Phase 0 proved positions and page order agree
+  with PDFium's; `read.rs` also works out the page frame as PDFium does (CropBox clipped to the
+  MediaBox, inherited, /Rotate), checked against PDFium in a test.
+- **When:** once, in the background, as soon as a PDF tab opens (`readFileAnnots` in
+  `App.svelte`), not per page on first view: one read covers the list too. Nothing waits for it
+  except a crash-recovery restore and a save.
+- **Into the model** (`fileAnnots.ts`, `fromFile`): an annotation with Vellum's entry whose /M
+  still matches, of a kind this Vellum has, whose middle lies inside the annotation's box (a
+  page turned since would fail that) comes back as the entry says: every kind, at every page
+  rotation (tested). Image stamps get their picture from the file (`annot_stamp_images`, by the
+  hash Vellum keeps beside each image), and a save reuses that picture rather than writing it
+  again. Anything else is mapped from the standard keys: Square, Circle (inside /RD, the border
+  inside the box), Line and PolyLine with their ends, Polygon (a cloud if /BE says so), Ink,
+  FreeText (a callout if /IT and /CL say so; text style from /DA and /Q; /C as the background),
+  Highlight, Underline, Squiggly (as underline), StrikeOut, Text (a note). Every other type
+  becomes a `foreign` markup (`kinds/foreign.ts`): moved or deleted only, never restyled or
+  copied, no tool.
+- **Ids:** an annotation's /NM when it has one not already used, else `file-p<page>-a<index>`, the
+  same every time the file is read (a crash-recovery record refers to them).
+- **Who draws what** (`MarkupDoc`): PDFium keeps drawing an annotation from the file, with its
+  own appearance, until it changes (`overlayDraws`). As a drag or a slider starts on one
+  (`onLift`), or once a restyle, nudge or delete has changed it (`toLift` after every change), it
+  is hidden in PDFium (by /NM where its /NM is its id, else by position) and its page's tiles are
+  re-rendered (`Viewer.dropPageTiles`); the overlay draws it from then on. Merely selecting one
+  changes nothing. Vellum's own notes are lifted as soon as they're read, so a saved note is a
+  fixed size on screen again (PDFium ignores NoZoom).
+- **Saving:** changes find an annotation by position (`at`) when its /NM isn't its id, so one
+  without an /NM is replaced in place and gains one; a `foreign` one is moved by the writer
+  (`Change` "move": /Rect and the geometry keys shifted, appearance kept, which follows /Rect).
+  The writer keeps a map from current positions to positions as read, so deletes earlier in the
+  same save don't throw out later ones. After a save, only what the overlay goes on drawing is
+  hidden again in the reopened file (`hideAfterSave`), and the file is read again so each
+  annotation's position is current (`reread`: by /NM where it has one, else by order, which a
+  save never changes); a save waits for that read.
+- **The lock:** per tab, locked on every open (the padlock beside the tools, and Edit > Unlock
+  document). Locked, what came with the file can't be picked on the canvas, by the marquee, from
+  the list (its row has no delete button) or by double-clicking a note, except your own Vellum
+  markups (below). Unlocking asks first, naming why, if the file is certified, signed, or its
+  permissions ask for no changes (`unlockWarnings` in `shell/save.ts`); otherwise it just
+  unlocks. Locking again drops anything it no longer allows from the selection.
+- **The list** shows the file's annotations with the session's: they're markups like any other.
+- **Bench:** `runBench` now starts the same `annot_read` straight after the open, alongside the
+  first page's render, and records it (`annotRead` in the bench JSON).
+
+### Assumed (7b, Matt to correct)
+
+1. As scoped: your own Vellum markups need no unlocking. "Your own" is: written by Vellum,
+   unchanged since (its /M matches its private entry), and its author is your name (the
+   settings' author, else the Windows display name), ignoring case. A markup Vellum wrote that
+   another app has changed since needs the padlock, as anything else from the file does.
+2. As scoped: an annotation from another app keeps its own look until it's changed; merely
+   selecting it doesn't redraw it. Once changed it's Vellum's drawing from then on, in the file
+   too (with Vellum's private entry), keeping its author.
+3. Not read in: Popups (they belong to their parent), Links (navigation), Widgets (form fields,
+   phase 6), annotations their own app hid (/F Hidden), and replies (/IRT): none is a markup
+   on the page. Deleting an annotation removes its Popup, as before.
+4. Another app's stamps (and file attachments, sounds, carets, redactions, 3D, private types)
+   are `foreign`: moved or deleted, never redrawn. While one is moved and not yet saved, its
+   new place shows as a dashed grey box (the original is hidden); after the save PDFium draws it
+   there with its own appearance.
+5. Measurements and highlighter strokes from other apps come back as plain lines, polylines,
+   polygons and ink: their measuring or blending can't be read from the standard keys.
+6. A text highlight from another app with no /CA comes back opaque (as the file draws it),
+   though Vellum starts its own at 60%.
+7. Reading the whole file once on open, rather than each page on first view (above). It's one
+   read, off the render workers, and the bench shows no cost; per page would need either PDFium
+   (which loads the page) or a second `lopdf` parse each time.
+8. Unlocking says nothing when the file is ordinary. A "No markups to unlock" case isn't
+   special-cased: unlocking a file with no annotations simply unlocks.
+
+### Tests (7b, for Matt)
+
+`npm test` (Vitest), `cd src-tauri && cargo test` (on this machine
+`source ~/.vellum-toolchain/env.sh` first), `npm run check` (types).
+
+- `src-tauri/tests/annot_read.rs`: every key Vellum writes reads back (non-ASCII text and the
+  private entry included); an awkward /Annots (indirect array, a Popup, a null, an inline
+  dictionary with no /NM, a hidden one, a reply, a link), with and without object streams,
+  reads each markup at the position PDFium gives it; hiding by position with Popups and nulls in
+  the list (and by /NM and position together); a delete, then a replace and a move by position
+  in one save, each finding the right annotation after the earlier ones moved, the moved line
+  drawn by PDFium where it now is; a dense page's annotation found though stream contents are
+  dropped; a rotated, cropped page's frame matching PDFium's; a stamp's picture read back from
+  the file and reused by hash on replace.
+- `src/lib/markup/fileAnnots.test.ts`: every kind Vellum draws (18 samples, stamps of text and
+  strokes, an image stamp's picture by hash) comes back exactly as drawn at each of the four
+  page rotations; mapped from the standard keys instead once another app changed it, or when the
+  page has turned since; each standard type mapped (square, circle, lines and their ends,
+  polylines, polygons, clouds, ink, text boxes, callouts, notes, highlight, underline, squiggly,
+  strike out), types Vellum doesn't understand (and malformed geometry) as `foreign`; the page's
+  rotation and box origin; ids (from /NM, made up, never twice, the same on every read, across
+  pages); the lock rule; colours, PDF dates and /DA.
+- `src/lib/engine/markupDoc.files.test.ts`, against the stub viewer: reading in without an undo
+  step (undo leaves the file's annotations alone); unchanged ones left to PDFium and Vellum's
+  notes lifted at once; the lock on clicks, the list's select and delete, unlocking, and
+  markups made here staying free after a save; a drag lifting by position and the save replacing
+  in place; restyle, nudge and delete lifting; a foreign annotation moved, not restyled or
+  copied, saved as a move, and moved again by only the new distance; after a save, what's hidden
+  again, waiting for the re-read, and positions found again by /NM and by order; 7a's text
+  markups not copied, and nudging one taking no undo step.
+- `listing.test.ts`: the file's annotations listed, locked rows marked, a foreign type named.
+  `shell/save.test.ts`: the unlock warnings.
+- Not covered by automated tests: `App.svelte`'s wiring (reading on open, lifting, the save path,
+  the padlock), `EditLock.svelte`, the list's locked rows, and how anything looks. The run
+  below covers the wiring.
+
+### Run (7b)
+
+A throwaway driver (not in the repo) launched the exe with `--new-instance --debug`, scratch
+folders for `WEBVIEW2_USER_DATA_FOLDER`, `VELLUM_DATA_DIR` and `LOCALAPPDATA` (so the recovery
+folder and preview cache were scratch too), and drove it over the DevTools protocol through
+`window.__vellum` and the page's own buttons, on scratch copies of the synthetic
+`3-a3-40-pages.pdf` and a small file built by hand to stand in for one marked up in another app
+(a Square without /NM with a Popup, a null entry, a Line with an /NM and an open arrow, Ink, a
+Highlight with a multiply appearance, a FileAttachment, and a FreeText callout, each with its own
+appearance, author "Pat Smith"). Markups were added through the tool's `addMarkups` (the
+gestures themselves are covered by Vitest), moved with the tool's own pointer handlers and
+nudges.
+
+Each scenario ran twice: on a debug build while developing, then on the release build
+(`npm run tauri build -- --no-bundle`, after the last code commit), each step in a fresh
+instance. The release results:
+
+- **Saved in an earlier session:** one of every kind (rectangle, line, cloud, text box, pen,
+  ellipse, polyline, polygon, highlighter, callout, underline, note, the four measurements, a
+  text stamp, a strokes signature kept movable) added to page 1 of the drawing and saved
+  (first-save question, then the bake question, "Keep movable"). Reopened in a fresh instance:
+  all 18 read back as Vellum's own and **identical to what was saved**, field for field; only
+  the note was lifted at once. Without unlocking, the rectangle was nudged, the line restyled
+  (blue, 3 pt) and the cloud deleted: each was editable, hidden in PDFium as it changed, and
+  saved. A third instance read back 17, the three changes as made and still Vellum's own.
+- **Marked up in another app:** all six annotations listed (Square without /NM as
+  `file-p0-a0`, the Line by its /NM, Ink, Highlight, the FileAttachment as `foreign`, the
+  callout), all PDFium's to draw, none editable while locked; a click on the square picked
+  nothing. The padlock button unlocked it (no warning: an ordinary file). The square was then
+  dragged with the tool's pointer handlers (lifted by position), the attachment nudged, the ink
+  deleted, and saved. Reopened in a fresh instance: five annotations, the square now with /NM
+  `file-p0-a0` and Vellum's entry, the rest as they were.
+- **Read back outside the app** (debug run's file, by a throwaway cargo test, deleted after):
+  `lopdf` and PDFium agree on every entry. The square replaced in place at position 0 with its
+  Popup still beside it at 1, the null at 2, the line, highlight, the moved attachment (its own
+  appearance, /Rect shifted by the nudge) and the callout after them; the page renders.
+- No console errors or warnings in any run; `[annot] read` lines only on stderr.
+- Not done: test-files (client drawings) weren't used; no real Acrobat or Edge file (none
+  here); the gestures were driven through the tool's handlers rather than OS mouse events.
+
+### Speed (7b)
+
+`npm run bench -- --runs 3` on the five synthetic files, the release exe from before 7b (the
+merge build, f18e177) against this one, interleaved file by file, alternating which went first,
+with scratch data folders; the machine otherwise idle. `runBench` now starts the same
+`annot_read` as the app straight after the open, alongside the first page's render. Medians of
+three, before → after:
+
+| File | First page ms | Settle fit / 400% / 1600% ms | Pan fps | Peak memory MB | Read (Rust ms / done, ms after open) |
+|---|---|---|---|---|---|
+| 1-a1-200k-lines | 330 → 314 | 153 / 95 / 120 → 173 / 114 / 126 | 60 everywhere, both | 1071 → 1049 | 0.4 / 253; 0.4 / 38; 0.6 / 34 |
+| 2-a1-50k-text | 330 → 281 | 114 / 95 / 189 → 109 / 97 / 198 | | 1191 → 1188 | 0.3 / 44; 0.6 / 31; 0.6 / 32 |
+| 3-a3-40-pages | 147 → 147 | 78 / 97 / 85 → 71 / 99 / 81 | | 891 → 916 | 0.4 / 209; 0.4 / 37; 0.9 / 59 |
+| 4-a1-raster | 681 → 697 | 152 / 106 / 246 → 156 / 110 / 254 | | 1488 → 1523 | 9.6 / 106; 16.8 / 153; 8.2 / 77 |
+| 5-a4-300-pages | 131 → 158 | 46 / 49 / 86 → 52 / 95 / 89 | | 806 → 841 | 3.6 / 228; 1.9 / 43; 2.8 / 60 |
+
+The read itself takes 0.3 to 17 ms (the raster file's image streams are the most to skip) and is
+done within 30 to 250 ms of the open. Within the spread seen before (7a's own runs moved
+settles by up to 100 ms). File 5's 400% settle looked like a step, so it was run again
+(3 + 3, the other way round): 48 → 93 again, but the individual settles are two clusters in
+**both** builds (about 40 to 50 ms and 85 to 115 ms; before 5 of 9 low, after 4 of 9), so the
+median falls on either side by chance; that settle happens long after the read is done.
+Nothing here draws a markup, so the painter's new check never runs in the bench.
+
+### Not verified (7b, for Matt)
+
+- **How lifting looks.** When an annotation from the file is first dragged, PDFium's copy is
+  hidden and its page's tiles re-render; until they arrive, the page's preview (which still has
+  the annotation) shows under the overlay, so the old copy may show faintly for a moment.
+- **How close Vellum's redraw is** to another app's appearance once one is changed: clouds,
+  callouts and text boxes particularly (the scope's "how close is our redraw?"). Nothing here has
+  real Acrobat or Edge samples; the stand-in file was made by hand. Keeping the other app's
+  appearance until the annotation is actually changed is built, so selecting never redraws.
+- **The padlock's place and icon** beside the tool palette (it takes a little of the palette's
+  room, so the palette may collapse to groups a little sooner), and the dashed box a moved
+  `foreign` annotation shows until the save.
+- **Real files from Acrobat and Edge**, and a real signed or certified file through the unlock
+  warning (covered by unit tests on the wording only).
+- **Other apps' notes** stay PDFium's to draw until changed, so they still scale with the zoom;
+  picking one uses the fixed on-screen size Vellum's notes have, which matches only at about
+  100%.
+
+### Known gaps (7b)
+
+1. A tab's markups from the file are read once on open; if another app changes the file while
+   it's open, the save's "changed on disk" question still applies, but the markups shown are as
+   first read.

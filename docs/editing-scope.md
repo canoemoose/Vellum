@@ -1,8 +1,9 @@
 # Editing, markup and reading: scope
 
-Status: **phases 0 to 3 done and reviewed by Matt; phases 4, 5 and 7a built and merged
-into `editing`, not yet reviewed by Matt; phase 7b next** (15 November 2026; see
-"Phases 4, 5 and 7: how they run"). The signatures back end (part of phase 5) and the OCR search spike
+Status: **phases 0 to 3 done and reviewed by Matt; phases 4, 5, 7a and 7b built on
+`editing`, not yet reviewed by Matt** (15 November 2026; see "Phases 4, 5 and 7: how they
+run"). Phase 7b brings a file's own annotations, and markups saved in an earlier session, back
+for editing behind the padlock. The signatures back end (part of phase 5) and the OCR search spike
 (phase 9) were built on side branches and are merged into `editing`, along with `main` at
 0.1.4. See "Phase 0 results" below,
 [editing-phase1-scope.md](editing-phase1-scope.md) and
@@ -123,6 +124,13 @@ workers (`FPDFAnnot_SetFlags`), its tiles re-rendered, and from then on drawn by
 Types Vellum understands are fully editable; anything else (3D, multimedia, another app's
 private types) can be moved or deleted but not restyled. Needs a spike: how close our redraw
 is to the original's appearance, particularly clouds and callouts made in other apps.
+
+As built in 7b (15 November 2026): the annotations are read with `lopdf` straight from the file,
+once on open and off the render workers, not through `FPDFAnnot_Get*` page by page (PDFium has
+no getter for several keys the mapping needs, and reading through it loads every page). One is
+lifted when it's first changed (a drag starting, a restyle, a nudge, a delete), not when it's
+merely selected, so another app's appearance stays until there's a reason to redraw it. Details
+in [editing-phase7-scope.md](editing-phase7-scope.md), "How it's built (7b)".
 
 ### 3. Page operations are a virtual page list
 
@@ -282,7 +290,7 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    copy / confirm once, close prompts, crash recovery, edit lock, toolbar centre and
    properties strip. Built
    with the rectangle tool as its test case, so there is something to draw, save and reopen;
-   nothing here is worth releasing until phase 3.
+   nothing here is worth releasing until phase 3. (The edit lock's padlock came with 7b.)
 3. **First five markup tools:** arrow, rectangle, cloud, text box, pen.
    **Phases 2 and 3 done (built 14 November 2026; Matt reviewed the tools as they were
    built, and phase 2 has nothing to review on its own):** see
@@ -299,8 +307,8 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
 6. **Form filling.**
 7. **Remaining markup tools** (line, ellipse, polyline, polygon, callout, highlighter), the
    markups list, and **reading, part two** (text highlight, underline, strikethrough, notes).
-   **7a built, not yet reviewed; 7b (editing annotations already in the file, the
-   padlock) next:** [editing-phase7-scope.md](editing-phase7-scope.md).
+   **7a and 7b built, not yet reviewed** (7b: editing annotations already in the file, and
+   the padlock): [editing-phase7-scope.md](editing-phase7-scope.md).
 8. **Page operations.**
 9. **Later phases**, each scoped when reached. OCR search has its spike and design in
    [ocr-search-scope.md](ocr-search-scope.md); nothing is wired into the app.
@@ -317,7 +325,7 @@ filling) and phase 8 (page operations) are not part of this round.
 | 2, together | Phase 5, stamps and signatures | worktree, branch `editing-stamps` | [editing-phase5-scope.md](editing-phase5-scope.md) |
 | 2, together | Phase 7a, remaining tools, text markups, markups list | worktree, branch `editing-tools` | [editing-phase7-scope.md](editing-phase7-scope.md) |
 | 3 | Merge the three into `editing`; type check, every test, one build, run it. **Done 15 November** (see below) | `editing` | |
-| 4 | Phase 7b, annotations already in the file, the padlock | `editing`, one session | [editing-phase7-scope.md](editing-phase7-scope.md) |
+| 4 | Phase 7b, annotations already in the file, the padlock. **Built 15 November** | `editing`, one session | [editing-phase7-scope.md](editing-phase7-scope.md) |
 
 **The merge (15 November 2026).** Steps 1 and 2 are done; the three branches merged with
 conflicts only where each phase added lines in the same place (`kinds.test.ts`,
