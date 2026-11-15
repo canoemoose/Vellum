@@ -1,6 +1,6 @@
 # Phase 1, reading part one: scope
 
-Status: **built, waiting for Matt's check** (13 November 2026). Phase 1 of [editing-scope.md](editing-scope.md):
+Status: **done: built 13 November 2026 and reviewed by Matt as it went.** Phase 1 of [editing-scope.md](editing-scope.md):
 search, text selection and copy, links. No save path. Working autonomously (Matt's call);
 decisions not in the brief are recorded under "Assumed" for Matt to correct in one pass.
 

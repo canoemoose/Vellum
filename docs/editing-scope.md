@@ -1,8 +1,11 @@
 # Editing, markup and reading: scope
 
-Status: **phases 0 and 1 done; phases 2 and 3 built and waiting for Matt's review**
-(14 November 2026). See "Phase 0 results" below and
-[editing-phase1-scope.md](editing-phase1-scope.md). This
+Status: **phases 0 to 3 done and reviewed by Matt; phase 4 (measuring) is next**
+(15 November 2026). The signatures back end (part of phase 5) and the OCR search spike
+(phase 9) were built on side branches and are merged into `editing`, along with `main` at
+0.1.4. See "Phase 0 results" below,
+[editing-phase1-scope.md](editing-phase1-scope.md) and
+[editing-phase2-scope.md](editing-phase2-scope.md). This
 is the source of truth for the work; update it as phases land. "Matt" is the owner; "the
 builder" is whoever (person or session) is doing the work from this document.
 
@@ -267,10 +270,11 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    memory, lifting an existing annotation, matching an existing annotation to its object in
    the file, and appending to an encrypted file (new strings and streams must be encrypted
    with the file's key). **Exit:** go with `lopdf`, or write down what else.
-   **Done (13 November 2026): go with `lopdf`.** Everything automatable passed; Matt's check
-   of the samples in Acrobat, Edge and Preview is outstanding. See "Phase 0 results".
+   **Done (13 November 2026): go with `lopdf`.** Everything automatable passed, and Matt
+   checked the samples in Chrome, Acrobat, Foxit, PDF-XChange and Edge. macOS Preview is an
+   accepted gap. See "Phase 0 results".
 1. **Reading, part one:** search, text selection, copy, links. No save path needed.
-   **Built (13 November 2026), waiting for Matt's check:** see
+   **Done (built 13 November 2026, reviewed by Matt as it went):** see
    [editing-phase1-scope.md](editing-phase1-scope.md) for what was assumed, measured and not
    verified.
 2. **Foundation:** markup model, overlay, select tool, history, unsaved state, save / save a
@@ -279,16 +283,21 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    with the rectangle tool as its test case, so there is something to draw, save and reopen;
    nothing here is worth releasing until phase 3.
 3. **First five markup tools:** arrow, rectangle, cloud, text box, pen.
-   **Phases 2 and 3 built (14 November 2026), waiting for Matt's review:** see
+   **Phases 2 and 3 done (built 14 November 2026; Matt reviewed the tools as they were
+   built, and phase 2 has nothing to review on its own):** see
    [editing-phase2-scope.md](editing-phase2-scope.md). Not yet built from phase 2: the edit
    lock's padlock (nothing to unlock until lifting or page operations exist).
-4. **Measuring** and calibration.
-5. **Stamps and signatures.**
+4. **Measuring** and calibration. **Next.**
+5. **Stamps and signatures.** The capture side is built but stands alone (photo import,
+   encrypted library, drawing pad, framing view; `npm run dev:signatures`): see
+   [signatures-backend.md](signatures-backend.md). Still to do: reach it from the main
+   window and place a signature on a page as a stamp.
 6. **Form filling.**
 7. **Remaining markup tools** (line, ellipse, polyline, polygon, callout, highlighter), the
    markups list, and **reading, part two** (text highlight, underline, strikethrough, notes).
 8. **Page operations.**
-9. **Later phases**, each scoped when reached.
+9. **Later phases**, each scoped when reached. OCR search has its spike and design in
+   [ocr-search-scope.md](ocr-search-scope.md); nothing is wired into the app.
 
 ## Phase 0 results (13 November 2026)
 

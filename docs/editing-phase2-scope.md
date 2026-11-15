@@ -1,6 +1,6 @@
 # Phases 2 and 3, markup foundation and the first five tools: scope
 
-Status: **built, waiting for Matt's review** (14 November 2026), autonomous, on `editing`. The brief is
+Status: **done: built 14 November 2026 and reviewed by Matt as it went**, autonomous, on `editing`. The brief is
 [editing-scope.md](editing-scope.md) (phases 2 and 3, "Architecture", "Decisions made", the
 agreed defaults). Decisions not in the brief are under "Assumed" for Matt to correct in one pass.
 Stop at the end of phase 3 for Matt's review.
