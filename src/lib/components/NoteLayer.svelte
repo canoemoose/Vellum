@@ -4,12 +4,19 @@
   // it. Esc, Ctrl+Enter or a click elsewhere finishes editing; the change is one undo step. A
   // click on the drawing that ends the typing does nothing else (rule 3: it doesn't place
   // another note), and an empty note stays, to be written in later.
+  //
+  // Stage 7: a note can be pinned open, with the pin in its editor (and on the box itself), each
+  // pin or unpin one undo step. A pinned note's text shows in a small box beside the icon, a
+  // fixed size on screen and upright at any view rotation, for as long as the overlay draws the
+  // note (one from another app that hasn't been changed is PDFium's, which draws its own open
+  // pop-up). In Select a click on the box opens the editor and its pin unpins it; with any other
+  // tool out the pointer passes through the box, so it never gets in the way of drawing.
   import { onMount, tick } from "svelte";
   import type { Viewer } from "../engine/viewer";
   import type { MarkupTool } from "../engine/markupTool";
   import type { Markup } from "../markup/types";
   import { hits } from "../markup/geometry";
-  import { type NoteMarkup, NOTE_SIZE } from "../markup/kinds/note";
+  import { type NoteMarkup, besideIcon, noteBox } from "../markup/kinds/note";
 
   interface Props {
     viewer: Viewer;
@@ -36,6 +43,27 @@
     const m = id ? p.markupTool.doc?.byId(id) : undefined;
     return m?.kind === "note" ? m : null;
   };
+
+  /** A note's pin is showing its text beside it here (pinned, and the overlay draws it). */
+  const showsPinned = (n: NoteMarkup): boolean => !!n.pinned && !!p.markupTool.doc?.overlayDraws(n);
+
+  /** Pin or unpin a note open: one undo step. */
+  function setPin(id: string | null, pinned: boolean) {
+    const n = noteById(id);
+    if (n && !!n.pinned !== pinned) p.markupTool.updateMarkup({ ...n, pinned });
+  }
+
+  /** The icon's corners on screen (a view rotation turns them). */
+  function iconCorners(n: NoteMarkup): [number, number][] | null {
+    const b = noteBox(n);
+    const cs = [
+      [b[0], b[1]],
+      [b[2], b[1]],
+      [b[2], b[3]],
+      [b[0], b[3]],
+    ].map(([x, y]) => p.viewer.pageToScreen(n.page, x, y));
+    return cs.every((c) => c !== null) ? (cs as [number, number][]) : null;
+  }
 
   /** The topmost note under a stage point, if any. */
   function noteAt(x: number, y: number): NoteMarkup | null {
@@ -108,7 +136,8 @@
       }
       const [x, y] = at;
       const n = noteAt(x, y);
-      if (!n || n.id === editing) {
+      // A pinned note already shows its text: no hover box as well.
+      if (!n || n.id === editing || showsPinned(n)) {
         if (hoverTimer) clearTimeout(hoverTimer);
         hoverTimer = null;
         hover = null;
@@ -146,12 +175,32 @@
     void p.version;
     const n = noteById(editing);
     if (!n) return null;
-    const tl = p.viewer.pageToScreen(n.page, n.at[0], n.at[1]);
-    if (!tl) return null;
+    const cs = iconCorners(n);
+    if (!cs) return null;
     const W = 220, H = 120;
-    const x = Math.max(6, Math.min(tl[0] + NOTE_SIZE + 6, p.areaW - W - 6));
-    const y = Math.max(6, Math.min(tl[1], p.areaH - H - 6));
-    return { x, y, w: W, h: H, author: n.meta.author };
+    // The whole editor (its header and the text area) kept inside the drawing area.
+    const { x, y } = besideIcon(cs, W, H + 30, { w: p.areaW, h: p.areaH });
+    return { x, y, w: W, h: H, author: n.meta.author, pinned: !!n.pinned };
+  });
+
+  /** The pinned notes' boxes on screen (stage 7): beside each icon, travelling with it. */
+  const PIN_W = 200, PIN_H = 140;
+  const pinnedBoxes = $derived.by(() => {
+    void p.view;
+    void p.version;
+    const doc = p.markupTool.doc;
+    if (!doc) return [];
+    const out: { id: string; x: number; y: number; text: string; colour: string; live: boolean }[] = [];
+    for (const m of doc.markups) {
+      if (m.kind !== "note" || m.id === editing || !showsPinned(m)) continue;
+      const cs = iconCorners(m);
+      if (!cs) continue;
+      const { x, y } = besideIcon(cs, PIN_W, PIN_H, null);
+      if (x > p.areaW || y > p.areaH || x + PIN_W < 0 || y + PIN_H < 0) continue; // off screen
+      const c = m.style.stroke.map((v) => Math.round(v * 255)).join(", ");
+      out.push({ id: m.id, x, y, text: m.text, colour: `rgb(${c})`, live: p.tool === "select" && doc.editable(m) });
+    }
+    return out;
   });
 
   const hoverNote = $derived.by(() => {
@@ -164,7 +213,22 @@
 
 {#if editorAt}
   <div class="note-editor" style:left="{editorAt.x}px" style:top="{editorAt.y}px" style:width="{editorAt.w}px">
-    {#if editorAt.author}<div class="who">{editorAt.author}</div>{/if}
+    <div class="head">
+      <span class="who">{editorAt.author}</span>
+      <!-- Stage 7: the pin. A press keeps the focus in the text, so pinning doesn't end the typing. -->
+      <button
+        type="button"
+        class="icon-btn pin"
+        class:on={editorAt.pinned}
+        aria-pressed={editorAt.pinned}
+        aria-label="Pin open"
+        title={editorAt.pinned ? "Pinned open: the text shows beside the note. Click to show it only on hover." : "Pin open: show the text beside the note all the time. It doesn't print; use a callout for that."}
+        onmousedown={(e) => e.preventDefault()}
+        onclick={() => setPin(editing, !editorAt.pinned)}
+      >
+        {@render pinIcon(editorAt.pinned)}
+      </button>
+    </div>
     <textarea
       bind:this={area}
       bind:value={draft}
@@ -182,6 +246,35 @@
     ></textarea>
   </div>
 {/if}
+
+{#snippet pinIcon(on: boolean)}
+  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M5.5 1.8h5l-.8 4.4 2.6 2.6v1.3H3.7V8.8l2.6-2.6z" fill={on ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+    <path d="M8 10.1v4.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+  </svg>
+{/snippet}
+
+{#each pinnedBoxes as b (b.id)}
+  <!-- A pinned note's text (stage 7). In Select a click opens the editor; otherwise the pointer passes through. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="note-pinned" class:live={b.live} style:left="{b.x}px" style:top="{b.y}px" style:border-left-color={b.colour} onclick={() => b.live && open(b.id)}>
+    {#if b.live}
+      <button
+        type="button"
+        class="icon-btn unpin"
+        aria-label="Unpin"
+        title="Unpin: show the text only on hover"
+        onclick={(e) => {
+          e.stopPropagation();
+          setPin(b.id, false);
+        }}
+      >
+        {@render pinIcon(true)}
+      </button>
+    {/if}
+    {#if b.text.trim()}{b.text}{:else}<span class="empty">Empty note</span>{/if}
+  </div>
+{/each}
 
 {#if hover && hoverNote}
   <div class="note-tip" role="tooltip" style:left="{Math.min(hover.x + 14, p.areaW - 270)}px" style:top="{hover.y + 18}px">
@@ -206,10 +299,69 @@
     box-shadow: var(--shadow-pop);
     box-sizing: border-box;
   }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 20px;
+  }
   .who {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 11px;
     color: var(--tx3);
     padding: 0 2px;
+  }
+  .pin {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 20px;
+    padding: 0;
+  }
+  .pin.on {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  .note-pinned {
+    position: absolute;
+    z-index: 6;
+    width: max-content;
+    max-width: 200px;
+    max-height: 140px;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--tx-pop);
+    background: var(--ctl);
+    border: 1px solid var(--bd-strong);
+    border-left-width: 3px;
+    border-radius: 6px;
+    box-shadow: var(--shadow-pop);
+    /* With a drawing tool out, the pointer passes through to the drawing. */
+    pointer-events: none;
+  }
+  .note-pinned.live {
+    pointer-events: auto;
+    overflow: auto;
+    cursor: pointer;
+  }
+  .unpin {
+    float: right;
+    width: 20px;
+    height: 18px;
+    margin: -3px -6px 0 4px;
+    padding: 0;
+    color: var(--tx3);
+  }
+  .unpin:hover {
+    color: var(--tx);
   }
   textarea {
     resize: none;

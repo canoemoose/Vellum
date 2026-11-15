@@ -8,7 +8,7 @@ use std::time::Instant;
 use lopdf::{Dictionary, Document, IncrementalDocument, LoadOptions, Object, ObjectId, Stream, StringFormat, dictionary};
 use serde::Serialize;
 
-use super::spec::{AnnotSpec, Appearance, Change};
+use super::spec::{AnnotSpec, Appearance, Change, PopupSpec};
 
 /// The private key Vellum's own copy of a markup is written under (AnnotSpec::vellum). A
 /// second-class name in the PDF's sense: other apps leave keys they don't know alone.
@@ -476,6 +476,10 @@ impl Writer {
         self.slots(s.page)?;
         self.annots_mut(s.page)?.push(Object::Reference(id));
         self.slots(s.page)?.push(None);
+        // Notes (stage 7)
+        if let Some(p) = &s.popup {
+            self.write_popup(s.page, id, p)?;
+        }
         Ok(id)
     }
 
@@ -485,7 +489,7 @@ impl Writer {
         let index = self.find(s.page, &s.nm, s.at)?;
         let entry = self.annots(s.page)?.swap_remove(index);
         let mut d = self.build(s)?;
-        match entry.id {
+        let id = match entry.id {
             Some(id) => {
                 if let Some(Object::Dictionary(old)) = self.get(id).cloned() {
                     for k in [&b"Popup"[..], b"IRT", b"RT", b"Parent", b"StructParent", b"CreationDate"] {
@@ -495,14 +499,19 @@ impl Writer {
                     }
                 }
                 self.inc.new_document.set_object(id, d);
-                Ok(id)
+                id
             }
             None => {
                 let id = self.inc.new_document.add_object(d);
                 self.annots_mut(s.page)?[index] = Object::Reference(id);
-                Ok(id)
+                id
             }
+        };
+        // Notes (stage 7): its pop-up, the one it had if it had one.
+        if let Some(p) = &s.popup {
+            self.write_popup(s.page, id, p)?;
         }
+        Ok(id)
     }
 
     /// Remove the annotation with this /NM (and its popup, if it has one) from the page.
@@ -511,8 +520,10 @@ impl Writer {
         let entries = self.annots(page)?;
         let entry = &entries[index];
         let popup = entry.id.and_then(|id| self.get(id)).and_then(|o| o.as_dict().ok()).and_then(|d| d.get(b"Popup").ok()).and_then(|o| o.as_reference().ok());
+        // Notes (stage 7): and any Popup whose /Parent is it, so none is left orphaned.
+        let children = entry.id.map(|id| self.popups_of(&entries, id)).unwrap_or_default();
         // The entry and its popup, from the end so the positions stay right as they go.
-        let mut gone: Vec<usize> = entries.iter().filter(|e| e.index == index || (popup.is_some() && e.id == popup)).map(|e| e.index).collect();
+        let mut gone: Vec<usize> = entries.iter().filter(|e| e.index == index || (popup.is_some() && e.id == popup) || children.contains(&e.index)).map(|e| e.index).collect();
         gone.sort_unstable();
         self.slots(page)?;
         for i in gone.into_iter().rev() {
@@ -566,6 +577,63 @@ impl Writer {
             }
         }
         Ok(())
+    }
+
+    // Notes (tool consistency stage 7)
+    /// Write note `parent`'s pop-up from `p`: the Popup its /Popup already points at is updated
+    /// in place (keeping its object number and its other keys), else a new one is added at the
+    /// end of the page's /Annots (where other apps look for it; the end, so no other
+    /// annotation's position moves). /Parent to the note, the note's /Popup to it, and /F
+    /// without Print: pop-ups don't print (a callout is the tool for text that must).
+    fn write_popup(&mut self, page: usize, parent: ObjectId, p: &PopupSpec) -> Result<ObjectId, String> {
+        /// NoZoom and NoRotate (a fixed size and upright, as Vellum shows it); not Print.
+        const POPUP_FLAGS: i64 = 8 | 16;
+        let pid = self.page_id(page)?;
+        let is_popup = |d: &Dictionary| d.get(b"Subtype").ok().and_then(|o| o.as_name().ok()) == Some(&b"Popup"[..]);
+        let existing = self
+            .get(parent)
+            .and_then(|o| o.as_dict().ok())
+            .and_then(|d| d.get(b"Popup").ok())
+            .and_then(|o| o.as_reference().ok())
+            .filter(|id| self.get(*id).and_then(|o| o.as_dict().ok()).is_some_and(is_popup));
+        let mut d = existing.and_then(|id| self.get(id)).and_then(|o| o.as_dict().ok()).cloned().unwrap_or_default();
+        d.set("Type", "Annot");
+        d.set("Subtype", "Popup");
+        d.set("P", Object::Reference(pid));
+        d.set("Parent", Object::Reference(parent));
+        d.set("Rect", reals(&p.rect));
+        d.set("Open", p.open);
+        d.set("F", POPUP_FLAGS);
+        let id = match existing {
+            Some(id) => {
+                self.inc.new_document.set_object(id, d);
+                id
+            }
+            None => self.inc.new_document.add_object(d),
+        };
+        if !self.annots(page)?.iter().any(|e| e.id == Some(id)) {
+            self.slots(page)?;
+            self.annots_mut(page)?.push(Object::Reference(id));
+            self.slots(page)?.push(None);
+        }
+        self.inc.opt_clone_object_to_new_document(parent).map_err(|e| e.to_string())?;
+        match self.inc.new_document.get_object_mut(parent) {
+            Ok(Object::Dictionary(n)) => n.set("Popup", Object::Reference(id)),
+            _ => return Err("a note's pop-up has no note to belong to".into()),
+        }
+        Ok(id)
+    }
+
+    /// The positions in `entries` (a page's /Annots) of the Popups whose /Parent is `parent`.
+    fn popups_of(&self, entries: &[AnnotEntry], parent: ObjectId) -> Vec<usize> {
+        entries
+            .iter()
+            .filter(|e| e.subtype.as_deref() == Some("Popup"))
+            .filter(|e| {
+                e.id.and_then(|id| self.get(id)).and_then(|o| o.as_dict().ok()).and_then(|d| d.get(b"Parent").ok()).and_then(|o| o.as_reference().ok()) == Some(parent)
+            })
+            .map(|e| e.index)
+            .collect()
     }
 
     pub fn apply(&mut self, c: &Change) -> Result<(), String> {

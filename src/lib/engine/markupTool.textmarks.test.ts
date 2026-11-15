@@ -224,6 +224,26 @@ describe("note", () => {
     expect(only(doc, "note").text).toBe("");
   });
 
+  // Stage 7: pinned open or not, as the note editor and the pinned box set it.
+  it("starts unpinned; pinning and unpinning are each one undo step on that note", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("note");
+    click(t, v, [200, 150]);
+    click(t, v, [300, 250]);
+    const [a, b] = doc.markups.filter((x): x is MarkupOf<"note"> => x.kind === "note");
+    expect(a.pinned).toBeFalsy();
+    t.updateMarkup({ ...a, pinned: true });
+    expect((doc.byId(a.id) as MarkupOf<"note">).pinned).toBe(true);
+    expect((doc.byId(b.id) as MarkupOf<"note">).pinned).toBeFalsy();
+    t.updateMarkup({ ...(doc.byId(a.id) as MarkupOf<"note">), pinned: false });
+    expect((doc.byId(a.id) as MarkupOf<"note">).pinned).toBe(false);
+    t.undo();
+    expect((doc.byId(a.id) as MarkupOf<"note">).pinned).toBe(true);
+    t.undo();
+    expect((doc.byId(a.id) as MarkupOf<"note">).pinned).toBeFalsy();
+    expect(doc.markups.filter((x) => x.kind === "note")).toHaveLength(2);
+  });
+
   it("is dragged by its icon in Select", async () => {
     const { v, doc, t } = await setup();
     t.setTool("note");

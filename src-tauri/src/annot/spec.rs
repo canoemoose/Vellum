@@ -120,6 +120,22 @@ pub struct AnnotSpec {
     /// (annot/read.rs), for one that came with the file and may have no /NM to find it by.
     #[serde(default)]
     pub at: Option<usize>,
+
+    // Notes (tool consistency stage 7)
+    /// A note's pop-up: written as a Popup annotation (writer.rs `write_popup`), /Parent to this
+    /// one and this one's /Popup to it, never printed.
+    #[serde(default)]
+    pub popup: Option<PopupSpec>,
+}
+
+// Notes (tool consistency stage 7)
+/// A Popup annotation for a note: its /Rect in user space and /Open (the note pinned open).
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PopupSpec {
+    pub rect: [f64; 4],
+    #[serde(default)]
+    pub open: bool,
 }
 
 /// One change to save.

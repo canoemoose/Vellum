@@ -67,6 +67,13 @@ export interface AnnotSpec {
   // Existing annotations (phase 7b)
   /** The annotation this replaces, by its position in the page's /Annots as read: one from the file whose /NM isn't its id. */
   at?: number;
+
+  // Notes (tool consistency stage 7)
+  /**
+   * A note's pop-up, written as a Popup annotation beside it (/Parent to the note, the note's
+   * /Popup to it, not printed): /Rect in user space, /Open true when the note is pinned open.
+   */
+  popup?: { rect: [number, number, number, number]; open: boolean };
 }
 
 export type Change =

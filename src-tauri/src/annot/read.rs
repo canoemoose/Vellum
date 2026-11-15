@@ -70,6 +70,10 @@ pub struct FileAnnot {
     pub vellum: Option<String>,
     /// It has a /Measure dictionary.
     pub measured: bool,
+    // Notes (tool consistency stage 7)
+    /// Its /Popup's /Open (false when the pop-up has none), or None with no pop-up: a note's
+    /// pin. The Popup itself is never read as a markup of its own (NOT_MARKUPS).
+    pub popup_open: Option<bool>,
 }
 
 /// A page's annotations and the frame to map them with.
@@ -290,6 +294,10 @@ impl<'a> Reader<'a> {
                     })
                     .collect(),
             );
+        }
+        // Notes (stage 7): the pop-up's /Open is the note's pin.
+        if let Some(Object::Dictionary(pd)) = self.get(d, b"Popup") {
+            a.popup_open = Some(matches!(self.get(pd, b"Open"), Some(Object::Boolean(true))));
         }
         Some(a)
     }
