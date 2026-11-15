@@ -17,6 +17,15 @@
   import { DASHES, dashOption } from "../markup/dash";
   import { outFrom } from "../shell/popout";
   import { kindOf } from "../markup/kinds";
+  // Measuring
+  import { type MeasureFormat, type UnitMode, MAX_DECIMALS } from "../markup/measure";
+  const UNIT_OPTS: { key: UnitMode; name: string }[] = [
+    { key: "auto", name: "m from 1 m, else mm" },
+    { key: "mm", name: "Always mm" },
+    { key: "m", name: "Always m" },
+  ];
+  const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 1 ? "1 decimal" : `${i} decimals` }));
+  // End measuring
 
   interface Props {
     /** The kinds involved: the tool's, or the selected markups'. */
@@ -28,6 +37,9 @@
     /** Hide the line-end choices (a tool whose ends are fixed, such as Line). */
     noEnds?: boolean;
     // Measuring
+    /** Measurements: the label size and number format (what the tool draws, or the selection's). */
+    measure?: { labelSize: number; format: MeasureFormat } | null;
+    onMeasure?: (patch: { labelSize?: number; format?: MeasureFormat }) => void;
 
     // Stamps
 
@@ -274,6 +286,32 @@
       </div>
     </div>
   {/if}
+  <!-- Measuring -->
+  {#if p.measure && p.onMeasure && idp === "mk"}
+    {@const ms = p.measure}
+    {@const on = p.onMeasure}
+    <span class="sep" aria-hidden="true"></span>
+    <div class="prop" role="group" aria-label="Measurement">
+      <span class="k">Value</span>
+      <div class="controls">
+        <PopChoice label="Label size" options={SIZE_OPTS} value={SIZES.includes(ms.labelSize) ? String(ms.labelSize) : null} compact={narrow} {out} sample={labelSizeSample} onChange={(k) => on({ labelSize: Number(k) })} />
+        <PopChoice label="Units" options={UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={wordSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
+        <PopChoice label="Decimal places in metres" options={DECIMAL_OPTS} value={String(ms.format.decimals)} compact={narrow} {out} sample={wordSample} onChange={(k) => on({ format: { ...ms.format, decimals: Number(k) } })} />
+      </div>
+    </div>
+  {/if}
+{/snippet}
+
+<!-- Measuring -->
+{#snippet labelSizeSample(k: string | null, w: number)}
+  {#if k === null || w < 40}
+    <span class="num sz">{k ?? p.measure?.labelSize ?? 8}{w > 30 ? " pt" : ""}</span>
+  {:else}
+    <span class="sz-a" style:font-size="{Math.min(22, 7 + Number(k) * 0.45)}px">A</span>
+  {/if}
+{/snippet}
+{#snippet wordSample(k: string | null, _w: number)}
+  <span class="num sz">{k === "auto" ? "Auto" : k === null ? "" : /^\d$/.test(k) ? `${k} dp` : k}</span>
 {/snippet}
 
 <!-- A small on/off button with an icon (bold, italic, alignment...). -->

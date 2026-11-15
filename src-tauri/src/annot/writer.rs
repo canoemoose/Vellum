@@ -358,6 +358,13 @@ impl Writer {
             d.set(REEDIT_KEY, text(v));
         }
         // Measuring
+        if let Some(m) = &s.measure {
+            d.set("Measure", super::measure::measure_dict(m));
+        }
+        if s.caption == Some(true) {
+            d.set("Cap", true);
+            d.set("CP", Object::Name(b"Top".to_vec()));
+        }
 
         // Stamps
 

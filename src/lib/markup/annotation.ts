@@ -39,6 +39,10 @@ export interface AnnotSpec {
    */
   vellum?: string;
   // Measuring
+  /** A dimension's /Measure dictionary (dimension.ts MeasureSpec). */
+  measure?: { ratio: string; unit: string; factor: number; precision: number };
+  /** /Cap true and /CP /Top: a Line dimension shows its value as a caption above it. */
+  caption?: boolean;
 
   // Stamps
 

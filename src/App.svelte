@@ -3,7 +3,7 @@
   // Viewer and one canvas serve every tab: switching detaches the current document (it stays
   // open in the backend with its previews) and attaches the next. Shell logic that can be pure
   // lives in src/lib/shell/ with tests; this file wires it to the viewer and the window.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { getCurrentWindow, availableMonitors, primaryMonitor, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import TitleBar, { type TabView } from "./lib/components/TitleBar.svelte";
@@ -39,6 +39,12 @@
   import DebugOverlay from "./lib/components/DebugOverlay.svelte";
   import MarqueeOverlay from "./lib/components/MarqueeOverlay.svelte";
   // Measuring
+  import CalibrateDialog from "./lib/components/dialogs/CalibrateDialog.svelte";
+  import Loupe from "./lib/components/Loupe.svelte";
+  import { type MeasureFormat, type PageMeasure, setMeasureSource } from "./lib/markup/measure";
+  import { drawingLine, isMeasurement, measurementLine, resizeLabels, reformat, revalue } from "./lib/markup/measurements";
+  import { calibratePaperMm } from "./lib/markup/kinds/measureCalibrate";
+  import { type PageOverrides, fromRemembered, pageScaleText, rememberPages, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
 
   // Stamps
 
@@ -322,7 +328,176 @@
   });
 
   // Later markup phases add their state and handlers inside their own block:
-  // Measuring
+  // Measuring (phase 4: per-page scales, calibration, live values, the loupe; see
+  // docs/editing-phase4-scope.md)
+
+  /** A tab's own per-page scales, remembered per file. */
+  function pagesOf(t: Tab | null | undefined): PageOverrides {
+    return t ? fromRemembered(settings.measure.pageScales[pathKey(t.path)]) : {};
+  }
+
+  /** /UserUnit per page, by tab id: read when measuring first starts on a tab (empty while read). */
+  let userUnits = $state<Record<number, number[]>>({});
+
+  /** How a page of a tab measures: its scale (own or the document's) and its /UserUnit. */
+  function pageMeasure(t: Tab | null | undefined, page: number): PageMeasure {
+    if (!t) return { ratio: null, userUnit: 1 };
+    return { ratio: scaleForPage(t.scale, pagesOf(t), page)?.ratio ?? null, userUnit: userUnits[t.id]?.[page] ?? 1 };
+  }
+
+  // New measurements take their page's scale, and the format and label size set in the bar.
+  setMeasureSource({ page: (p) => pageMeasure(active, p), format: () => settings.measure.format, labelSize: () => settings.measure.labelSize });
+
+  /** A measuring tool (Calibrate included) is out. */
+  const measuring = $derived(toolById(toolNow)?.group === "measure");
+
+  /** Two points picked with Calibrate, waiting for the real length (CalibrateDialog). */
+  let calib = $state<{ tabId: number; page: number; paperMm: number } | null>(null);
+
+  /** Asked before a drawn markup is kept: Calibrate's points go to the dialog instead. */
+  function keepDrawn(m: Markup): boolean {
+    if (m.kind === "measureCalibrate") {
+      const t = active;
+      if (t) calib = { tabId: t.id, page: m.page, paperMm: calibratePaperMm(m) };
+      return false;
+    }
+    // An angle dragged out as a line has two points: no angle.
+    if (m.kind === "measureAngle") return m.vertices.length === 3;
+    return true;
+  }
+  $effect(() => {
+    if (viewer && markupTool) markupTool.keep = keepDrawn;
+  });
+
+  /** Set (or with null, clear) one page's own scale, remembered for the file. */
+  function setPageScale(t: Tab, page: number, ratio: number | null) {
+    const pages = withPageScale(pagesOf(t), page, ratio === null ? null : { ratio, source: "manual" });
+    settings.measure = { ...settings.measure, pageScales: rememberPages(settings.measure.pageScales, pathKey(t.path), pages) };
+    save();
+  }
+
+  function applyCalibration(ratio: number, pageOnly: boolean) {
+    const c = calib;
+    calib = null;
+    const t = c ? tabById(c.tabId) : null;
+    if (!c || !t) return;
+    if (pageOnly) setPageScale(t, c.page, ratio);
+    else {
+      // Every page: the document's scale, and no page keeps one of its own.
+      applyScale(ratio);
+      settings.measure = { ...settings.measure, pageScales: rememberPages(settings.measure.pageScales, pathKey(t.path), {}) };
+      save();
+    }
+  }
+
+  // Read the pages' /UserUnit once measuring starts on a PDF (nearly always 1: a sheet over
+  // 200 inches uses it). Not on open, so opening never waits for it.
+  $effect(() => {
+    const t = active;
+    if (!measuring || !t || t.kind !== "pdf" || t.status !== "open" || untrack(() => userUnits[t.id])) return;
+    const id = t.id;
+    userUnits = { ...untrack(() => userUnits), [id]: [] };
+    invoke<number[]>("measure_user_units", { path: t.path, password: t.password })
+      .then((u) => {
+        if (u.some((x) => x !== 1)) console.info("measuring: pages with /UserUnit:", u.map((x, i) => (x !== 1 ? `${i + 1}=${x}` : "")).filter(Boolean).join(" "));
+        userUnits = { ...userUnits, [id]: u };
+      })
+      .catch((e) => console.warn("measuring: couldn't read /UserUnit, taking 1:", String(e)));
+  });
+
+  /**
+   * Measurements follow their page's scale and the number format: whenever either changes (or
+   * an undo brings back older values), re-value them in place, with no undo step of their own.
+   * A changed scale says how many it re-valued.
+   */
+  const scaleSeen = new Map<number, string>();
+  $effect(() => {
+    void markVersion;
+    const t = active;
+    const v = viewer;
+    if (!t || t.status !== "open" || !v || !markupTool) return;
+    const sig = JSON.stringify([t.scale?.ratio ?? null, settings.measure.pageScales[pathKey(t.path)] ?? null, userUnits[t.id] ?? null]);
+    const fmt: MeasureFormat = settings.measure.format;
+    untrack(() => {
+      const r = revalue(t.marks.markups, null, (p) => pageMeasure(t, p));
+      const f = reformat(r.markups, fmt);
+      const before = scaleSeen.get(t.id);
+      scaleSeen.set(t.id, sig);
+      if (f.markups !== t.marks.markups) {
+        t.marks.history.replace(f.markups);
+        v.requestFrame();
+        onMarkupsChanged();
+      }
+      if (before !== undefined && before !== sig) {
+        const msg = revaluedText(r.changed);
+        if (msg) notify(msg);
+      }
+    });
+  });
+
+  /** The properties bar's measuring section: label size and number format. */
+  function onMeasure(patch: { labelSize?: number; format?: MeasureFormat }) {
+    settings.measure = { ...settings.measure, ...patch };
+    save();
+    const t = active;
+    const mt = markupTool;
+    if (patch.labelSize && t && mt) {
+      const next = resizeLabels(t.marks.markups, new Set(mt.selected().map((m) => m.id)), patch.labelSize);
+      if (next !== t.marks.markups) {
+        t.marks.history.push(next);
+        viewer?.requestFrame();
+      }
+    }
+    // A new format reaches every measurement through the effect above.
+    onMarkupsChanged();
+  }
+
+  const measureStrip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    if (!mt) return {};
+    const tool = toolById(mt.tool);
+    const ms = { labelSize: settings.measure.labelSize, format: settings.measure.format };
+    if (tool?.kind) return tool.group === "measure" && tool.kind !== "measureCalibrate" ? { measure: ms, onMeasure } : {};
+    const sel = mt.selected();
+    if (!sel.length || !sel.every(isMeasurement)) return {};
+    return { measure: { ...ms, labelSize: sel[0].labelSize }, onMeasure };
+  });
+
+  const measureBar = $derived.by(() => {
+    void markVersion;
+    void ui.cursor;
+    const t = active;
+    if (!hasDoc || !t) return {};
+    const mt = markupTool;
+    const d = mt?.drawingShape();
+    let line = d ? drawingLine(d.markup, d.segment) : null;
+    if (!line && mt) {
+      const sel = mt.selected();
+      if (sel.length === 1) line = measurementLine(sel[0]);
+    }
+    const noScale = measuring && pageMeasure(t, ui.page).ratio === null;
+    return {
+      scaleText: pageScaleText(t.scale, pagesOf(t), ui.page),
+      measure: line,
+      onCalibrate: noScale && toolNow !== "measureCalibrate" ? () => setTool("measureCalibrate") : null,
+    };
+  });
+
+  const measureScaleDialog = $derived.by(() => {
+    const t = active;
+    if (!t?.info || t.info.numPages < 2) return {};
+    const page = ui.page;
+    return {
+      page: page + 1,
+      pageScale: pagesOf(t)[page] ?? null,
+      onApplyPage: (r: number | null) => {
+        setPageScale(t, page, r);
+        dialog = null;
+      },
+    };
+  });
+  // End measuring
 
   // Stamps
 
@@ -1582,7 +1757,7 @@
     const c = ui.cursor;
     const s = c ? sizes[c.page] : null;
     if (!c || !s) return "";
-    return cursorText(c.x, c.y, s.h, active?.scale?.ratio ?? null, settings.units);
+    return cursorText(c.x, c.y, s.h, pageMeasure(active, c.page).ratio, settings.units); // Measuring: the page's own scale
   });
   const pageSizeLabel = $derived.by(() => {
     const s = sizes[ui.page];
@@ -1765,6 +1940,7 @@
              so the drawing doesn't move under the pointer. -->
         <PropertiesStrip
           kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label} noEnds={strip.noEnds}
+          {...measureStrip}
           dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
           onStyle={stripStyle} onText={stripText}
           onDock={(d, done) => {
@@ -1787,6 +1963,16 @@
         {/key}
       {/if}
       <!-- Measuring -->
+      {#if measuring && hasDoc}
+        <Loupe />
+      {/if}
+      {#if calib && active?.info && calib.tabId === active.id}
+        <CalibrateDialog
+          paperMm={calib.paperMm} page={calib.page + 1} numPages={active.info.numPages} current={pageMeasure(active, calib.page).ratio}
+          onApply={applyCalibration} onClose={() => (calib = null)}
+        />
+      {/if}
+      <!-- End measuring -->
       <!-- Stamps -->
       <!-- Text markups -->
       {#if chrome && selBar}
@@ -1815,6 +2001,7 @@
       cursor={cursorLabel}
       pageSize={pageSizeLabel}
       onScale={openScale}
+      {...measureBar}
     />
   {/if}
 </div>
@@ -1847,7 +2034,7 @@
 {/if}
 
 {#if dialog === "scale" && active?.info}
-  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} />
+  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} {...measureScaleDialog} />
 {:else if dialog === "properties" && active?.info}
   <PropertiesDialog
     path={active.path}

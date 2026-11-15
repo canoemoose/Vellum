@@ -1,0 +1,111 @@
+// Measurements as a whole: which markups are measurements, their two values as text (for the
+// status bar and the markups list, so neither needs measuring code of its own), and re-valuing
+// them when a page's scale or the number format changes. Pure. Not a kind and not a leaf: it
+// imports the measuring kinds, as kinds/index.ts does. See docs/editing-phase4-scope.md.
+
+import type { Markup, MarkupKind } from "./base";
+import { type MeasureFormat, type PageMeasure, formatPaper, formatScale } from "./measure";
+import { pageMeasureOf } from "./dimension";
+import { type MeasureLengthMarkup, lengthValues } from "./kinds/measureLength";
+import { type MeasurePathMarkup, pathValues } from "./kinds/measurePath";
+import { type MeasureAreaMarkup, areaValues } from "./kinds/measureArea";
+import { type MeasureAngleMarkup, angleLabel } from "./kinds/measureAngle";
+import { type MeasureCalibrateMarkup, calibratePaperMm } from "./kinds/measureCalibrate";
+
+/** The kinds that measure (Calibrate draws like one but is never kept). */
+export const MEASURE_KINDS: MarkupKind[] = ["measureLength", "measurePath", "measureArea", "measureAngle"];
+
+export type Measurement = MeasureLengthMarkup | MeasurePathMarkup | MeasureAreaMarkup | MeasureAngleMarkup;
+
+export const isMeasurement = (m: Markup): m is Measurement => MEASURE_KINDS.includes(m.kind);
+
+/** The scale part of a readout: "at 1:100", or "no scale set". */
+const atScale = (pm: PageMeasure) => (pm.ratio === null ? "no scale set" : `at ${formatScale(pm.ratio)}`);
+
+/**
+ * A measurement's two values as text: real-world at its scale ("12.40 m at 1:100"; with no
+ * scale, "No scale set") and on paper ("124.0 mm on paper"). An angle reads the same at any
+ * scale, so it has one value and no paper one. Null for anything that isn't a measurement.
+ * For the markups list (phase 7) and the status bar.
+ */
+export function measurementText(m: Markup): { real: string; paper: string | null } | null {
+  if (!isMeasurement(m)) return null;
+  const pm = pageMeasureOf(m);
+  switch (m.kind) {
+    case "measureLength":
+    case "measurePath": {
+      const v = m.kind === "measureLength" ? lengthValues(m) : pathValues(m);
+      return { real: v.real === null ? "No scale set" : `${v.real} ${atScale(pm)}`, paper: `${v.paper} on paper` };
+    }
+    case "measureArea": {
+      const v = areaValues(m);
+      const crosses = v.crosses ? " (the outline crosses itself)" : "";
+      return {
+        real: v.real === null ? "No scale set" : `${v.real}, perimeter ${v.realPerimeter} ${atScale(pm)}${crosses}`,
+        paper: `${v.paper}, perimeter ${v.paperPerimeter} on paper${v.real === null ? crosses : ""}`,
+      };
+    }
+    case "measureAngle":
+      return { real: angleLabel(m), paper: null };
+  }
+}
+
+/** The status bar's line for a measurement: "12.40 m at 1:100, 124.0 mm on paper". */
+export function measurementLine(m: Markup): string | null {
+  const t = measurementText(m);
+  if (!t) return null;
+  if (t.paper === null) return t.real;
+  return t.real === "No scale set" ? `${t.paper} (no scale set)` : `${t.real}, ${t.paper}`;
+}
+
+/**
+ * The status bar's line while one is being drawn: the measurement so far, and for a polyline
+ * the segment under the pointer ("segment 2.10 m"); for Calibrate, the distance picked.
+ */
+export function drawingLine(m: Markup, segment: { from: [number, number]; to: [number, number] } | null): string | null {
+  if (m.kind === "measureCalibrate") return `${formatPaper(calibratePaperMm(m as MeasureCalibrateMarkup))} on paper: click the other end`;
+  const line = measurementLine(m);
+  if (!line || m.kind !== "measurePath" || !segment) return line;
+  const seg = lengthValues({ ...(m as MeasurePathMarkup), kind: "measureLength", from: segment.from, to: segment.to } as unknown as MeasureLengthMarkup);
+  return `${line}; this segment ${seg.real ?? `${seg.paper} on paper`}`;
+}
+
+/**
+ * The markups with every measurement on `pages` (all pages, if null) valued at that page's
+ * measure from `pageOf`, and how many changed value. The same list when none did, so nothing
+ * is recorded for no change.
+ */
+export function revalue(markups: Markup[], pages: Set<number> | null, pageOf: (page: number) => PageMeasure): { markups: Markup[]; changed: number } {
+  let changed = 0;
+  const out = markups.map((m) => {
+    if (!isMeasurement(m) || (pages && !pages.has(m.page))) return m;
+    const pm = pageOf(m.page);
+    if (m.scale === pm.ratio && (m.userUnit ?? 1) === pm.userUnit) return m;
+    // An angle doesn't change value with the scale, but it keeps its page's like the rest.
+    if (m.kind !== "measureAngle") changed++;
+    return { ...m, scale: pm.ratio, userUnit: pm.userUnit, meta: { ...m.meta, modified: new Date().toISOString() } };
+  });
+  return { markups: changed || out.some((m, i) => m !== markups[i]) ? out : markups, changed };
+}
+
+/** The markups with every measurement written in format `fmt`, and how many changed. */
+export function reformat(markups: Markup[], fmt: MeasureFormat): { markups: Markup[]; changed: number } {
+  let changed = 0;
+  const out = markups.map((m) => {
+    if (!isMeasurement(m) || (m.fmt.units === fmt.units && m.fmt.decimals === fmt.decimals)) return m;
+    changed++;
+    return { ...m, fmt: { ...fmt }, meta: { ...m.meta, modified: new Date().toISOString() } };
+  });
+  return { markups: changed ? out : markups, changed };
+}
+
+/** The markups with every selected measurement's label at `size` points. */
+export function resizeLabels(markups: Markup[], ids: Set<string>, size: number): Markup[] {
+  let any = false;
+  const out = markups.map((m) => {
+    if (!ids.has(m.id) || !isMeasurement(m) || m.labelSize === size) return m;
+    any = true;
+    return { ...m, labelSize: size, meta: { ...m.meta, modified: new Date().toISOString() } };
+  });
+  return any ? out : markups;
+}
