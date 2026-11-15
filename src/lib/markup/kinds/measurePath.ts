@@ -5,7 +5,7 @@
 
 import type { MarkupBase, Pt } from "../base";
 import { userPoints } from "../annotation";
-import { distToPolyline, dragPoint, movePt, pointsBounds, vertexHandles } from "../shape";
+import { distToPolyline, dragPointGrip, movePt, pointGrips, pointsBounds } from "../shape";
 import { formatLength, formatPaper, paperMm, pathLength, realMm, uprightDir } from "../measure";
 import { type MeasureFields, MEASURE_STYLE, barHalf, dimensionLine, labelAlong, measureSpec, newMeasure, pageMeasureOf, settleMeasure } from "../dimension";
 import { defineKind } from "./kind";
@@ -69,8 +69,8 @@ export const measurePath = defineKind<MeasurePathMarkup>({
   },
   bounds: (m) => pointsBounds(m.vertices),
   hits: (m, p, t) => distToPolyline(p, m.vertices, false) <= t,
-  handles: (m) => vertexHandles(m.vertices),
-  dragHandle: (m, h, p, constrain) => dragPoint(m, h, p, constrain, false),
+  handles: (m) => pointGrips(m.vertices),
+  dragHandle: (m, h, p, constrain, minSize) => dragPointGrip(m, h, p, constrain, minSize, false),
   moveBy: (m, dx, dy) => ({ ...m, vertices: m.vertices.map((v) => movePt(v, dx, dy)) }),
   finish: settleMeasure,
 });

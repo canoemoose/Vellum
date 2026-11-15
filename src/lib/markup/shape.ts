@@ -44,6 +44,8 @@ export type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "from
 export interface Handle {
   id: HandleId;
   at: Pt;
+  /** Stage 6: drawn round (a corner on the shape), else square (a grip on its box). */
+  round?: boolean;
 }
 
 /** A box's eight grips (or its four corners only). */
@@ -144,6 +146,56 @@ export function mapPoints(pts: Pt[], from: Rect, to: Rect): Pt[] {
   const sy = (to[3] - to[1]) / Math.max(1e-6, from[3] - from[1]);
   return pts.map((v) => [to[0] + (v[0] - from[0]) * sx, to[1] + (v[1] - from[1]) * sy]);
 }
+
+// Stage 6 [A11]: shapes of points (polygon, cloud, polyline, area, polyline length) resize by
+// their box as well as by their corners.
+
+const BOX_GRIP = /^(nw|ne|se|sw|n|s|e|w)$/;
+
+/**
+ * The grips of a shape of points: a round one on each corner, then its box's eight square ones.
+ * Corners come first, so where one sits on a box grip (a rectangle's corner) the corner wins.
+ */
+export function pointGrips(pts: Pt[]): Handle[] {
+  return [...vertexHandles(pts).map((h) => ({ ...h, round: true })), ...boxHandles(pointsBounds(pts))];
+}
+
+/**
+ * A shape of points with grip `h` dragged to p: a corner moves (Shift snaps it to 15 degrees
+ * from the one before), a box grip scales every point with the box (Shift keeps proportions).
+ */
+export function dragPointGrip<M extends { vertices: Pt[] }>(m: M, h: HandleId, p: Pt, constrain: boolean, minSize: number, closed: boolean): M {
+  if (vertexIndex(h, m.vertices.length) >= 0) return dragPoint(m, h, p, constrain, closed);
+  if (!BOX_GRIP.test(h)) return m;
+  const old = pointsBounds(m.vertices);
+  return { ...m, vertices: mapPoints(m.vertices, old, resizeBox(old, h, p, constrain, minSize)) };
+}
+
+/**
+ * Box `old` with grip `h` dragged to p. Shift keeps the proportions: from a corner grip as
+ * dragBox does, from a side grip by scaling the other way too, about the box's middle. A box
+ * with no width or no height (a straight polyline) stays that way.
+ */
+export function resizeBox(old: Rect, h: HandleId, p: Pt, constrain: boolean, minSize: number): Rect {
+  const flatX = old[2] - old[0] < 1e-6, flatY = old[3] - old[1] < 1e-6;
+  const keep = constrain && !flatX && !flatY;
+  let r = dragBox(old, h, p, keep, minSize);
+  if (keep && h.length === 1) {
+    if (h === "e" || h === "w") {
+      const half = ((old[3] - old[1]) * (r[2] - r[0])) / (old[2] - old[0]) / 2, cy = (old[1] + old[3]) / 2;
+      r = [r[0], cy - half, r[2], cy + half];
+    } else {
+      const half = ((old[2] - old[0]) * (r[3] - r[1])) / (old[3] - old[1]) / 2, cx = (old[0] + old[2]) / 2;
+      r = [cx - half, r[1], cx + half, r[3]];
+    }
+  }
+  if (flatX) r = [old[0], r[1], old[2], r[3]];
+  if (flatY) r = [r[0], old[1], r[2], old[3]];
+  return r;
+}
+
+/** Whether `h` is one of a box's eight grips. */
+export const isBoxGrip = (h: HandleId): boolean => BOX_GRIP.test(h);
 
 /**
  * Reduce a freehand stroke (Ramer-Douglas-Peucker): drop points within `tol` points of the

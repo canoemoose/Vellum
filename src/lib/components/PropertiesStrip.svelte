@@ -29,6 +29,18 @@
   const UNIT_SAMPLE: Record<string, [string, string]> = { auto: ["Auto", "mm / m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"] };
   const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 0 ? "Whole numbers" : i === 1 ? "1 decimal place" : `${i} decimal places` }));
   // End measuring
+  // Stage 6: shapes. Sides, 3 to 12, each shown as the polygon it makes.
+  const SIDE_NAMES: Record<number, string> = { 3: "Triangle", 4: "Square", 5: "Pentagon", 6: "Hexagon", 8: "Octagon" };
+  const SIDES_OPTS = Array.from({ length: 10 }, (_, i) => i + 3).map((n) => ({ key: String(n), name: SIDE_NAMES[n] ? `${n} sides (${SIDE_NAMES[n].toLowerCase()})` : `${n} sides` }));
+  /** A regular polygon of n sides, flat at the bottom, in a 14 px box (an SVG path). */
+  function polyPath(n: number): string {
+    const a0 = Math.PI / 2 - Math.PI / n;
+    const pts = Array.from({ length: n }, (_, k) => {
+      const a = a0 + (2 * Math.PI * k) / n;
+      return `${(7 + 6 * Math.cos(a)).toFixed(2)} ${(7.4 + 6 * Math.sin(a)).toFixed(2)}`;
+    });
+    return `M${pts.join("L")}Z`;
+  }
 
   interface Props {
     /** Which controls show (markup/bar.ts, rule 6). */
@@ -45,6 +57,11 @@
     onMeasure?: (patch: { labelSize?: number; format?: MeasureFormat }) => void;
 
     // Stamps
+
+    // Stage 6: shapes
+    /** A regular polygon's sides (the tool's remembered Sides, or the selection's). */
+    sides?: number | null;
+    onSides?: (n: number) => void;
 
     // Text markups
     dock: Dock;
@@ -267,6 +284,18 @@
     </div>
   {/if}
 
+  <!-- Stage 6: a regular polygon's sides (gone once a corner is changed by hand: rule 6). -->
+  {#if bar.sides && p.onSides}
+    {@const set = p.onSides}
+    <span class="sep" aria-hidden="true"></span>
+    <div class="prop">
+      <span class="k">Sides</span>
+      <div class="controls">
+        <PopChoice label="Sides" options={SIDES_OPTS} value={p.sides ? String(p.sides) : null} compact={narrow} {out} sample={sidesSample} onChange={(k) => set(Number(k))} />
+      </div>
+    </div>
+  {/if}
+
   {#if isText && text}
     {@const t = fullText(text)}
     <span class="sep" aria-hidden="true"></span>
@@ -329,6 +358,15 @@
 {#snippet decimalSample(k: string | null, w: number)}
   {@const d = Number(k ?? p.measure?.format.decimals ?? 2)}
   <span class="num sz">{(w < 60 ? 0 : 12.4).toFixed(d)}</span>
+{/snippet}
+
+<!-- Stage 6: in the box, the number; in the list, the polygon it makes. -->
+{#snippet sidesSample(k: string | null, w: number)}
+  {#if k === null || w < 40}
+    <span class="num sz">{k ?? p.sides ?? ""}</span>
+  {:else}
+    <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d={polyPath(Number(k))} fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
+  {/if}
 {/snippet}
 
 <!-- A small on/off button with an icon (bold, italic, alignment...). -->

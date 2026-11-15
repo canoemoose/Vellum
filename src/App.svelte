@@ -21,7 +21,7 @@
   import { toolById, toolForKey } from "./lib/markup/tools";
   import { barFor, subjectOf, subjectOfTool } from "./lib/markup/bar";
   import { MarkupDoc } from "./lib/engine/markupDoc";
-  import { confirm as confirmSave, styleFor, textFor } from "./lib/markup/prefs";
+  import { confirm as confirmSave, styleFor, textFor, sidesFor } from "./lib/markup/prefs";
   import type { Frame } from "./lib/markup/pdf";
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, Style, TextStyle } from "./lib/markup/types";
@@ -301,7 +301,7 @@
     if (tool?.kind) {
       const bar = barFor([subjectOfTool(tool)]);
       if (!bar) return null;
-      return { bar, kinds: [tool.kind], tool: tool.id, style: styleFor(settings.markup, tool.id), text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool` };
+      return { bar, kinds: [tool.kind], tool: tool.id, style: styleFor(settings.markup, tool.id), text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool`, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
     }
     const sel = mt.selected();
     // Several kinds: only the controls they all have; none (a stamp, an annotation Vellum can't redraw), no bar.
@@ -309,8 +309,21 @@
     if (!bar) return null;
     const kinds = [...new Set(sel.map((m) => m.kind))];
     const t = sel.find((m) => "textStyle" in m) as Extract<Markup, { textStyle: TextStyle }> | undefined;
-    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected` };
+    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected`, sides: bar.sides ? mt.selectedSides() : null };
   });
+
+  /** Stage 6: Sides set in the bar: remembered with the tool out (rule 7), and the selection's regular polygons change. */
+  function stripSides(n: number) {
+    const mt = markupTool;
+    if (!mt) return;
+    const id = strip?.tool;
+    if (id) {
+      settings.markup = { ...settings.markup, sides: { ...settings.markup.sides, [id]: n } };
+      save();
+    }
+    mt.setSides(n);
+    markVersion++;
+  }
 
   /** The properties bar's dock while it's being dragged (saved when let go). */
   let liveDock = $state<Dock | null>(null);
@@ -1900,6 +1913,7 @@
           }),
         },
         notify,
+        sides: (tool) => sidesFor(settings.markup, tool), // Stage 6
       });
       markupTool = mt;
       // With --debug, scripted checks (DevTools) can reach the engine. Never in a normal launch.
@@ -1971,10 +1985,18 @@
             };
             return;
           }
+          // Stage 6: on a selected shape's corner, remove it (never below the fewest it takes).
+          const hr = host.getBoundingClientRect(); // client to canvas coordinates, as input.ts gives the left button
+          const corner = mt.cornerAt(x - hr.left, y - hr.top);
+          const cornerItems: MenuItem[] = corner ? [{ label: "Remove corner", disabled: !corner.removable, action: () => mt.removeCorner(corner.id, corner.index) }] : [];
           // Measuring: the rare case of every measurement in the file taking one's units and decimals.
           const m = mt.tool === "select" ? mt.selected().find(isMeasurement) : undefined;
           if (m) {
-            contextMenu = { x, y, items: [{ label: "Apply its units and decimals to all measurements", action: () => formatAllLike(m.fmt) }] };
+            contextMenu = { x, y, items: [...cornerItems, { label: "Apply its units and decimals to all measurements", action: () => formatAllLike(m.fmt) }] };
+            return;
+          }
+          if (cornerItems.length) {
+            contextMenu = { x, y, items: cornerItems };
             return;
           }
           if (!tt.hasSelection) return;
@@ -2292,6 +2314,7 @@
         <PropertiesStrip
           bar={strip.bar} kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label}
           {...measureStrip}
+          sides={strip.sides} onSides={stripSides}
           dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
           onStyle={stripStyle} onText={stripText}
           onDock={(d, done) => {

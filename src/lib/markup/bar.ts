@@ -3,13 +3,15 @@
 // something; with several kinds selected, only the controls they all have. Pure.
 
 import { type Markup, type MarkupKind, arrowEnds } from "./base";
-import { kindOf } from "./kinds";
+import { defOf, kindOf } from "./kinds";
 import type { ToolDef } from "./tools";
 
 /** What the bar is for: a kind, and whether it's a plain line (an arrow kind with no ends). */
 export interface Subject {
   kind: MarkupKind;
   line?: boolean;
+  /** Stage 6: it has a number of sides to change (a regular polygon, or the tool that drags one). */
+  sides?: boolean;
 }
 
 /**
@@ -24,11 +26,16 @@ export interface Bar {
   ends: "none" | "all" | "arrow";
   fill: boolean;
   text: boolean;
+  /** Stage 6: Sides, for a regular polygon. */
+  sides: boolean;
 }
 
-export const subjectOfTool = (t: ToolDef): Subject => ({ kind: t.kind!, line: t.preset?.ends !== undefined });
+export const subjectOfTool = (t: ToolDef): Subject => {
+  const d = kindOf(t.kind!).draw;
+  return { kind: t.kind!, line: t.preset?.ends !== undefined, sides: d.gesture === "points" && d.drag === "regular" };
+};
 
-export const subjectOf = (m: Markup): Subject => ({ kind: m.kind, line: m.kind === "arrow" && arrowEnds(m.style).every((e) => e === "none") });
+export const subjectOf = (m: Markup): Subject => ({ kind: m.kind, line: m.kind === "arrow" && arrowEnds(m.style).every((e) => e === "none"), sides: (defOf(m).sides?.(m) ?? null) !== null });
 
 /** One subject's controls, or null when nothing in the bar does anything for it. */
 function controlsOf(s: Subject): Bar | null {
@@ -43,6 +50,7 @@ function controlsOf(s: Subject): Bar | null {
     ends: !c.ends || s.line ? "none" : s.kind === "arrow" ? "arrow" : "all",
     fill: c.fill,
     text: c.text,
+    sides: !!s.sides,
   };
 }
 
@@ -61,6 +69,7 @@ export function barFor(subjects: Subject[]): Bar | null {
           ends: bar.ends === "none" || b.ends === "none" ? "none" : bar.ends === "arrow" || b.ends === "arrow" ? "arrow" : "all",
           fill: bar.fill && b.fill,
           text: bar.text && b.text,
+          sides: bar.sides && b.sides,
         }
       : b;
   }

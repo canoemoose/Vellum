@@ -9,6 +9,7 @@ import type { Op } from "../draw";
 import type { Handle, HandleId } from "../shape";
 import type { AnnotSpec } from "../annotation";
 import type { Frame } from "../pdf";
+import type { Regular } from "../regular";
 
 /** The geometry a gesture gives a new markup: everything but what every markup has. */
 export type Shape<M extends Markup> = Omit<M, "id" | "page" | "style" | "meta" | "kind">;
@@ -16,6 +17,8 @@ export type Shape<M extends Markup> = Omit<M, "id" | "page" | "style" | "meta" |
 export interface DrawContext {
   /** The text style new text takes (the properties bar's). */
   textStyle: TextStyle;
+  /** Stage 6: dragged out as a regular polygon (`drag: "regular"`): its centre, size, turn and sides. */
+  regular?: Regular;
 }
 
 /**
@@ -40,12 +43,15 @@ export type Draw<M extends Markup> =
    * the last point, and a right-click offers all three. Shift toggles the lock on each point from
    * the last. `closed`: a shape (the rubber band shows the closing edge, and a click on the first
    * point also finishes). `min`: the fewest points it takes. Pressing and dragging instead makes
-   * one in a go: `drag` "box" a rectangle of points (Shift squares it), "line" two points.
+   * one in a go: `drag` "box" a rectangle of points (Shift squares it), "line" two points,
+   * "regular" (stage 6) a regular polygon from the centre out, a corner on the pointer (Shift
+   * puts a flat side at the bottom as viewed), handed to `make` as its corners with
+   * `ctx.regular`.
    * `max`: it finishes by itself on that many points (a line's two, an angle's three).
    * `say`: how its points read in the tooltip, where `max` gives them meanings ("click the
    * corner, then each arm's end").
    */
-  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line"; lock?: "ortho"; say?: string }
+  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" | "regular"; lock?: "ortho"; say?: string }
   /** Freehand: the pointer's path while pressed, simplified when let go. Shift draws it straight. */
   | { gesture: "freehand"; make(strokes: Pt[][]): Shape<M> }
   /**
@@ -94,6 +100,13 @@ export interface KindDef<M extends Markup = Markup> {
   /** Grip `h` dragged to p; `constrain` is Shift. Stays at least minSize where that applies. */
   dragHandle(m: M, h: HandleId, p: Pt, constrain: boolean, minSize: number): M;
   moveBy(m: M, dx: number, dy: number): M;
+  // Stage 6: shapes
+  /** Its number of sides, while that can still be changed (a regular polygon); else null. */
+  sides?(m: M): number | null;
+  /** The same shape with another number of sides (same centre, size and turn). */
+  withSides?(m: M, sides: number): M;
+  /** Its corners were changed by hand (one added or removed): a regular polygon goes freeform. */
+  freeform?(m: M): M;
   /** A new markup made whole once its gesture ends (a text box grown to fit). */
   finish?(m: M): M;
   /** After it's moved or a grip is let go. */
