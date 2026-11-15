@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4 and 9.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4, 6 and 9.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -253,7 +253,7 @@ Where: `markup/kinds/measure*.ts`, `markup/measure.ts`, `markup/dimension.ts`,
 - **A measurement pasted onto a page with another scale** takes that page's scale at once
   [A14]. `revalue` exists; make sure paste goes through it.
 
-## Stage 6: shapes
+## Stage 6: shapes ✓
 
 - **Polygon: drag with Sides** [D11].
   - Dragging with Polygon makes a regular polygon, from the centre out, turning to follow
@@ -272,6 +272,20 @@ Where: `markup/kinds/measure*.ts`, `markup/measure.ts`, `markup/dimension.ts`,
   the shape. Shift keeps proportions.
 - **Adding and removing corners** [A11]: double-click an edge adds a corner; the
   right-click menu on a corner removes it.
+
+Built (as done): Polygon's drag is a gesture option (`drag: "regular"`): a corner on the
+pointer, Shift a flat side at the bottom as viewed (down worked out from the viewer, so it
+follows the quarter turns). Sides is remembered per tool (`settings.markup.sides`) and
+changes a selected regular polygon in one undo step, keeping centre, size and turn. The
+regular parameters ride only in Vellum's saved copy (`/Vertices` unchanged) and count only
+while they match the corners, so older and foreign polygons load freeform. A polygon also
+goes freeform when a corner is added or removed or its box is stretched out of proportion
+(moving or a Shift resize keeps it regular). The five shapes of points use `pointGrips` /
+`dragPointGrip` (`markup/shape.ts`): round corner grips, the box's eight square grips and a
+dashed outline; Shift keeps proportions from side grips too; where a corner sits on a box
+grip the corner wins. Corners (`markup/corners.ts`, chosen by gesture: points with no fixed
+count) never go below 3 closed or 2 open. The pen keeps its four corner grips (the brief's
+"eight, as a pen stroke does" was not quite what the pen has).
 
 ## Stage 7: notes
 
