@@ -28,6 +28,12 @@ const SAMPLES: { [K in MarkupKind]: () => MarkupOf<K> } = {
   ellipse: () => mk("ellipse", { rect: [100, 100, 200, 150] }),
   polyline: () => mk("polyline", { vertices: [[100, 100], [150, 150], [200, 100]] }),
   polygon: () => mk("polygon", { vertices: [[100, 100], [200, 100], [150, 150]] }),
+  // Measuring
+  measureLength: () => mk("measureLength", { from: [100, 100], to: [200, 150], scale: 100, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
+  measurePath: () => mk("measurePath", { vertices: [[100, 100], [150, 150], [200, 100]], scale: 100, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
+  measureArea: () => mk("measureArea", { vertices: [[100, 100], [200, 100], [150, 150]], scale: 100, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
+  measureAngle: () => mk("measureAngle", { vertices: [[200, 100], [100, 100], [150, 150]], scale: null, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
+  measureCalibrate: () => mk("measureCalibrate", { from: [100, 100], to: [200, 150], scale: null, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 }),
 };
 
 const paths = (m: Markup) => opsFor(m).filter((o): o is PathOp => o.t === "path");

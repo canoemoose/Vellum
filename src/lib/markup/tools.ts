@@ -61,6 +61,11 @@ export const TOOLS: ToolDef[] = [
   { id: "text", group: "text", label: "Text box", key: "t", kind: "text", tip: "drag a box or click, then type; Esc finishes", icon: `<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M5 5.5h6M8 5.5v5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />` },
   { id: "ink", group: "pen", label: "Pen", key: "d", kind: "ink", tip: "draw freehand", icon: `<path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" ${STROKE} />` },
   // Measuring
+  { id: "measureLength", group: "measure", label: "Length", key: "m", kind: "measureLength", tip: "click each end, or drag; Shift snaps to 15°", icon: `<path d="M2.5 11.5l11-7M1.6 10.1l1.8 2.8M12.6 3.1l1.8 2.8" ${STROKE} />` },
+  { id: "measurePath", group: "measure", label: "Polyline length", key: "m", kind: "measurePath", tip: "click each point, double-click or Enter to finish; Shift snaps to 15°", icon: `<path d="M2.5 12.5l4-6 3.5 3 3.5-6.5M1.5 11.5l2 2" ${STROKE} />` },
+  { id: "measureArea", group: "measure", label: "Area", key: "m", kind: "measureArea", tip: "click each corner, then click the first again, double-click or press Enter; or drag a box", icon: `<path d="M2.5 3.5h11v9h-11z" ${STROKE} /><path d="M5.5 9.5l5-4M7.5 10.5l3-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />` },
+  { id: "measureAngle", group: "measure", label: "Angle", key: "m", kind: "measureAngle", tip: "click one arm's end, the corner, then the other arm's end; Shift snaps to 15°", icon: `<path d="M13.5 3.5L3 13h10.5" ${STROKE} /><path d="M8.5 13a5.5 5.5 0 0 0-1.6-3.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />` },
+  { id: "measureCalibrate", group: "measure", label: "Calibrate", key: "m", kind: "measureCalibrate", tip: "click each end of a dimension you know, then type its real length to set the scale", icon: `<path d="M1.5 10.5h13v3h-13z" ${STROKE} /><path d="M4.5 10.5v1.5M7.5 10.5v2M10.5 10.5v1.5M8 2.5v5M6 5.5l2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
 
   // Stamps
 

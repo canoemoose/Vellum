@@ -14,6 +14,11 @@ import { ellipse } from "./ellipse";
 import { polyline } from "./polyline";
 import { polygon } from "./polygon";
 // Measuring
+import { measureLength } from "./measureLength";
+import { measurePath } from "./measurePath";
+import { measureArea } from "./measureArea";
+import { measureAngle } from "./measureAngle";
+import { measureCalibrate } from "./measureCalibrate";
 
 // Stamps
 
@@ -29,6 +34,11 @@ export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   polyline,
   polygon,
   // Measuring
+  measureLength,
+  measurePath,
+  measureArea,
+  measureAngle,
+  measureCalibrate,
 
   // Stamps
 
