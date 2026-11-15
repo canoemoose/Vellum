@@ -243,13 +243,14 @@ export class MarkupDoc {
    */
   reread(pages: PageAnnots[]): void {
     const saved = new Set(this.saved.map((m) => m.id));
+    const pageOf = new Map(this.saved.map((m) => [m.id, m.page]));
     const next = new Map<string, FileOrigin>();
     const exact = (a: PageAnnots["annots"][number]) => !!a.vellum && readReedit(a.vellum, a.modified) !== null;
     for (const p of pages) {
       const matched = new Set<string>();
       const rest: PageAnnots["annots"] = [];
       for (const a of p.annots) {
-        if (a.nm && saved.has(a.nm) && !matched.has(a.nm)) {
+        if (a.nm && pageOf.get(a.nm) === p.page && !matched.has(a.nm)) {
           matched.add(a.nm);
           next.set(a.nm, { page: p.page, index: a.index, nm: a.nm, subtype: a.subtype, exact: exact(a) });
         } else rest.push(a);

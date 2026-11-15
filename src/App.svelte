@@ -983,7 +983,9 @@
     const { path, password } = t;
     const run: Promise<void> = (async () => {
       const r = await invoke<AnnotRead>("annot_read", { path, password });
-      let list = r.pages.flatMap((p) => fromFile(p, new Set()));
+      // One set of ids for the whole file: an /NM used on two pages gets an id of its own the second time.
+      const used = new Set<string>();
+      let list = r.pages.flatMap((p) => fromFile(p, used));
       const hashes = stampHashes(list.map((x) => x.markup));
       if (hashes.length) {
         const pngs = await invoke<Record<string, string>>("annot_stamp_images", { path, password, hashes }).catch(() => ({}));

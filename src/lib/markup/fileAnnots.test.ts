@@ -214,3 +214,12 @@ describe("conversions", () => {
     expect(textStyleOf(null, null)).toMatchObject({ size: 10, family: "helvetica" });
   });
 });
+
+describe("ids across pages", () => {
+  it("stay unique when another app used one /NM on two pages", () => {
+    const a = (nm: string): FileAnnot => ({ ...readBack(toSpec(SAMPLES[0], A4)), vellum: null, index: 0, nm });
+    const used = new Set<string>();
+    const ids = [fromFile({ page: 0, frame: A4, annots: [a("dup")] }, used), fromFile({ page: 1, frame: A4, annots: [a("dup")] }, used)].flat().map((x) => x.markup.id);
+    expect(ids).toEqual(["dup", "file-p1-a0"]);
+  });
+});
