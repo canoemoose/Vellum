@@ -121,7 +121,7 @@ them. Hover over a tab for a preview of where you were.
 | Switch navigation | N | Same |
 | Previous / next page | Page Up / Page Down | Same |
 | First / last page | Home / End | Same |
-| Rotate the view | R / Shift+R | Same |
+| Rotate the view | ] / [ | Same |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Same |
 | Close tab | Ctrl+W, or middle-click the tab | Same |
 | Print | Ctrl+P | Same |

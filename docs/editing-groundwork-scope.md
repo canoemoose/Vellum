@@ -106,6 +106,9 @@ phase (`// Measuring`, `// Stamps`, `// Text markups`) so each adds inside its o
    it's L pressed again** (L, L), the "press again to step through" rule, which the Measure
    (M) and Stamp (S) groups will use too. A letter is never shared across groups, and N
    and R stay the view's (a test checks both).
+   *Superseded by [the tool consistency brief](editing-tool-consistency-brief.md), stage 2:
+   R is Rectangle, the view rotates with ] and [, Pen is P, Polygon G, the measuring tools
+   D, and a shared letter picks the tool last used of those sharing it.*
 4. Line is a preset of arrow, so an arrow whose ends are both set to "none" and a line are
    the same thing. A selected arrow with no ends is called "Line" in the properties bar.
    The Line tool's ends are fixed (its properties bar has no Ends section); select a line
