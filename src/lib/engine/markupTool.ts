@@ -563,6 +563,7 @@ export class MarkupTool {
         break;
     }
     if (def.finish) m = def.finish(m);
+    if (this.keep && !this.keep(m)) return this.redraw(); // Measuring
     const before = this.markups;
     this.commit([...before, m]);
     this.select([m.id]);
@@ -579,6 +580,7 @@ export class MarkupTool {
     if (keep && pts.length >= c.def.draw.min) {
       let m = this.newMarkup(c.def, c.page, c.def.draw.make(pts));
       if (c.def.finish) m = c.def.finish(m);
+      if (this.keep && !this.keep(m)) return this.redraw(); // Measuring
       this.commit([...this.markups, m]);
       this.select([m.id]);
     }
@@ -598,6 +600,30 @@ export class MarkupTool {
   get drawingCloud(): boolean {
     return this.drawingPoints;
   }
+
+  // Measuring
+  /**
+   * Asked before a newly drawn markup is kept: false drops it (Calibrate hands its two points
+   * to the app and keeps nothing; an angle dragged out as two points is no angle).
+   */
+  keep: ((m: Markup) => boolean) | null = null;
+
+  /**
+   * The markup being drawn, as it would be made now, for the status bar's live readout: a
+   * drag's draft, or the points clicked so far with the pointer's. `segment` is the last
+   * point to the pointer while clicking.
+   */
+  drawingShape(): { markup: Markup; segment: { from: Pt; to: Pt } | null } | null {
+    const g = this.gesture;
+    if (g?.kind === "draw" && g.draft) return { markup: g.draft, segment: null };
+    const c = this.clicking;
+    if (!c || c.def.draw.gesture !== "points") return null;
+    const pts = c.hover ? [...c.points, c.hover] : c.points;
+    if (pts.length < 2) return null;
+    const last = c.points[c.points.length - 1];
+    return { markup: this.newMarkup(c.def, c.page, c.def.draw.make(pts)), segment: c.hover ? { from: last, to: c.hover } : null };
+  }
+  // End measuring
 
   // ---------------------------------------------------------------- text boxes
 
