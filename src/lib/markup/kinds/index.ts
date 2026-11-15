@@ -16,6 +16,7 @@ import { polygon } from "./polygon";
 // Measuring
 
 // Stamps
+import { stamp } from "./stamp";
 
 // Text markups
 
@@ -31,6 +32,7 @@ export const KINDS: { [K in MarkupKind]: KindDef<MarkupOf<K>> } = {
   // Measuring
 
   // Stamps
+  stamp,
 
   // Text markups
 };

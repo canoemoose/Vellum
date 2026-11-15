@@ -28,6 +28,8 @@ const SAMPLES: { [K in MarkupKind]: () => MarkupOf<K> } = {
   ellipse: () => mk("ellipse", { rect: [100, 100, 200, 150] }),
   polyline: () => mk("polyline", { vertices: [[100, 100], [150, 150], [200, 100]] }),
   polygon: () => mk("polygon", { vertices: [[100, 100], [200, 100], [150, 150]] }),
+  // Stamps
+  stamp: () => mk("stamp", { rect: [100, 100, 200, 150], content: { type: "text", label: "APPROVED", sub: null, colour: [0, 0.5, 0] }, signature: false }),
 };
 
 const paths = (m: Markup) => opsFor(m).filter((o): o is PathOp => o.t === "path");

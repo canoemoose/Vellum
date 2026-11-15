@@ -63,6 +63,8 @@ export const TOOLS: ToolDef[] = [
   // Measuring
 
   // Stamps
+  { id: "stamp", group: "stamp", label: "Stamp", key: "s", kind: "stamp", tip: "pick a stamp, then click to place it or drag to size it", icon: `<rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M4.5 8h7" ${STROKE} />` },
+  { id: "signature", group: "stamp", label: "Signature", key: "s", kind: "stamp", tip: "pick a signature, then click to place it or drag to size it", icon: `<path d="M2 11.5c1.5-3 2.5-6.5 3.6-6.5 1.3 0-.6 5.5.8 5.5 1.1 0 1.6-2.6 2.6-2.6.8 0 .6 1.8 1.5 1.8.7 0 1.3-.8 2-1.3M2 13.5h12" ${STROKE} />` },
 
   // Text markups
 ];
