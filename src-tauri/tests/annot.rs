@@ -86,12 +86,12 @@ fn appended_annotations_keep_the_original_bytes_and_read_back() {
 #[test]
 fn replace_keeps_the_annotation_and_delete_removes_it() {
     let one = annot::apply(blank(), "", &[Change::Add { spec: square(0, "a", [10.0, 10.0, 60.0, 40.0]) }, Change::Add { spec: square(0, "b", [100.0, 100.0, 150.0, 140.0]) }]).unwrap();
-    let two = annot::apply(one.clone(), "", &[Change::Replace { spec: square(0, "a", [20.0, 20.0, 80.0, 50.0]) }, Change::Delete { page: 0, nm: "b".into() }]).unwrap();
+    let two = annot::apply(one.clone(), "", &[Change::Replace { spec: square(0, "a", [20.0, 20.0, 80.0, 50.0]) }, Change::Delete { page: 0, nm: "b".into(), at: None }]).unwrap();
     assert_eq!(&two[..one.len()], &one[..]);
     assert_eq!(nms(two.clone()), vec!["a"]);
     let bb = ink_with_annots(two).expect("ink");
     assert_near(bb, (20.0, 150.0, 80.0, 180.0), 0.6, "moved square");
-    assert!(annot::apply(one, "", &[Change::Delete { page: 0, nm: "missing".into() }]).is_err());
+    assert!(annot::apply(one, "", &[Change::Delete { page: 0, nm: "missing".into(), at: None }]).is_err());
 }
 
 #[test]
@@ -135,9 +135,9 @@ fn hidden_annotations_stop_drawing_in_pdfium() {
             .unwrap()
     };
     assert!(ink(id));
-    assert_eq!(docs().hide_annots(pdfium(), id, 0, vec!["h".into()], true).unwrap(), 1);
+    assert_eq!(docs().hide_annots(pdfium(), id, 0, vec!["h".into()], vec![], true).unwrap(), 1);
     assert!(!ink(id), "hidden annotation still drawn");
-    docs().hide_annots(pdfium(), id, 0, vec!["h".into()], false).unwrap();
+    docs().hide_annots(pdfium(), id, 0, vec!["h".into()], vec![], false).unwrap();
     assert!(ink(id));
     docs().close(pdfium(), id);
 }

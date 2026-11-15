@@ -465,6 +465,8 @@ pub fn run() {
             annot::commands::doc_close_wait,
             annot::commands::doc_page_frame,
             annot::commands::doc_hide_annots,
+            annot::commands::annot_read,
+            annot::commands::annot_stamp_images,
             annot::commands::recovery_write,
             annot::commands::recovery_read,
             annot::commands::recovery_delete,

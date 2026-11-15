@@ -269,10 +269,10 @@ impl Docs {
         }
     }
 
-    /// Hide or show annotations by /NM (PDFs only).
-    pub fn hide_annots(&self, pdf: &PdfiumState, doc_id: u64, page: usize, nms: Vec<String>, hidden: bool) -> Result<usize, String> {
+    /// Hide or show annotations by /NM or by position in /Annots (PDFs only).
+    pub fn hide_annots(&self, pdf: &PdfiumState, doc_id: u64, page: usize, nms: Vec<String>, indices: Vec<usize>, hidden: bool) -> Result<usize, String> {
         match self.entry(doc_id)? {
-            EntryRef::Pdf => pdf.hide_annots(doc_id, page, nms, hidden),
+            EntryRef::Pdf => pdf.hide_annots(doc_id, page, nms, indices, hidden),
             EntryRef::Image(_) => Ok(0),
         }
     }

@@ -8,6 +8,7 @@
 pub mod commands;
 pub mod measure; // Measuring
 pub mod spec;
+pub mod read; // Existing annotations (phase 7b)
 pub mod writer;
 // Stamps
 pub mod bake;

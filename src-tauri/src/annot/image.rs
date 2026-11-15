@@ -59,6 +59,20 @@ pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Standard base64 with padding (phase 7b: a stamp's picture read back from the file).
+pub fn base64_encode(b: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(b.len().div_ceil(3) * 4);
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        out.push(A[(n >> 18) as usize & 63] as char);
+        out.push(A[(n >> 12) as usize & 63] as char);
+        out.push(if c.len() > 1 { A[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if c.len() > 2 { A[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
 /// A PNG (or anything the `image` crate reads) as an image XObject and, when any pixel is
 /// partly clear, its soft mask. Returns (image stream, mask stream).
 pub fn png_to_streams(bytes: &[u8]) -> Result<(Stream, Option<Stream>), String> {
@@ -112,13 +126,28 @@ impl Writer {
         })
     }
 
-    /// The image XObject for `img`, written now unless this save already holds it.
+    /// The image XObject an earlier save wrote for `hash`, if the file has one.
+    fn image_in_file(&self, hash: &str) -> Option<ObjectId> {
+        self.inc.get_prev_documents().objects.iter().find_map(|(id, o)| match o {
+            Object::Stream(s) => {
+                let h = s.dict.get(IMAGE_HASH_KEY.as_bytes()).ok().and_then(|v| v.as_str().ok())?;
+                h.eq_ignore_ascii_case(hash.as_bytes()).then_some(*id)
+            }
+            _ => None,
+        })
+    }
+
+    /// The image XObject for `img`, written now unless this save (or the file) already holds it.
     pub fn image_object(&mut self, img: &ImageRes) -> Result<ObjectId, String> {
         if !hash_ok(&img.hash) {
             return Err(crate::errcode::coded("stamp_image", "a stamp's image has no usable hash"));
         }
         let hash = img.hash.to_ascii_lowercase();
         if let Some(id) = self.image_in_update(&hash) {
+            return Ok(id);
+        }
+        // Phase 7b: a stamp brought back from the file reuses the picture already in it.
+        if let Some(id) = self.image_in_file(&hash) {
             return Ok(id);
         }
         let bytes = base64_decode(&img.png).ok_or_else(|| crate::errcode::coded("stamp_image", "a stamp's image isn't base64"))?;

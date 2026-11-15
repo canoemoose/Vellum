@@ -49,6 +49,10 @@ pub struct Writer {
     pub inc: IncrementalDocument,
     pages: Vec<ObjectId>,
     pub info: FileInfo,
+    /// Per page changed so far: for each entry now in /Annots, its position when the file was
+    /// read (None for one added by this save), so an annotation found by its original position
+    /// (`at`) is still found after earlier deletes in the same save have moved it up.
+    slots: std::collections::HashMap<usize, Vec<Option<usize>>>,
 }
 
 fn real(v: f64) -> Object {
@@ -166,7 +170,7 @@ impl Writer {
         for k in [&b"XRefStm"[..], b"DecodeParms", b"Filter", b"Index", b"W", b"Length", b"Type"] {
             inc.new_document.trailer.remove(k);
         }
-        Ok(Self { inc, pages, info })
+        Ok(Self { inc, pages, info, slots: Default::default() })
     }
 
     pub fn page_id(&self, page: usize) -> Result<ObjectId, String> {
@@ -274,8 +278,28 @@ impl Writer {
         }
     }
 
-    /// Build the annotation dictionary and its appearance stream; returns the dictionary.    /// The annotation with /NM `nm` on a page: its index in /Annots.
-    fn find(&self, page: usize, nm: &str) -> Result<usize, String> {
+    /// The page's map from current /Annots positions to the positions as read.
+    fn slots(&mut self, page: usize) -> Result<&mut Vec<Option<usize>>, String> {
+        if !self.slots.contains_key(&page) {
+            let n = self.annots(page)?.len();
+            self.slots.insert(page, (0..n).map(Some).collect());
+        }
+        Ok(self.slots.get_mut(&page).unwrap())
+    }
+
+    /// The annotation on a page: at position `at` in /Annots as the file was read, when given
+    /// (phase 7b: one that came with the file, which may have no /NM), else the one with /NM
+    /// `nm`. Its index in /Annots now.
+    fn find(&mut self, page: usize, nm: &str, at: Option<usize>) -> Result<usize, String> {
+        if let Some(at) = at {
+            let n = self.annots(page)?.len();
+            return self
+                .slots(page)?
+                .iter()
+                .position(|s| *s == Some(at))
+                .filter(|i| *i < n)
+                .ok_or_else(|| format!("no annotation at {at} on page {}", page + 1));
+        }
         self.annots(page)?
             .iter()
             .position(|e| e.nm.as_deref() == Some(nm))
@@ -449,14 +473,16 @@ impl Writer {
     pub fn add(&mut self, s: &AnnotSpec) -> Result<ObjectId, String> {
         let d = self.build(s)?;
         let id = self.inc.new_document.add_object(d);
+        self.slots(s.page)?;
         self.annots_mut(s.page)?.push(Object::Reference(id));
+        self.slots(s.page)?.push(None);
         Ok(id)
     }
 
     /// Redraw the annotation with the spec's /NM, keeping its object number and its links to
     /// other annotations (popups, replies) and its creation date.
     pub fn replace(&mut self, s: &AnnotSpec) -> Result<ObjectId, String> {
-        let index = self.find(s.page, &s.nm)?;
+        let index = self.find(s.page, &s.nm, s.at)?;
         let entry = self.annots(s.page)?.swap_remove(index);
         let mut d = self.build(s)?;
         match entry.id {
@@ -480,14 +506,64 @@ impl Writer {
     }
 
     /// Remove the annotation with this /NM (and its popup, if it has one) from the page.
-    pub fn delete(&mut self, page: usize, nm: &str) -> Result<(), String> {
-        let index = self.find(page, nm)?;
-        let entry = self.annots(page)?.swap_remove(index);
+    pub fn delete(&mut self, page: usize, nm: &str, at: Option<usize>) -> Result<(), String> {
+        let index = self.find(page, nm, at)?;
+        let entries = self.annots(page)?;
+        let entry = &entries[index];
         let popup = entry.id.and_then(|id| self.get(id)).and_then(|o| o.as_dict().ok()).and_then(|d| d.get(b"Popup").ok()).and_then(|o| o.as_reference().ok());
-        let arr = self.annots_mut(page)?;
-        arr.remove(index);
-        if let Some(p) = popup {
-            arr.retain(|o| o.as_reference().map(|r| r != p).unwrap_or(true));
+        // The entry and its popup, from the end so the positions stay right as they go.
+        let mut gone: Vec<usize> = entries.iter().filter(|e| e.index == index || (popup.is_some() && e.id == popup)).map(|e| e.index).collect();
+        gone.sort_unstable();
+        self.slots(page)?;
+        for i in gone.into_iter().rev() {
+            self.annots_mut(page)?.remove(i);
+            self.slots(page)?.remove(i);
+        }
+        Ok(())
+    }
+
+    /// Move an annotation by (dx, dy) in user space, keeping its dictionary and appearance
+    /// (Change::Move). Its object number stays, as a replace keeps it.
+    pub fn move_by(&mut self, page: usize, nm: &str, at: Option<usize>, dx: f64, dy: f64, modified: Option<&str>) -> Result<(), String> {
+        let index = self.find(page, nm, at)?;
+        let entry = self.annots(page)?.swap_remove(index);
+        let old = match entry.id {
+            Some(id) => self.get(id).cloned(),
+            None => self.annots_mut(page)?.get(index).cloned(),
+        };
+        let Some(Object::Dictionary(mut d)) = old else { return Err(format!("annotation {index} on page {} isn't a dictionary", page + 1)) };
+        let shifted = |o: &Object, this: &Self| -> Option<Object> {
+            match this.resolve(o) {
+                Object::Array(a) => Some(Object::Array(
+                    a.iter()
+                        .enumerate()
+                        .map(|(i, x)| match x {
+                            Object::Array(_) => x.clone(),
+                            _ => obj_f64(this.resolve(x)).map(|v| real(v + if i % 2 == 0 { dx } else { dy })).unwrap_or_else(|| x.clone()),
+                        })
+                        .collect(),
+                )),
+                _ => None,
+            }
+        };
+        for k in [&b"Rect"[..], b"QuadPoints", b"Vertices", b"L", b"CL"] {
+            if let Some(v) = d.get(k).ok().and_then(|o| shifted(o, self)) {
+                d.set(k.to_vec(), v);
+            }
+        }
+        if let Some(Object::Array(strokes)) = d.get(b"InkList").ok().map(|o| self.resolve(o).clone()) {
+            let moved: Vec<Object> = strokes.iter().map(|st| shifted(st, self).unwrap_or_else(|| st.clone())).collect();
+            d.set("InkList", Object::Array(moved));
+        }
+        if let Some(m) = modified {
+            d.set("M", text(m));
+        }
+        match entry.id {
+            Some(id) => self.inc.new_document.set_object(id, d),
+            None => {
+                let id = self.inc.new_document.add_object(d);
+                self.annots_mut(page)?[index] = Object::Reference(id);
+            }
         }
         Ok(())
     }
@@ -496,7 +572,8 @@ impl Writer {
         match c {
             Change::Add { spec } => self.add(spec).map(|_| ()),
             Change::Replace { spec } => self.replace(spec).map(|_| ()),
-            Change::Delete { page, nm } => self.delete(*page, nm),
+            Change::Delete { page, nm, at } => self.delete(*page, nm, *at),
+            Change::Move { page, nm, at, dx, dy, modified } => self.move_by(*page, nm, *at, *dx, *dy, modified.as_deref()),
             // Stamps
             Change::Bake { spec } => self.bake(spec).map(|_| ()),
         }

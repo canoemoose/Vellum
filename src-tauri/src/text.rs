@@ -313,14 +313,15 @@ impl PdfiumState {
         })?
     }
 
-    /// Set or clear the Hidden flag on the annotations with these /NM values, on every worker's
-    /// copy of the document. A parsed page picks the flag up on its next render. Returns how
-    /// many annotations matched on one worker.
-    pub fn hide_annots(&self, doc_id: u64, page: usize, nms: Vec<String>, hidden: bool) -> Result<usize, String> {
+    /// Set or clear the Hidden flag on the annotations with these /NM values or at these
+    /// positions in the page's /Annots (PDFium's annotation index), on every worker's copy of
+    /// the document. A parsed page picks the flag up on its next render. Returns how many
+    /// annotations matched on one worker.
+    pub fn hide_annots(&self, doc_id: u64, page: usize, nms: Vec<String>, indices: Vec<usize>, hidden: bool) -> Result<usize, String> {
         const HIDDEN: i32 = 2;
         let mut matched = 0;
         for w in 0..self.worker_count()? {
-            let nms = nms.clone();
+            let (nms, indices) = (nms.clone(), indices.clone());
             matched = self.run_on_worker_index(w, move |ctx| -> Result<usize, String> {
                 let b = ctx.bindings();
                 let p = ctx.page(doc_id, page)?;
@@ -331,8 +332,11 @@ impl PdfiumState {
                     if a.is_null() {
                         continue;
                     }
-                    let nm = annot_string(b, a, "NM");
-                    if nms.iter().any(|x| *x == nm) {
+                    let hit = indices.contains(&(i as usize)) || (!nms.is_empty() && {
+                        let nm = annot_string(b, a, "NM");
+                        nms.iter().any(|x| *x == nm)
+                    });
+                    if hit {
                         let f = unsafe { b.FPDFAnnot_GetFlags(a) };
                         let f = if hidden { f | HIDDEN } else { f & !HIDDEN };
                         unsafe { b.FPDFAnnot_SetFlags(a, f) };

@@ -114,6 +114,12 @@ pub struct AnnotSpec {
     /// /Name for a Text annotation (a note): its icon.
     #[serde(default)]
     pub icon: Option<String>,
+
+    // Existing annotations (phase 7b)
+    /// The annotation this replaces: its position in the page's /Annots as the file was read
+    /// (annot/read.rs), for one that came with the file and may have no /NM to find it by.
+    #[serde(default)]
+    pub at: Option<usize>,
 }
 
 /// One change to save.
@@ -124,8 +130,28 @@ pub enum Change {
     Add { spec: AnnotSpec },
     /// Redraw the annotation with the spec's /NM on its page, keeping its object number.
     Replace { spec: AnnotSpec },
-    /// Remove the annotation with this /NM (and its popup) from the page.
-    Delete { page: usize, nm: String },
+    /// Remove the annotation with this /NM (or at position `at` in the page's /Annots as the
+    /// file was read, for one that came with the file) and its popup from the page.
+    Delete {
+        page: usize,
+        nm: String,
+        #[serde(default)]
+        at: Option<usize>,
+    },
+    /// Move an annotation Vellum can't redraw (a type it doesn't understand) by (dx, dy) in user
+    /// space, keeping its own appearance: its /Rect and its geometry keys are moved, and an
+    /// appearance follows its /Rect. Found as Delete finds one.
+    Move {
+        page: usize,
+        nm: String,
+        #[serde(default)]
+        at: Option<usize>,
+        dx: f64,
+        dy: f64,
+        /// /M.
+        #[serde(default)]
+        modified: Option<String>,
+    },
     // Stamps
     /// Draw the spec's appearance into its page's content instead of adding an annotation
     /// (a signature baked in; annot/bake.rs). Removes an annotation with the same /NM.

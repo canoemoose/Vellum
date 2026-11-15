@@ -81,7 +81,7 @@ impl Writer {
     /// page). Returns the form XObject's object number.
     pub fn bake(&mut self, s: &AnnotSpec) -> Result<ObjectId, String> {
         if self.annots(s.page)?.iter().any(|e| e.nm.as_deref() == Some(s.nm.as_str())) {
-            self.delete(s.page, &s.nm)?;
+            self.delete(s.page, &s.nm, None)?;
         }
         let pid = self.page_id(s.page)?;
         let form = self.appearance_stream(&s.appearance)?;
