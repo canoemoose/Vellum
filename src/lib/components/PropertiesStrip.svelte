@@ -18,16 +18,31 @@
   import { outFrom } from "../shell/popout";
   import { type Bar, barFor, endChoices } from "../markup/bar";
   // Measuring
-  import { type MeasureFormat, type UnitMode, MAX_DECIMALS } from "../markup/measure";
+  import { type MeasureFormat, type UnitMode, MAX_DECIMALS, isFractional } from "../markup/measure";
+  import { DEFAULT_FRACTION, FRACTIONS, formatFracInches } from "../markup/imperial";
   // Each choice's sample shows its effect on a value; its name says what it is (not the same
   // thing twice).
   const UNIT_OPTS: { key: UnitMode; name: string }[] = [
     { key: "auto", name: "Auto: metres from 1 m, else millimetres" },
     { key: "mm", name: "Millimetres" },
     { key: "m", name: "Metres" },
+    // Imperial (stage 5 [A9])
+    { key: "ft-in", name: "Feet and inches" },
+    { key: "in-frac", name: "Inches" },
+    { key: "ft", name: "Decimal feet" },
+    { key: "in", name: "Decimal inches" },
   ];
-  const UNIT_SAMPLE: Record<string, [string, string]> = { auto: ["Auto", "mm / m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"] };
+  // In an imperial view Auto is feet and inches (inches under a foot).
+  const UNIT_OPTS_IMPERIAL = UNIT_OPTS.map((o) => (o.key === "auto" ? { ...o, name: "Auto: feet and inches, else inches" } : o));
+  const UNIT_SAMPLE: Record<string, [string, string]> = {
+    auto: ["Auto", "mm / m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"],
+    "auto-imperial": ["Auto", "ft-in"], "ft-in": ["ft-in", `12' 4 1/2"`], "in-frac": ["in ½", `148 1/2"`], ft: ["ft", "12.38 ft"], in: ["in", "148.50 in"],
+  };
   const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 0 ? "Whole numbers" : i === 1 ? "1 decimal place" : `${i} decimal places` }));
+  // With a fraction, decimals become precision: to the nearest 1/2" to 1/64".
+  const PRECISION_OPTS = FRACTIONS.map((d) => ({ key: String(d), name: `Nearest 1/${d} inch` }));
+  /** The precision list's sample: 4.67" lands on a different fraction at every precision. */
+  const PRECISION_SAMPLE_IN = 4.67;
   // End measuring
 
   interface Props {
@@ -305,8 +320,12 @@
       <span class="k">Value</span>
       <div class="controls">
         <PopChoice label="Label size" options={SIZE_OPTS} value={SIZES.includes(ms.labelSize) ? String(ms.labelSize) : null} compact={narrow} {out} sample={labelSizeSample} onChange={(k) => on({ labelSize: Number(k) })} />
-        <PopChoice label="Units" options={UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
-        <PopChoice label="Decimal places" options={DECIMAL_OPTS} value={String(ms.format.decimals)} compact={narrow} {out} sample={decimalSample} onChange={(k) => on({ format: { ...ms.format, decimals: Number(k) } })} />
+        <PopChoice label="Units" options={ms.format.system === "imperial" ? UNIT_OPTS_IMPERIAL : UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
+        {#if isFractional(ms.format)}
+          <PopChoice label="Precision" options={PRECISION_OPTS} value={String(ms.format.fraction ?? DEFAULT_FRACTION)} compact={narrow} {out} sample={precisionSample} onChange={(k) => on({ format: { ...ms.format, fraction: Number(k) } })} />
+        {:else}
+          <PopChoice label="Decimal places" options={DECIMAL_OPTS} value={String(ms.format.decimals)} compact={narrow} {out} sample={decimalSample} onChange={(k) => on({ format: { ...ms.format, decimals: Number(k) } })} />
+        {/if}
       </div>
     </div>
   {/if}
@@ -322,8 +341,14 @@
 {/snippet}
 <!-- Units: the unit in the box; in the list, a length written that way. -->
 {#snippet unitSample(k: string | null, w: number)}
-  {@const s = UNIT_SAMPLE[k ?? p.measure?.format.units ?? "auto"] ?? ["", ""]}
+  {@const key = k ?? p.measure?.format.units ?? "auto"}
+  {@const s = UNIT_SAMPLE[key === "auto" && p.measure?.format.system === "imperial" ? "auto-imperial" : key] ?? ["", ""]}
   <span class="num sz">{w < 60 ? s[0] : s[1]}</span>
+{/snippet}
+<!-- Precision (a fractional unit): the box shows 1/16, the list a length rounded that way. -->
+{#snippet precisionSample(k: string | null, w: number)}
+  {@const d = Number(k ?? p.measure?.format.fraction ?? DEFAULT_FRACTION)}
+  <span class="num sz">{w < 60 ? `1/${d}` : formatFracInches(PRECISION_SAMPLE_IN, d)}</span>
 {/snippet}
 <!-- Decimal places: a number written with that many. -->
 {#snippet decimalSample(k: string | null, w: number)}
