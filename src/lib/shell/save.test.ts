@@ -73,3 +73,26 @@ describe("markup preferences", () => {
     expect(p.confirmed).toEqual(["a"]);
   });
 });
+
+// Existing annotations (phase 7b)
+import { forbidsChanges, unlockWarnings } from "./save";
+
+describe("unlocking Edit document", () => {
+  it("goes ahead without a word on an ordinary file", () => {
+    expect(unlockWarnings("plan.pdf", plain)).toEqual([]);
+    expect(unlockWarnings("plan.pdf", null)).toEqual([]);
+  });
+
+  it("says so if the file is signed, certified, or asks not to be changed", () => {
+    expect(unlockWarnings("a.pdf", { ...plain, signatures: 1 })[0]).toContain("a.pdf is signed");
+    expect(unlockWarnings("a.pdf", { ...plain, signatures: 1, docmdp: 1 })[0]).toContain("certified (no changes allowed)");
+    expect(unlockWarnings("a.pdf", { ...plain, signatures: 1, docmdp: 2 })).toHaveLength(1);
+    // /P without "modify" (8) or without "comments" (32).
+    const all = -4;
+    expect(forbidsChanges({ ...plain, encryption: "V2 R3", permissions: all })).toBe(false);
+    expect(forbidsChanges({ ...plain, encryption: "V2 R3", permissions: all & ~8 })).toBe(true);
+    expect(forbidsChanges({ ...plain, encryption: "V2 R3", permissions: all & ~32 })).toBe(true);
+    expect(forbidsChanges({ ...plain, permissions: 0 })).toBe(false); // not encrypted: no permissions apply
+    expect(unlockWarnings("a.pdf", { ...plain, encryption: "V2 R3", permissions: all & ~8 })).toEqual(["a.pdf's permissions ask for it not to be changed."]);
+  });
+});

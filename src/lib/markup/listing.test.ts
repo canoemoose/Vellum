@@ -76,3 +76,15 @@ describe("listDate", () => {
     expect(text).toContain("on paper");
   });
 });
+
+// Existing annotations (phase 7b)
+describe("the file's annotations in the list", () => {
+  it("are listed with the rest, marked locked where the lock says so, and name a type Vellum can only move", () => {
+    const att = { ...mk("foreign", 0, { subtype: "FileAttachment", rect: [0, 50, 20, 70], moved: [0, 0], text: "spec.xlsx" }) };
+    const pages = markupPages([rect(0, 0, 0), att], (m) => m.kind === "foreign");
+    const rows = pages[0].rows;
+    expect(rows.map((r) => [r.label, r.locked])).toEqual([["Rectangle", false], ["File attachment", true]]);
+    expect(rows[1].text).toBe("spec.xlsx");
+    expect(markupPages([rect(0, 0, 0)])[0].rows[0].locked).toBe(false);
+  });
+});

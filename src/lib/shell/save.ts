@@ -34,6 +34,27 @@ export function forbidsComments(info: FileInfo): boolean {
   return info.encryption !== null && info.permissions !== null && (info.permissions & 32) === 0;
 }
 
+// Existing annotations (phase 7b)
+
+/** "Modify the contents" is bit 4 (value 8) of /P; "comments" bit 6 (32). */
+export function forbidsChanges(info: FileInfo): boolean {
+  return info.encryption !== null && info.permissions !== null && ((info.permissions & 8) === 0 || (info.permissions & 32) === 0);
+}
+
+/**
+ * What to say before "Edit document" is unlocked, if anything (docs/editing-scope.md, "The edit
+ * lock"): the file is signed or certified, or its permissions ask for no changes. Empty when
+ * there's nothing to say; unlocking then goes ahead without asking.
+ */
+export function unlockWarnings(name: string, info: FileInfo | null): string[] {
+  if (!info) return [];
+  const out: string[] = [];
+  if (info.docmdp === 1 || info.docmdp === 2) out.push(`${name} is certified (${info.docmdp === 1 ? "no changes allowed" : "form filling only"}): saving changes to it breaks the certification.`);
+  else if (info.signatures > 0) out.push(`${name} is signed: changing what it was signed with makes other apps report the signature as invalid.`);
+  if (forbidsChanges(info)) out.push(`${name}'s permissions ask for it not to be changed.`);
+  return out;
+}
+
 /** The first-save confirmation for a file. */
 export function saveConfirmation(name: string, info: FileInfo): SaveConfirmation {
   const kind = info.recovered ? "rewrite" : "append";

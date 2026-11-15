@@ -114,7 +114,8 @@
     const dbl = (e: MouseEvent) => {
       const at = p.tool === "select" ? onDrawing(e) : null;
       const n = at ? noteAt(at[0], at[1]) : null;
-      if (n) void open(n.id);
+      // Phase 7b: a note that came with the file opens only once the document is unlocked.
+      if (n && p.markupTool.doc?.editable(n)) void open(n.id);
     };
     const leave = () => {
       if (hoverTimer) clearTimeout(hoverTimer);

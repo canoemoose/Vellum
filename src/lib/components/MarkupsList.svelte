@@ -2,7 +2,9 @@
   // The sidebar's Markups tab: the tab's markups by page (markup/listing.ts), each with an icon
   // for its type, its text, author and date. Click a row to jump there and select it; its
   // delete button (or Delete, once it's selected) removes it. Selecting on the canvas
-  // highlights the row and scrolls it into view. Rows are keyed by markup id and styled by
+  // highlights the row and scrolls it into view. Annotations that came with the file are listed
+  // too; while the document is locked they can be found but not deleted (no delete button).
+  // Rows are keyed by markup id and styled by
   // what they are, never by position (no striping): rows come and go as markups do.
   import { type MarkupPage, listDate } from "../markup/listing";
 
@@ -34,7 +36,7 @@
       <h3>Page {g.page + 1} <span class="n">{g.rows.length}</span></h3>
       {#each g.rows as r (r.id)}
         <div class="row" class:on={p.selected.has(r.id)} data-id={r.id}>
-          <button type="button" class="pick" title={r.text ? `${r.label}: ${r.text}` : r.label} aria-current={p.selected.has(r.id)} onclick={() => p.onPick(r.id)}>
+          <button type="button" class="pick" title={(r.text ? `${r.label}: ${r.text}` : r.label) + (r.locked ? " (in the file: unlock Edit document to change it)" : "")} aria-current={p.selected.has(r.id)} onclick={() => p.onPick(r.id)}>
             <svg class="icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style:color={p.colours.get(r.id)}>{@html r.icon}</svg>
             <span class="body">
               <span class="top"><span class="label">{r.label}</span><span class="date">{listDate(r.modified, now)}</span></span>
@@ -42,9 +44,11 @@
               {#if r.author}<span class="who">{r.author}</span>{/if}
             </span>
           </button>
-          <button type="button" class="del" title="Delete" aria-label="Delete {r.label}" onclick={() => p.onDelete(r.id)}>
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /></svg>
-          </button>
+          {#if !r.locked}
+            <button type="button" class="del" title="Delete" aria-label="Delete {r.label}" onclick={() => p.onDelete(r.id)}>
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /></svg>
+            </button>
+          {/if}
         </div>
       {/each}
     </section>

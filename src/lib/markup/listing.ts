@@ -1,7 +1,7 @@
 // The Markups tab (components/MarkupsList.svelte): markups grouped by page, each page's top to
 // bottom as the page is shown, each with its type, its text, author and date. Pure.
 //
-// In phase 7a the list holds this session's markups; phase 7b adds the file's own annotations.
+// It holds this session's markups and, from phase 7b, the file's own annotations.
 
 import type { Markup, MarkupKind } from "./base";
 import { defOf, labelOf } from "./kinds";
@@ -22,6 +22,8 @@ export interface MarkupRow {
   modified: string;
   /** SVG elements for a 16 x 16 icon, in currentColor. */
   icon: string;
+  /** It came with the file and the document is locked: it can be found, not changed (phase 7b). */
+  locked: boolean;
 }
 
 export interface MarkupPage {
@@ -67,15 +69,15 @@ export function iconFor(m: Markup): string {
   return toolForMarkup(m)?.icon ?? PLAIN_ICON;
 }
 
-export function rowFor(m: Markup): MarkupRow {
-  return { id: m.id, page: m.page, kind: m.kind, label: labelOf(m), text: listText(m), author: m.meta.author, modified: m.meta.modified, icon: iconFor(m) };
+export function rowFor(m: Markup, locked = false): MarkupRow {
+  return { id: m.id, page: m.page, kind: m.kind, label: labelOf(m), text: listText(m), author: m.meta.author, modified: m.meta.modified, icon: iconFor(m), locked };
 }
 
 /**
  * The markups by page (in page order), each page's top to bottom (then left to right) by
  * where they start on the page as it's shown (its /Rotate applied).
  */
-export function markupPages(markups: Markup[]): MarkupPage[] {
+export function markupPages(markups: Markup[], locked?: (m: Markup) => boolean): MarkupPage[] {
   const by = new Map<number, { m: Markup; y: number; x: number }[]>();
   for (const m of markups) {
     const b = shapeBounds(m);
@@ -85,7 +87,7 @@ export function markupPages(markups: Markup[]): MarkupPage[] {
   }
   return [...by.keys()]
     .sort((a, b) => a - b)
-    .map((page) => ({ page, rows: by.get(page)!.sort((a, b) => a.y - b.y || a.x - b.x).map((e) => rowFor(e.m)) }));
+    .map((page) => ({ page, rows: by.get(page)!.sort((a, b) => a.y - b.y || a.x - b.x).map((e) => rowFor(e.m, locked?.(e.m) ?? false)) }));
 }
 
 /** When it was last changed, short: the time today, else the day and month (and year if not this one). */

@@ -69,9 +69,13 @@ export class MarkupDoc {
     return this.markups.find((m) => m.id === id);
   }
 
-  /** Pages whose frames a save needs and doesn't have yet. */
+  /**
+   * Pages whose frames a save needs and doesn't have yet: those where something changed (a
+   * file's untouched annotations need none, and fetching a frame loads the page in PDFium).
+   */
   pagesWithoutFrames(): number[] {
-    const need = new Set([...this.markups, ...this.saved].map((m) => m.page));
+    const now = new Set(this.markups.map((m) => m.id));
+    const need = new Set([...this.markups.filter((m) => this.changed(m)), ...this.saved.filter((m) => !now.has(m.id))].map((m) => m.page));
     return [...need].filter((p) => !this.frames.has(p));
   }
 

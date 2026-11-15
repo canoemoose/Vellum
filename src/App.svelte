@@ -24,7 +24,9 @@
   import type { Frame } from "./lib/markup/pdf";
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, Style, TextStyle } from "./lib/markup/types";
-  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unsavedMessage } from "./lib/shell/save";
+  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage } from "./lib/shell/save";
+  import { type AnnotRead, fromFile, stampHashes, withStampImages } from "./lib/markup/fileAnnots"; // Existing annotations
+  import EditLock from "./lib/components/EditLock.svelte"; // Existing annotations
   import type { Dock } from "./lib/shell/dock";
   import { invoke } from "@tauri-apps/api/core";
   import type { SearchView } from "./lib/components/SearchResults.svelte";
@@ -193,6 +195,9 @@
   /** The attached document changed (tab switch, open, close): selection and highlights follow. */
   function readingFollowsDoc() {
     markupTool?.attach(active?.status === "open" ? active.marks : null);
+    // Existing annotations: who you are (for the lock), and anything changed while away lifted.
+    if (active) active.marks.author = settings.markup.author ?? author;
+    liftNow();
     markVersion++;
     textTool?.reset();
     search?.paint();
@@ -268,6 +273,7 @@
 
   function onMarkupsChanged() {
     markVersion++;
+    liftNow(); // Existing annotations: anything from the file that changed or went
     scheduleRecovery();
   }
 
@@ -278,6 +284,8 @@
     if (!mt || !pdfDoc) return null;
     const tool = toolById(mt.tool);
     if (stampsOnly(mt)) return null; // Stamps: nothing in the bar applies to a stamp
+    // Existing annotations: one Vellum can't redraw can't be restyled.
+    if (mt.tool === "select" && mt.selected().length && mt.selected().every((m) => kindOf(m.kind).fixed)) return null;
     if (tool?.kind) {
       const k = tool.kind;
       return {
@@ -624,7 +632,7 @@
     const ms = d?.markups ?? [];
     const css = (c: [number, number, number]) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
     return {
-      pages: markupPages(ms),
+      pages: markupPages(ms, d ? (m) => !d.editable(m) : undefined),
       selected: new Set(d?.selection ?? []),
       colours: new Map(ms.map((m) => [m.id, css(m.style.stroke)])),
       editable: !!pdfDoc,
@@ -769,6 +777,8 @@
   }
 
   async function writeSave(t: Tab, v: Viewer, expect: boolean): Promise<boolean> {
+    // Existing annotations: positions are the last read's; one under way (after a save) first.
+    if (t.marks.reading) await t.marks.reading;
     let p: Prepared;
     try {
       p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, pendingBake.get(t)), target: null, expect: expect ? t.stamp : null });
@@ -780,8 +790,9 @@
       return false;
     }
     const oldId = v.doc!.docId;
-    const ids = new Map<number, string[]>();
-    for (const m of t.marks.markups) ids.set(m.page, [...(ids.get(m.page) ?? []), m.id]);
+    // What the overlay goes on drawing is hidden again in the reopened file; the file's
+    // untouched annotations are PDFium's to draw (MarkupDoc.hideAfterSave).
+    const ids = t.marks.hideAfterSave();
     try {
       await v.reopen(
         () => invoke("annot_commit", { temp: p.temp, target: p.target }),
@@ -792,9 +803,11 @@
     } catch (e) {
       invoke("annot_discard", { temp: p.temp }).catch(() => {});
       readingFollowsAfterReopen(t, oldId, v);
+      void rereadFileAnnots(t);
       throw e;
     }
     t.marks.markSaved();
+    void rereadFileAnnots(t); // Existing annotations: where each now sits in the file
     afterBake(t); // Stamps
     readingFollowsAfterReopen(t, oldId, v);
     const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
@@ -839,6 +852,7 @@
     const bake = await askBake(t, true);
     if (!bake) return false;
     try {
+      if (t.marks.reading) await t.marks.reading; // Existing annotations
       await ensureFrames(t, v.doc.docId);
       const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, bake), target: dest, expect: null });
       await invoke("annot_commit", { temp: p.temp, target: p.target });
@@ -910,6 +924,9 @@
     if (!t || t.kind !== "pdf") return;
     const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
     updateTab(id, { stamp });
+    // Existing annotations: read the file's own, in the background.
+    t.marks.author = settings.markup.author ?? author;
+    const reading = readFileAnnots(t);
     const key = recoveryKey(pathKey(t.path));
     const raw = await invoke<string | null>("recovery_read", { key }).catch(() => null);
     if (!raw) return;
@@ -930,9 +947,19 @@
       invoke("recovery_delete", { key }).catch(() => {});
       return;
     }
+    await reading;
     const now = tabById(id);
     const v = viewer;
     if (!now || !v?.doc || now.id !== tabs.activeId) return;
+    // Existing annotations: with the file read, what it holds is known; the record's markups
+    // (the file's own by the same ids) become the present, and anything changed is lifted.
+    if (now.marks.read) {
+      now.marks.history.push(rec.markups);
+      markupTool?.attach(now.marks);
+      liftNow();
+      markVersion++;
+      return;
+    }
     const savedIds = new Set(rec.saved);
     now.marks.saved = rec.markups.filter((m) => savedIds.has(m.id));
     now.marks.history.push(rec.markups);
@@ -943,6 +970,111 @@
     markupTool?.attach(now.marks);
     markVersion++;
   }
+
+  // ---------------------------------------------------------------- existing annotations (phase 7b)
+
+  /**
+   * Read the file's annotations into the tab's markups (annot_read: straight from the file, off
+   * the render workers), with the pictures of any image stamps Vellum wrote. In the background:
+   * nothing waits for it but a crash-recovery restore and a save.
+   */
+  function readFileAnnots(t: Tab): Promise<void> {
+    const marks = t.marks;
+    const { path, password } = t;
+    const run: Promise<void> = (async () => {
+      const r = await invoke<AnnotRead>("annot_read", { path, password });
+      let list = r.pages.flatMap((p) => fromFile(p, new Set()));
+      const hashes = stampHashes(list.map((x) => x.markup));
+      if (hashes.length) {
+        const pngs = await invoke<Record<string, string>>("annot_stamp_images", { path, password, hashes }).catch(() => ({}));
+        const ms = withStampImages(list.map((x) => x.markup), pngs);
+        list = list.map((x, i) => ({ ...x, markup: ms[i] }));
+      }
+      if (!tabs.tabs.some((x) => x.marks === marks)) return; // closed meanwhile
+      marks.adoptFile(list);
+      if (active?.marks === marks) {
+        liftNow();
+        viewer?.requestFrame();
+      }
+      markVersion++;
+    })()
+      .catch((e) => console.warn("reading the file's annotations failed:", String((e as Error)?.message ?? e)))
+      .finally(() => {
+        if (marks.reading === run) marks.reading = null;
+      });
+    marks.reading = run;
+    return run;
+  }
+
+  /** After a save: read the file again for where each annotation now sits (MarkupDoc.reread). */
+  function rereadFileAnnots(t: Tab): Promise<void> {
+    const marks = t.marks;
+    const run: Promise<void> = invoke<AnnotRead>("annot_read", { path: t.path, password: t.password })
+      .then((r) => {
+        marks.reread(r.pages);
+        if (active?.marks === marks) liftNow();
+        markVersion++;
+      })
+      .catch((e) => console.warn("reading the file's annotations again failed:", String((e as Error)?.message ?? e)))
+      .finally(() => {
+        if (marks.reading === run) marks.reading = null;
+      });
+    marks.reading = run;
+    return run;
+  }
+
+  let liftChain: Promise<void> = Promise.resolve();
+  /**
+   * Hide in PDFium the annotations from the file the overlay now draws instead (with `ids`,
+   * those a drag is starting on; otherwise any that changed or went), then re-render those
+   * pages: the active tab only, whose document is the one open on the canvas.
+   */
+  function liftNow(ids?: string[]) {
+    const t = active;
+    const v = viewer;
+    if (!t || t.status !== "open" || t.kind !== "pdf" || !v?.doc || markupTool?.doc !== t.marks) return;
+    const groups = t.marks.toLift(ids);
+    if (!groups.length) return;
+    const docId = v.doc.docId;
+    liftChain = liftChain.then(async () => {
+      for (const g of groups) {
+        await invoke("doc_hide_annots", { docId, page: g.page, nms: g.nms, indices: g.indices, hidden: true }).catch((e) => console.warn("hiding an annotation failed:", String(e)));
+        if (viewer?.doc?.docId === docId) viewer.dropPageTiles(g.page);
+      }
+    });
+  }
+
+  /** The padlock: unlock "Edit document" (saying so first if the file is signed or asks not to be changed), or lock it again. */
+  async function toggleEditLock() {
+    const t = active;
+    if (!t || t.status !== "open" || t.kind !== "pdf") return;
+    const marks = t.marks;
+    if (marks.unlocked) {
+      marks.unlocked = false;
+      for (const id of [...marks.selection]) {
+        const m = marks.byId(id);
+        if (m && !marks.editable(m)) marks.selection.delete(id);
+      }
+      markVersion++;
+      viewer?.requestFrame();
+      return;
+    }
+    const info = await invoke<FileInfo>("annot_inspect", { path: t.path, password: t.password }).catch(() => null);
+    const warnings = unlockWarnings(t.title, info);
+    if (warnings.length) {
+      const a = await ask("Edit document", "Unlock to move, restyle and delete the annotations that came with the file?", ["Unlock", "Cancel"], { warnings });
+      if (a !== "Unlock") return;
+    }
+    if (active !== t) return;
+    marks.unlocked = true;
+    markVersion++;
+    viewer?.requestFrame();
+  }
+
+  const unlockedNow = $derived.by(() => {
+    void markVersion;
+    return !!markupTool?.doc?.unlocked;
+  });
 
   const active = $derived(activeTab(tabs));
   const hasDoc = $derived(!!active && active.status === "open" && ui.docId !== null);
@@ -1375,6 +1507,8 @@
           { label: "Copy", shortcut: "Ctrl+C", disabled: !textUi.hasSelection && !markupTool?.hasSelection, action: () => (markupTool?.hasSelection ? markupTool.copy() : copySelection()) },
           { label: "Paste markups", shortcut: "Ctrl+V", disabled: !markupTool?.canPaste, action: () => markupTool?.paste() },
           { label: "Delete markups", shortcut: "Delete", disabled: !markupTool?.hasSelection, action: () => markupTool?.deleteSelection() },
+          // Existing annotations
+          { label: unlockedNow ? "Lock document" : "Unlock document…", disabled: !pdfDoc, action: () => void toggleEditLock() },
           { separator: true },
           { label: "Select all text on the page", shortcut: "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
           // Text markups
@@ -1696,11 +1830,19 @@
         textStyle: () => settings.markup.text,
         author: () => settings.markup.author ?? author,
         onChange: onMarkupsChanged,
+        onLift: (ids) => liftNow(ids), // Existing annotations
       });
       markupTool = mt;
       // With --debug, scripted checks (DevTools) can reach the engine. Never in a normal launch.
       if (args.debug) (window as unknown as { __vellum: unknown }).__vellum = { viewer: v, markupTool: mt, textTool: tt, tabs: () => tabs };
-      invoke<string>("user_display_name").then((n) => (author = n)).catch(() => {});
+      invoke<string>("user_display_name")
+        .then((n) => {
+          author = n;
+          // Existing annotations: the lock leaves your own markups free.
+          for (const t of tabs.tabs) t.marks.author = settings.markup.author ?? n;
+          markVersion++;
+        })
+        .catch(() => {});
       // Closing the window: settle unsaved markups first (the title bar's close calls close()).
       win
         .onCloseRequested(async (ev) => {
@@ -1934,6 +2076,7 @@
           lastInGroup={settings.markup.lastInGroup}
           onTool={setTool}
         />
+        <EditLock unlocked={unlockedNow} disabled={!pdfDoc} onToggle={() => void toggleEditLock()} />
       {/snippet}
       {#snippet searchBox()}
         <SearchField
