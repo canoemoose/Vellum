@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 7 and 9.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 9.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -344,7 +344,7 @@ adds one); deleting removes it and any Popup naming the note as parent; reading 
 pin from /Open. Hiding a note in PDFium hides its linked pop-up, so a saved pinned note
 isn't drawn twice (the thumbnails and mini map may still show PDFium's open pop-up).
 
-## Stage 8: stamps, signatures and images
+## Stage 8: stamps, signatures and images ✓
 
 - **Rotate handles** [D5] on stamps, signatures and images: Shift steps by 15°; resizing
   works in the stamp's own frame. Overrides phase 5's "no stamp rotation".
@@ -366,6 +366,29 @@ isn't drawn twice (the thumbnails and mini map may still show PDFium's open pop-
     placing. Opacity is offered for both, and made to work.
   - The tool remembers the last stamp or signature, so picking the tool goes straight to
     placing.
+
+Built (as done): a stamp keeps its upright box and an `angle` (older stamps load at 0°); the
+maths is in `markup/turn.ts`. The rotate grip sits 24 px above the middle of the top edge in
+the stamp's own frame (Shift: 15° steps); corners resize in that frame with the opposite
+corner fixed; picking, grips, the marquee, moving and cursors follow the turned box. The
+drawing turns with it, so the saved /Rect holds the turned box's bounds and a baked signature
+is baked turned (no change to the Rust writer; a PDFium test proves it). Opacity now works on
+stamps (/GS0). A new one is upright as viewed (`DrawContext.viewRotation`; a dragged box is
+fitted as seen). The Image tool (I) opens a picture through `picture_open` (scaled to 2000
+px; png, jpeg, webp, tiff, bmp, gif), placed 50 mm wide by default; nothing goes in the
+library. A pasted picture (stage 9) becomes an Image markup, upright as viewed. The bar's
+picker (`components/signature/StampBar.svelte`) stands where the bar's label was: a text
+stamp has colour, a date line toggle and opacity; a signature or picture has opacity only
+(`barFor`: `ownBar`, `opacity`, `dateLine`, `picker`). Different from rule 7 on purpose: with
+a tool out, the picker arms the next stamp and doesn't swap the one just placed (so picking
+the next signature can't replace the last); with one stamp selected in Select it swaps that
+stamp's content. The tools remember their last stamp and signature across runs by reference
+only (`settings.stamps.last`: wording and colour, or a library id; never a signature's
+picture or strokes); the Image tool remembers its picture for the run. Rename, delete and
+adding image stamps stay in the old panels ("…" entries at the foot of the list), and the
+Signature panel opens when no signature is remembered. `VELLUM_STAMP_POPOUTS=1` brings back
+the old panels for choosing. A selected image stamp from the library shows the Image picker
+(a placed image doesn't record where it came from).
 
 ## Stage 9: selecting, copying and pasting ✓
 
