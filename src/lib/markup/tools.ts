@@ -8,6 +8,7 @@ import type { MarkupKind, Style } from "./base";
 import type { Markup } from "./base";
 import { arrowEnds } from "./base";
 import { kindOf } from "./kinds";
+import type { KindDef } from "./kinds/kind";
 
 export type GroupId = "select" | "lines" | "shapes" | "text" | "pen" | "measure" | "stamp";
 
@@ -32,8 +33,15 @@ export interface ToolDef {
   id: string;
   group: GroupId;
   label: string;
-  /** The tooltip after the label and shortcut: how to use it. */
-  tip: string;
+  /**
+   * Select's tooltip after its label and shortcut. A drawing tool has none: its how-to comes
+   * from its gesture (gestureTip, rule 4), so tools that share a gesture read the same.
+   */
+  tip?: string;
+  /** What comes before the gesture in its tooltip ("pick a stamp"). */
+  before?: string;
+  /** What comes after it ("then type its real length"). */
+  after?: string;
   /** The icon: SVG elements for a 16 x 16 view box, drawn in currentColor. */
   icon: string;
   /**
@@ -51,30 +59,30 @@ const STROKE = 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-line
 
 export const TOOLS: ToolDef[] = [
   { id: "select", group: "select", label: "Select", key: "v", tip: "click a markup to select it, drag to move, drag on empty drawing to select several; Esc also returns here", icon: `<path d="M3.5 2.5l9 5.2-4 1.1 2.3 4.2-1.6.9-2.3-4.2-3.4 2.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />` },
-  { id: "arrow", group: "lines", label: "Arrow", key: "a", kind: "arrow", tip: "drag from tail to head; Shift snaps to 15°", icon: `<path d="M3 13L12.5 3.5M7.5 3.5h5v5" ${STROKE} />` },
-  { id: "line", group: "lines", label: "Line", key: "l", kind: "arrow", preset: { ends: ["none", "none"] }, tip: "drag from end to end; Shift snaps to 15°", icon: `<path d="M3 13L13 3" ${STROKE} />` },
-  { id: "polyline", group: "lines", label: "Polyline", key: "l", kind: "polyline", tip: "click each point, double-click or Enter to finish; Shift snaps to 15°", icon: `<path d="M2.5 12.5l4-7 4 5 3-7" ${STROKE} />` },
-  { id: "rect", group: "shapes", label: "Rectangle", key: "b", kind: "rect", tip: "drag; Shift makes a square", icon: `<rect x="2.75" y="3.75" width="10.5" height="8.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
-  { id: "ellipse", group: "shapes", label: "Ellipse", key: "e", kind: "ellipse", tip: "drag; Shift makes a circle", icon: `<ellipse cx="8" cy="8" rx="5.75" ry="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
-  { id: "polygon", group: "shapes", label: "Polygon", key: "p", kind: "polygon", tip: "click each corner, then click the first again, double-click or press Enter; or drag a box", icon: `<path d="M8 2.5l5.5 4-2 6.5h-7l-2-6.5z" ${STROKE} />` },
-  { id: "cloud", group: "shapes", label: "Revision cloud", key: "c", kind: "cloud", tip: "click the corners and double-click to finish, or drag a box", icon: `<path d="M4.2 12.2a2 2 0 0 1-1.6-3.1 2 2 0 0 1 1.4-3.2 2.3 2.3 0 0 1 3.9-1.6 2.3 2.3 0 0 1 4 .9 2 2 0 0 1 1.6 3 2 2 0 0 1-1.7 3.2 2.2 2.2 0 0 1-3.8 1 2.2 2.2 0 0 1-3.8-.2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
-  { id: "text", group: "text", label: "Text box", key: "t", kind: "text", tip: "drag a box or click, then type; Esc finishes", icon: `<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M5 5.5h6M8 5.5v5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />` },
+  { id: "arrow", group: "lines", label: "Arrow", key: "a", kind: "arrow", icon: `<path d="M3 13L12.5 3.5M7.5 3.5h5v5" ${STROKE} />` },
+  { id: "line", group: "lines", label: "Line", key: "l", kind: "arrow", preset: { ends: ["none", "none"] }, icon: `<path d="M3 13L13 3" ${STROKE} />` },
+  { id: "polyline", group: "lines", label: "Polyline", key: "l", kind: "polyline", icon: `<path d="M2.5 12.5l4-7 4 5 3-7" ${STROKE} />` },
+  { id: "rect", group: "shapes", label: "Rectangle", key: "b", kind: "rect", icon: `<rect x="2.75" y="3.75" width="10.5" height="8.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
+  { id: "ellipse", group: "shapes", label: "Ellipse", key: "e", kind: "ellipse", icon: `<ellipse cx="8" cy="8" rx="5.75" ry="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
+  { id: "polygon", group: "shapes", label: "Polygon", key: "p", kind: "polygon", icon: `<path d="M8 2.5l5.5 4-2 6.5h-7l-2-6.5z" ${STROKE} />` },
+  { id: "cloud", group: "shapes", label: "Revision cloud", key: "c", kind: "cloud", icon: `<path d="M4.2 12.2a2 2 0 0 1-1.6-3.1 2 2 0 0 1 1.4-3.2 2.3 2.3 0 0 1 3.9-1.6 2.3 2.3 0 0 1 4 .9 2 2 0 0 1 1.6 3 2 2 0 0 1-1.7 3.2 2.2 2.2 0 0 1-3.8 1 2.2 2.2 0 0 1-3.8-.2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
+  { id: "text", group: "text", label: "Text box", key: "t", kind: "text", icon: `<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M5 5.5h6M8 5.5v5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />` },
   // Text markups (beside their groups, which set the palette order): callout and note
-  { id: "callout", group: "text", label: "Callout", key: "t", kind: "callout", tip: "click what it points at, then click an elbow and where the box goes (or double-click where the box goes, or drag there), then type", icon: `<rect x="7.25" y="2.75" width="7" height="5.5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M2.5 13.5L5.5 8.5h1.75" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /><path d="M2.5 13.5l.4-2M2.5 13.5l1.9-.7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />` },
-  { id: "note", group: "text", label: "Note", key: "t", kind: "note", tip: "click to place a note, then type; double-click a note to edit it, rest the pointer on it to read it", icon: `<path d="M3 2.75h7.25l2.75 2.75v7.75H3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" /><path d="M10.25 2.75V5.5H13M5.5 8h5M5.5 10.5h3.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
-  { id: "ink", group: "pen", label: "Pen", key: "d", kind: "ink", tip: "draw freehand", icon: `<path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" ${STROKE} />` },
+  { id: "callout", group: "text", label: "Callout", key: "t", kind: "callout", icon: `<rect x="7.25" y="2.75" width="7" height="5.5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M2.5 13.5L5.5 8.5h1.75" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /><path d="M2.5 13.5l.4-2M2.5 13.5l1.9-.7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />` },
+  { id: "note", group: "text", label: "Note", key: "t", kind: "note", after: "double-click a note to edit it, rest the pointer on it to read it", icon: `<path d="M3 2.75h7.25l2.75 2.75v7.75H3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" /><path d="M10.25 2.75V5.5H13M5.5 8h5M5.5 10.5h3.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
+  { id: "ink", group: "pen", label: "Pen", key: "d", kind: "ink", icon: `<path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" ${STROKE} />` },
   // Text markups: highlighter
-  { id: "highlighter", group: "pen", label: "Highlighter", key: "h", kind: "highlighter", tip: "draw freehand over the drawing; Shift draws a straight stroke", icon: `<path d="M3 13.5h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /><path d="M4.5 11.5l1.8-3.6 6-5.4 1.8 1.8-5.4 6-3.6 1.8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
+  { id: "highlighter", group: "pen", label: "Highlighter", key: "h", kind: "highlighter", icon: `<path d="M3 13.5h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /><path d="M4.5 11.5l1.8-3.6 6-5.4 1.8 1.8-5.4 6-3.6 1.8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
   // Measuring
-  { id: "measureLength", group: "measure", label: "Length", key: "m", kind: "measureLength", tip: "click each end, or drag; Shift snaps to 15°", icon: `<path d="M2.5 11.5l11-7M1.6 10.1l1.8 2.8M12.6 3.1l1.8 2.8" ${STROKE} />` },
-  { id: "measurePath", group: "measure", label: "Polyline length", key: "m", kind: "measurePath", tip: "click each point, double-click or Enter to finish; Shift snaps to 15°", icon: `<path d="M2.5 12.5l4-6 3.5 3 3.5-6.5M1.5 11.5l2 2" ${STROKE} />` },
-  { id: "measureArea", group: "measure", label: "Area", key: "m", kind: "measureArea", tip: "click each corner, then click the first again, double-click or press Enter; or drag a box", icon: `<path d="M2.5 3.5h11v9h-11z" ${STROKE} /><path d="M5.5 9.5l5-4M7.5 10.5l3-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />` },
-  { id: "measureAngle", group: "measure", label: "Angle", key: "m", kind: "measureAngle", tip: "click one arm's end, the corner, then the other arm's end; Shift snaps to 15°", icon: `<path d="M13.5 3.5L3 13h10.5" ${STROKE} /><path d="M8.5 13a5.5 5.5 0 0 0-1.6-3.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />` },
-  { id: "measureCalibrate", group: "measure", label: "Calibrate", key: "m", kind: "measureCalibrate", tip: "click each end of a dimension you know, then type its real length to set the scale", icon: `<path d="M1.5 10.5h13v3h-13z" ${STROKE} /><path d="M4.5 10.5v1.5M7.5 10.5v2M10.5 10.5v1.5M8 2.5v5M6 5.5l2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
+  { id: "measureLength", group: "measure", label: "Length", key: "m", kind: "measureLength", icon: `<path d="M2.5 11.5l11-7M1.6 10.1l1.8 2.8M12.6 3.1l1.8 2.8" ${STROKE} />` },
+  { id: "measurePath", group: "measure", label: "Polyline length", key: "m", kind: "measurePath", icon: `<path d="M2.5 12.5l4-6 3.5 3 3.5-6.5M1.5 11.5l2 2" ${STROKE} />` },
+  { id: "measureArea", group: "measure", label: "Area", key: "m", kind: "measureArea", icon: `<path d="M2.5 3.5h11v9h-11z" ${STROKE} /><path d="M5.5 9.5l5-4M7.5 10.5l3-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />` },
+  { id: "measureAngle", group: "measure", label: "Angle", key: "m", kind: "measureAngle", icon: `<path d="M13.5 3.5L3 13h10.5" ${STROKE} /><path d="M8.5 13a5.5 5.5 0 0 0-1.6-3.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />` },
+  { id: "measureCalibrate", group: "measure", label: "Calibrate", key: "m", kind: "measureCalibrate", after: "then type its real length to set the scale", icon: `<path d="M1.5 10.5h13v3h-13z" ${STROKE} /><path d="M4.5 10.5v1.5M7.5 10.5v2M10.5 10.5v1.5M8 2.5v5M6 5.5l2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
 
   // Stamps
-  { id: "stamp", group: "stamp", label: "Stamp", key: "s", kind: "stamp", tip: "pick a stamp, then click to place it or drag to size it", icon: `<rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M4.5 8h7" ${STROKE} />` },
-  { id: "signature", group: "stamp", label: "Signature", key: "s", kind: "stamp", tip: "pick a signature, then click to place it or drag to size it", icon: `<path d="M2 11.5c1.5-3 2.5-6.5 3.6-6.5 1.3 0-.6 5.5.8 5.5 1.1 0 1.6-2.6 2.6-2.6.8 0 .6 1.8 1.5 1.8.7 0 1.3-.8 2-1.3M2 13.5h12" ${STROKE} />` },
+  { id: "stamp", group: "stamp", label: "Stamp", key: "s", kind: "stamp", before: "pick a stamp", icon: `<rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M4.5 8h7" ${STROKE} />` },
+  { id: "signature", group: "stamp", label: "Signature", key: "s", kind: "stamp", before: "pick a signature", icon: `<path d="M2 11.5c1.5-3 2.5-6.5 3.6-6.5 1.3 0-.6 5.5.8 5.5 1.1 0 1.6-2.6 2.6-2.6.8 0 .6 1.8 1.5 1.8.7 0 1.3-.8 2-1.3M2 13.5h12" ${STROKE} />` },
 
   // Text markups (their tools sit beside their groups, above)
 ];
@@ -122,9 +130,50 @@ export function toolForKey(key: string, current: string): string | null {
   return with_[(i + 1) % with_.length].id;
 }
 
-/** The tooltip: "Line (L): drag from end to end; ...", with "L again" for a shared letter. */
+/**
+ * How to draw with a kind, from its gesture alone (rule 4): kinds that share a gesture, with the
+ * same options, read the same.
+ */
+export function gestureTip(def: KindDef): string {
+  const d = def.draw;
+  const parts: string[] = [];
+  switch (d.gesture) {
+    case "box":
+      parts.push(d.click ? "drag corner to corner, or click" : "drag corner to corner", "Shift keeps it square");
+      break;
+    case "points": {
+      const lock = d.lock === "ortho" ? "it stays level or upright, Shift frees it" : "Shift snaps to 15°";
+      if (d.say) parts.push(d.say, lock);
+      else if (d.max === 2) parts.push("click each end, or drag", lock);
+      else {
+        parts.push(`${d.closed ? "click each corner, then click the first again," : "click each point, then"} double-click or press Enter`);
+        parts.push(d.drag === "box" ? "or drag a box" : "or drag a straight one");
+        parts.push(d.drag === "box" ? `${lock}, or squares a dragged box` : lock);
+        parts.push("Backspace takes back a point; right-click to finish or cancel");
+      }
+      break;
+    }
+    case "freehand":
+      parts.push("draw freehand", "Shift draws a straight line");
+      break;
+    case "place":
+      parts.push(d.box ? "click to place it, or drag to size it" : "click to place it");
+      break;
+  }
+  if (def.typesAfter) parts.push("then type: Esc, Ctrl+Enter or a click elsewhere finishes");
+  return parts.join("; ");
+}
+
+/** A tool's how-to: Select's own words, or its gesture's (with anything the tool adds). */
+export function toolHowTo(t: ToolDef): string {
+  if (!t.kind) return t.tip ?? "";
+  const g = gestureTip(kindOf(t.kind) as unknown as KindDef);
+  return [t.before ? `${t.before}, then ${g}` : g, t.after].filter(Boolean).join("; ");
+}
+
+/** The tooltip: "Line (L): click each end, or drag; ...", with "L twice" for a shared letter. */
 export function toolTip(t: ToolDef): string {
-  return `${t.label} (${keyLabel(t)}): ${t.tip}`;
+  return `${t.label} (${keyLabel(t)}): ${toolHowTo(t)}`;
 }
 
 /** How a tool's shortcut reads: "L", or "L twice" for the second tool sharing L ("M 3 times"...). */
