@@ -292,11 +292,42 @@ export interface StampPrefs {
   colour: Rgb | null;
   /** The last custom wording. */
   custom: string;
+  /**
+   * Stage 8: what the Stamp and Signature tools last placed, so picking the tool goes straight
+   * to placing. By reference only: a text stamp's wording and colour, an image stamp's or a
+   * signature's id in its library. A signature's picture or strokes never go here.
+   */
+  last: { stamp?: StampRef; signature?: string };
+}
+
+/** A stamp by reference (stage 8): what to arm again, never the picture itself. */
+export type StampRef = { type: "text"; label: string; colour: Rgb } | { type: "image"; id: string };
+
+const isRgb = (c: unknown): c is Rgb => Array.isArray(c) && c.length === 3 && c.every((v) => typeof v === "number" && v >= 0 && v <= 1);
+/** A library id: what the stamp and signature libraries hand out (hex, or a UUID's hex and dashes). */
+const isId = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{1,64}$/i.test(v);
+
+function sanitiseRef(raw: unknown): StampRef | undefined {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  if (o.type === "text" && typeof o.label === "string" && cleanLabel(o.label) && isRgb(o.colour)) return { type: "text", label: cleanLabel(o.label), colour: o.colour };
+  if (o.type === "image" && isId(o.id)) return { type: "image", id: o.id };
+  return undefined;
 }
 
 export function sanitiseStampPrefs(raw: unknown): StampPrefs {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const c = o.colour;
-  const colour = Array.isArray(c) && c.length === 3 && c.every((v) => typeof v === "number" && v >= 0 && v <= 1) ? (c as Rgb) : null;
-  return { sub: o.sub !== false, colour, custom: typeof o.custom === "string" ? cleanLabel(o.custom) : "" };
+  const colour = isRgb(o.colour) ? o.colour : null;
+  const l = (o.last && typeof o.last === "object" ? o.last : {}) as Record<string, unknown>;
+  const stamp = sanitiseRef(l.stamp);
+  const last = { ...(stamp ? { stamp } : {}), ...(isId(l.signature) ? { signature: l.signature } : {}) };
+  return { sub: o.sub !== false, colour, custom: typeof o.custom === "string" ? cleanLabel(o.custom) : "", last };
 }
+
+/** Stage 8: the reference a picked stamp is remembered by (an image stamp needs its library id). */
+export function refOf(c: StampContent, imageId?: string): StampRef | undefined {
+  if (c.type === "text") return { type: "text", label: c.label, colour: c.colour };
+  return c.type === "image" && imageId ? { type: "image", id: imageId } : undefined;
+}
+
+/** Stage 8: a text stamp from its reference, with the date line or not. */
+export const textFromRef = (r: Extract<StampRef, { type: "text" }>, sub: string | null): TextContent => ({ type: "text", label: r.label, sub, colour: r.colour });

@@ -364,3 +364,54 @@ fn real_files() {
         }
     }
 }
+
+/// Stage 8: a turned stamp. The front end draws the turned stamp into its appearance (in page
+/// space, its /BBox the turned box's bounds, which are also its /Rect), so the writer and the
+/// bake take it as they take any other: here a blue 100 x 24 bar turned 30 degrees about the
+/// box's middle. Movable and baked draw the same pixels, and the ink is along the turn, not
+/// filling the upright box that holds it.
+#[test]
+fn a_turned_stamp_bakes_turned() {
+    let (cx, cy, a) = (230.0f64, 150.0f64, 30f64.to_radians());
+    let turn = |x: f64, y: f64| (cx + x * a.cos() - y * a.sin(), cy + x * a.sin() + y * a.cos());
+    let pts = [turn(-50.0, -12.0), turn(50.0, -12.0), turn(50.0, 12.0), turn(-50.0, 12.0)];
+    let ops = format!(
+        "0 0 1 rg {} {} m {} {} l {} {} l {} {} l h f",
+        pts[0].0, pts[0].1, pts[1].0, pts[1].1, pts[2].0, pts[2].1, pts[3].0, pts[3].1
+    );
+    let xs = || pts.iter().map(|p| p.0);
+    let ys = || pts.iter().map(|p| p.1);
+    let r = [
+        xs().fold(f64::MAX, f64::min).floor(),
+        ys().fold(f64::MAX, f64::min).floor(),
+        xs().fold(f64::MIN, f64::max).ceil(),
+        ys().fold(f64::MIN, f64::max).ceil(),
+    ];
+    let spec = |nm: &str| AnnotSpec {
+        page: 0,
+        nm: nm.into(),
+        subtype: "Stamp".into(),
+        rect: r,
+        appearance: Appearance { ops: ops.clone(), bbox: r, ..Default::default() },
+        ..Default::default()
+    };
+    let orig = fixture(&[Layout::Single], false);
+    let movable = annot::apply(orig.clone(), "", &[Change::Add { spec: spec("t") }]).unwrap();
+    let baked = annot::apply(orig.clone(), "", &[Change::Bake { spec: spec("t") }]).unwrap();
+    let (m, w, _h) = render(&movable, 0, true);
+    let (b, _, h) = render(&baked, 0, false);
+    let (outside, inside) = diff(&m, &b, w, h, r);
+    assert_eq!(outside, 0);
+    assert!(inside < 60, "{inside} pixels differ inside the box");
+    // Blue at the bar's middle and near both its ends; not in the upright box's empty corners.
+    let is_blue = |px: &[u8], (x, y): (f64, f64)| {
+        let i = ((((H - y) * PPP) as i32 * w + (x * PPP) as i32) * 4) as usize;
+        px[i] > 180 && px[i + 1] < 90 && px[i + 2] < 90
+    };
+    for (x, y) in [(0.0, 0.0), (-42.0, 0.0), (42.0, 0.0)] {
+        assert!(is_blue(&b, turn(x, y)), "ink along the turn at {x}, {y}");
+        assert!(is_blue(&m, turn(x, y)), "the annotation's ink along the turn at {x}, {y}");
+    }
+    assert!(!is_blue(&b, (r[0] + 3.0, r[3] - 3.0)), "the upright box's top left corner is empty");
+    assert!(!is_blue(&b, (r[2] - 3.0, r[1] + 3.0)), "the upright box's bottom right corner is empty");
+}

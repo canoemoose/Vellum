@@ -56,11 +56,17 @@
   import SignaturePopover from "./lib/components/signature/SignaturePopover.svelte";
   import SignatureDialog from "./lib/components/signature/SignatureDialog.svelte";
   import StampPicker from "./lib/components/signature/StampPicker.svelte";
-  import { armStamp } from "./lib/markup/kinds/stamp";
-  import type { StampContent } from "./lib/markup/stamps";
+  import { armStamp, placeAt, stampVariant, withContent } from "./lib/markup/kinds/stamp";
+  import { type StampContent, BUILT_IN, defaultSub, refOf, textFromRef } from "./lib/markup/stamps";
   import { setImageReady, preloadImage } from "./lib/engine/stampImages";
-  import { signatureContent } from "./lib/stamps/api";
-  import { type SignatureItem, signatureMessage } from "./lib/signature/api";
+  import { type Picture, PICTURE_EXTENSIONS, getStamp, openPicture, pictureContent, signatureContent } from "./lib/stamps/api";
+  import { type SignatureItem, listSignatures, signatureMessage } from "./lib/signature/api";
+  // Stage 8: the stamp tools' pickers in the context bar
+  import StampBar, { type Family as StampFamily } from "./lib/components/signature/StampBar.svelte";
+  import { imageContent } from "./lib/markup/stamps";
+  import { newId, type Pt } from "./lib/markup/types";
+  import type { Out } from "./lib/shell/popout";
+  import { open as pickPicture } from "@tauri-apps/plugin-dialog";
   import { bakeQuestion, newSignatureIds, withBakes } from "./lib/shell/save";
   import type { Change } from "./lib/markup/spec";
 
@@ -302,9 +308,14 @@
     if (!mt || !pdfDoc) return null;
     const tool = toolById(mt.tool);
     if (tool?.kind) {
-      const bar = barFor([subjectOfTool(tool)]);
+      // Stage 8: a stamp tool's bar follows what it has armed (a text stamp has a colour).
+      const armed = isStampTool(tool.id) ? stampArmed[tool.id] : undefined;
+      const variant = isStampTool(tool.id) ? (armed ? stampVariant(armed.content, tool.id === "signature") : tool.id === "stamp" ? "text" : tool.id) : undefined;
+      const bar = barFor([subjectOfTool(tool, variant)]);
       if (!bar) return null;
-      return { bar, kinds: [tool.kind], tool: tool.id, style: styleFor(settings.markup, tool.id), text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool`, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
+      const own = styleFor(settings.markup, tool.id);
+      const style = armed?.content.type === "text" ? { ...own, stroke: armed.content.colour } : own;
+      return { bar, kinds: [tool.kind], tool: tool.id, style, text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool`, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
     }
     const sel = mt.selected();
     // Several kinds: only the controls they all have; none (a stamp, an annotation Vellum can't redraw), no bar.
@@ -345,6 +356,8 @@
       settings.markup = { ...settings.markup, styles: { ...settings.markup.styles, [id]: { ...styleFor(settings.markup, id), ...patch } } };
       save();
     }
+    // Stage 8: a text stamp's colour is what it places next.
+    if (id === "stamp" && patch.stroke) recolourArmed(patch.stroke);
     // The selection: what is picked out, or with a drawing tool, the shape just drawn.
     mt.restyle(patch);
     markVersion++;
@@ -632,8 +645,11 @@
   /** The pad, in its dialog ("New signature..."). */
   let signatureDialog = $state(false);
   let signaturePopover = $state<SignaturePopover>();
-  /** What each stamp tool last had armed, so switching between them keeps each one's choice. */
-  const stampArmed: { signature?: StampContent; stamp?: StampContent } = {};
+  /**
+   * What each stamp tool last had armed in this run, so switching between them keeps each one's
+   * choice; `id` is its library id (an image stamp's, a signature's), `name` a picture's file name.
+   */
+  let stampArmed = $state.raw<Partial<Record<StampTool, { content: StampContent; id?: string; name?: string }>>>({});
   /** Per tab: the signatures the save in progress bakes in (the bake question's answer). */
   const pendingBake = new WeakMap<Tab, Set<string>>();
 
@@ -641,11 +657,21 @@
   setImageReady(() => viewer?.requestFrame());
 
   function stampToolPicked(t: Tool) {
-    if (t === "signature" || t === "stamp") {
-      const prev = stampArmed[t];
-      if (prev) armStamp(prev, t === "signature");
-      stampPanel = t;
-    } else stampPanel = null;
+    if (!isStampTool(t)) {
+      stampPanel = null;
+      return;
+    }
+    const prev = stampArmed[t];
+    armStamp(prev?.content ?? null, t === "signature");
+    // Stage 8: the Image tool asks for a picture when it has none (with the popouts, every time).
+    if (t === "image") {
+      if (!prev || stampPopouts) void choosePicture(false);
+      return;
+    }
+    // The popouts (VELLUM_STAMP_POPOUTS=1): the panel opens each time the tool is picked.
+    if (stampPopouts) stampPanel = t;
+    // The context bar's pickers: straight to placing what the tool last placed.
+    else if (!prev) void armRemembered(t);
   }
 
   // The tool changed some other way (Esc, a tab closing): the picker goes with it.
@@ -660,21 +686,22 @@
     if (t && !stampArmed[t]) setTool("select");
   }
 
-  /** Arm a stamp tool with what was picked, and close its picker. */
-  function armFor(tool: "signature" | "stamp", c: StampContent) {
-    stampArmed[tool] = c;
+  /** Arm a stamp tool with what was picked, and close its picker. `id`: its library id. */
+  function armFor(tool: StampTool, c: StampContent, id?: string, name?: string) {
+    stampArmed = { ...stampArmed, [tool]: { content: c, id, name } };
     armStamp(c, tool === "signature");
     if (c.type === "image") preloadImage(c.hash, c.png);
+    remember(tool, c, id);
     if (markupTool?.tool !== tool) setTool(tool);
     stampPanel = null;
-    notify(tool === "signature" ? "Click on the page to place the signature, or drag to size it" : "Click on the page to place the stamp, or drag to size it");
+    notify(`Click on the page to place the ${tool === "signature" ? "signature" : tool === "image" ? "picture" : "stamp"}, or drag to size it`);
   }
 
   async function pickSignature(item: SignatureItem) {
     try {
       const c = await signatureContent(item);
       if (!c) throw new Error("[signature_unreadable] no strokes or picture");
-      armFor("signature", c);
+      armFor("signature", c, item.id);
     } catch (e) {
       // By id only: a signature's data never goes in the log.
       console.warn(`signature ${item.id} could not be placed`);
@@ -686,6 +713,192 @@
     signatureDialog = false;
     signaturePopover?.refresh();
     pickSignature(item);
+  }
+
+  // Stage 8: the pickers in the context bar, the Image tool, pasted pictures
+  // (docs/editing-tool-consistency-brief.md, stage 8).
+
+  type StampTool = "stamp" | "signature" | "image";
+  const isStampTool = (t: string | null | undefined): t is StampTool => t === "stamp" || t === "signature" || t === "image";
+  /** VELLUM_STAMP_POPOUTS=1: the old panels instead of the context bar's pickers, until Matt has chosen. */
+  let stampPopouts = $state(false);
+
+  /** A text stamp's date line as it starts today: the author and the date. */
+  const dateSub = () => defaultSub(settings.markup.author ?? author, new Date());
+
+  /** Remember what a tool placed, by reference only (never a signature's picture or strokes). */
+  function remember(tool: StampTool, c: StampContent, id?: string) {
+    const last = settings.stamps.last;
+    if (tool === "stamp") {
+      const ref = refOf(c, id);
+      if (!ref) return;
+      settings.stamps = { ...settings.stamps, last: { ...last, stamp: ref } };
+    } else if (tool === "signature" && id) settings.stamps = { ...settings.stamps, last: { ...last, signature: id } };
+    else return;
+    save();
+  }
+
+  /** Arm what a tool last placed (in an earlier run), from its reference; the tool must still be out. */
+  async function armRemembered(t: "stamp" | "signature") {
+    const still = () => markupTool?.tool === t && !stampArmed[t];
+    const arm = (c: StampContent, id?: string) => {
+      if (!still()) return;
+      stampArmed = { ...stampArmed, [t]: { content: c, id } };
+      armStamp(c, t === "signature");
+      if (c.type === "image") preloadImage(c.hash, c.png);
+    };
+    const last = settings.stamps.last;
+    if (t === "stamp") {
+      const r = last.stamp;
+      if (r?.type === "image") {
+        const c = await getStamp(r.id).then(imageContent).catch(() => null);
+        if (c) return arm(c, r.id);
+      }
+      return arm(textFromRef(r?.type === "text" ? r : { type: "text", ...BUILT_IN[0] }, settings.stamps.sub ? dateSub() : null));
+    }
+    try {
+      const item = last.signature ? (await listSignatures()).items.find((i) => i.id === last.signature) : undefined;
+      const c = item ? await signatureContent(item) : null;
+      if (item && c) return arm(c, item.id);
+    } catch {
+      // By id only: a signature's data never goes in the log.
+      console.warn(`signature ${last.signature} could not be armed again`);
+    }
+    // None remembered, or it's gone: the panel, to pick one or make one.
+    if (still()) stampPanel = "signature";
+  }
+
+  /** The stamp picker in the context bar: for a stamp tool what it has armed, else the one selected stamp. */
+  const stampBar = $derived.by((): { family: StampFamily; current: StampContent | null; id: string | null; name: string | null; dateLine: boolean | null } | null => {
+    void markVersion;
+    const s = strip;
+    if (!s?.bar.picker || stampPopouts) return null;
+    if (isStampTool(s.tool)) {
+      const a = stampArmed[s.tool];
+      return { family: s.tool, current: a?.content ?? null, id: a?.id ?? null, name: a?.name ?? null, dateLine: s.bar.dateLine ? settings.stamps.sub : null };
+    }
+    const m = markupTool?.selected()[0];
+    if (m?.kind !== "stamp") return null;
+    const v = s.bar.picker;
+    return { family: v === "signature" ? "signature" : v === "text" ? "stamp" : "image", current: m.content, id: null, name: null, dateLine: s.bar.dateLine ? m.content.type === "text" && !!m.content.sub : null };
+  });
+
+  /** A stamp picked in the bar: with a tool out, what it places next; in Select, what the selected one holds. */
+  function stampPicked(c: StampContent, id?: string) {
+    const t = strip?.tool;
+    if (isStampTool(t)) armFor(t, c, id);
+    else replaceSelectedStamp(c, false);
+  }
+
+  async function signaturePicked(item: SignatureItem) {
+    if (isStampTool(strip?.tool)) return pickSignature(item);
+    try {
+      const c = await signatureContent(item);
+      if (!c) throw new Error("[signature_unreadable] no strokes or picture");
+      replaceSelectedStamp(c, true);
+    } catch (e) {
+      console.warn(`signature ${item.id} could not be placed`);
+      notify(signatureMessage(e, "use the signature"));
+    }
+  }
+
+  /** The one selected stamp holds `c` now: same middle and turn (one undo step). */
+  function replaceSelectedStamp(c: StampContent, signature: boolean) {
+    const mt = markupTool;
+    const sel = mt?.selected() ?? [];
+    if (!mt || sel.length !== 1 || sel[0].kind !== "stamp") return;
+    if (c.type === "image") preloadImage(c.hash, c.png);
+    mt.updateMarkup(withContent(sel[0], c, signature));
+  }
+
+  /** The selected stamps changed by `f`, as one undo step. */
+  function changeSelectedStamps(f: (m: Extract<Markup, { kind: "stamp" }>) => Markup) {
+    const t = active;
+    const mt = markupTool;
+    if (!t || !mt) return;
+    const now = new Date().toISOString();
+    let changed = false;
+    const next = t.marks.markups.map((m) => {
+      if (m.kind !== "stamp" || !t.marks.selection.has(m.id)) return m;
+      const n = f(m);
+      if (n === m) return m;
+      changed = true;
+      return { ...n, meta: { ...n.meta, modified: now } } as Markup;
+    });
+    if (!changed) return;
+    t.marks.history.push(next);
+    viewer?.requestFrame();
+    onMarkupsChanged();
+  }
+
+  /** The date line on or off: what the Stamp tool places next (remembered), and the selected text stamps (rule 7). */
+  function setDateLine(on: boolean) {
+    const sub = on ? dateSub() : null;
+    if (strip?.tool === "stamp") {
+      settings.stamps = { ...settings.stamps, sub: on };
+      save();
+      const a = stampArmed.stamp;
+      if (a?.content.type === "text") {
+        const c = { ...a.content, sub };
+        stampArmed = { ...stampArmed, stamp: { ...a, content: c } };
+        armStamp(c, false);
+      }
+    }
+    changeSelectedStamps((m) => (m.content.type === "text" && !!m.content.sub !== on ? withContent(m, { ...m.content, sub }) : m));
+  }
+
+  /** The bar's colour with the Stamp tool out: the text stamp it places next takes it (remembered). */
+  function recolourArmed(colour: Style["stroke"]) {
+    const a = stampArmed.stamp;
+    if (a?.content.type !== "text") return;
+    const c = { ...a.content, colour };
+    stampArmed = { ...stampArmed, stamp: { ...a, content: c } };
+    armStamp(c, false);
+    remember("stamp", c);
+  }
+
+  /** The full library (rename, delete, add a picture): the panel, with its tool out. */
+  function manageStamps(family: StampFamily) {
+    const t = family === "signature" ? "signature" : "stamp";
+    if (markupTool?.tool !== t) setTool(t);
+    stampPanel = t;
+  }
+
+  /**
+   * The Image tool: pick a picture file (scaled to 2000 px on its long side on the way in) and
+   * place it; nothing goes in the stamp library. `forSelection`: it replaces the selected picture.
+   */
+  async function choosePicture(forSelection: boolean) {
+    const back = () => {
+      if (!forSelection && markupTool?.tool === "image" && !stampArmed.image) setTool("select");
+    };
+    const path = await pickPicture({ title: "Place a picture", multiple: false, filters: [{ name: "Pictures", extensions: PICTURE_EXTENSIONS }] }).catch(() => null);
+    if (typeof path !== "string") return back();
+    try {
+      const c = await pictureContent(await openPicture(path));
+      if (!c) throw new Error("[picture_unreadable] not a PNG");
+      if (forSelection) return replaceSelectedStamp(c, false);
+      if (markupTool?.tool !== "image") return;
+      armFor("image", c, undefined, path.split(/[\\/]/).pop());
+    } catch (e) {
+      console.warn("image tool: the picture could not be opened:", String(e).slice(0, 200));
+      notify(userMessage(e, "open the picture"));
+      back();
+    }
+  }
+
+  /** A picture pasted from the clipboard: an Image markup centred on `at`, upright as viewed. */
+  async function placePicture(pic: Picture, page: number, at: Pt) {
+    const mt = markupTool;
+    const c = await pictureContent(pic).catch(() => null);
+    if (!mt || !c) {
+      notify("Couldn't paste the picture");
+      return;
+    }
+    if (c.type === "image") preloadImage(c.hash, c.png);
+    const now = new Date().toISOString();
+    const meta = { author: settings.markup.author ?? author, created: now, modified: now };
+    mt.addMarkups([{ id: newId(), page, kind: "stamp", style: styleFor(settings.markup, "image"), meta, ...placeAt(c, false, at, viewer?.rotation ?? 0) } as Markup]);
   }
 
   /**
@@ -1934,6 +2147,7 @@
     (async () => {
       const args: LaunchArgs = await launchArgs();
       bench = args.bench;
+      stampPopouts = !!args.stampPopouts; // Stage 8
       const win = getCurrentWindow();
       const v = new Viewer(canvas);
       v.layoutMode = settings.layoutMode;
@@ -1968,6 +2182,8 @@
         },
         notify,
         sides: (tool) => sidesFor(settings.markup, tool), // Stage 6
+        // Stage 8: a picture pasted from the clipboard becomes an Image markup, upright as viewed.
+        onPicture: (pic, page, at) => void placePicture(pic, page, at),
       });
       markupTool = mt;
       // With --debug, scripted checks (DevTools) can reach the engine. Never in a normal launch.
@@ -2372,6 +2588,7 @@
           {...dimensionStrip}
           dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
           onStyle={stripStyle} onText={stripText}
+          stamp={stampBar ? stampPicker : undefined}
           onDock={(d, done) => {
             liveDock = done ? null : d;
             if (done) {
@@ -2403,6 +2620,22 @@
       {/if}
       <!-- End measuring -->
       <!-- Stamps -->
+      {#snippet stampPicker(narrow: boolean, out: Out)}
+        {#if stampBar}
+          <StampBar
+            family={stampBar.family} current={stampBar.current} currentId={stampBar.id} currentName={stampBar.name} dateLine={stampBar.dateLine}
+            {narrow} {out} author={settings.markup.author ?? author} custom={settings.stamps.custom}
+            onPick={stampPicked} onPickSignature={signaturePicked} onDateLine={setDateLine}
+            onCustom={(label) => {
+              settings.stamps = { ...settings.stamps, custom: label };
+              save();
+            }}
+            onNewSignature={() => (signatureDialog = true)}
+            onManage={() => manageStamps(stampBar.family)}
+            onChoosePicture={() => void choosePicture(!strip?.tool)}
+          />
+        {/if}
+      {/snippet}
       {#if stampPanel === "signature"}
         <SignaturePopover bind:this={signaturePopover} onPick={pickSignature} onNew={() => (signatureDialog = true)} onClose={closeStampPanel} />
       {:else if stampPanel === "stamp"}
@@ -2413,7 +2646,7 @@
             settings.stamps = p;
             save();
           }}
-          onPick={(c) => armFor("stamp", c)}
+          onPick={(c, id) => armFor("stamp", c, id)}
           onClose={closeStampPanel}
         />
       {/if}

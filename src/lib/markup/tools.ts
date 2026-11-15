@@ -84,6 +84,8 @@ export const TOOLS: ToolDef[] = [
   // Stamps
   { id: "stamp", group: "stamp", label: "Stamp", key: "s", kind: "stamp", before: "pick a stamp", icon: `<rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M4.5 8h7" ${STROKE} />` },
   { id: "signature", group: "stamp", label: "Signature", key: "s", kind: "stamp", before: "pick a signature", icon: `<path d="M2 11.5c1.5-3 2.5-6.5 3.6-6.5 1.3 0-.6 5.5.8 5.5 1.1 0 1.6-2.6 2.6-2.6.8 0 .6 1.8 1.5 1.8.7 0 1.3-.8 2-1.3M2 13.5h12" ${STROKE} />` },
+  // Stage 8: a picture from a file, placed as an image stamp (nothing goes in the stamp library)
+  { id: "image", group: "stamp", label: "Image", key: "i", kind: "stamp", before: "pick a picture", icon: `<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M2.5 12l3.8-4.3 2.7 3 1.7-1.7 2.8 3" ${STROKE} /><circle cx="10.75" cy="5.75" r="1.25" fill="currentColor" />` },
 
   // Text markups (their tools sit beside their groups, above)
 ];

@@ -8,7 +8,7 @@ import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor } from "../markup/ops";
 import { fitText } from "../markup/textbox";
-import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, orthoFrom, rectPts, shapeBounds, simplify, snapAngle, squareFrom } from "../markup/geometry";
+import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, orthoFrom, rectPts, shapeBounds, simplify, snapAngle, squareFrom, turnOf } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
 import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX, pointLock } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
@@ -17,6 +17,7 @@ import { centredOn, fromClip, newSession, toClip } from "../markup/clip";
 // Stage 6: shapes
 import { DEFAULT_SIDES, regularFromDrag, regularVertices } from "../markup/regular";
 import { addCorner, canRemoveCorner, cornerOfGrip, removeCorner } from "../markup/corners";
+import { topMiddle } from "../markup/turn"; // Stage 8
 
 export { fitText, refitText } from "../markup/textbox";
 
@@ -443,7 +444,7 @@ export class MarkupTool {
     // A handle of a selected markup first.
     for (const m of this.selected()) {
       if (m.page !== page) continue;
-      const h = handleAt(m, p, this.tolPt(HANDLE_PX));
+      const h = handleAt(m, p, this.tolPt(HANDLE_PX), this.tolPt(1));
       // Dimensions (stage 5): a double-click on a grip puts back what it holds (a moved value).
       const reset = h && clicks === 2 ? defOf(m).resetHandle?.(m, h) : null;
       if (reset) {
@@ -568,7 +569,10 @@ export class MarkupTool {
     if (this.tool !== "select") return "crosshair";
     const g = this.gesture;
     if (g?.kind === "move") return "move";
-    if (g?.kind === "handle") return handleCursor(g.handle, this.viewer.rotation);
+    if (g?.kind === "handle") {
+      const m = this.doc?.byId(g.id);
+      return handleCursor(g.handle, this.viewer.rotation, m ? turnOf(m) : 0);
+    }
     return this.hoverCursor;
   }
 
@@ -578,8 +582,10 @@ export class MarkupTool {
       const at = this.pointOn(sx, sy);
       if (at) {
         let h: HandleId | null = null;
-        for (const m of this.selected()) if (!h && m.page === at.page) h = handleAt(m, at.p, this.tolPt(HANDLE_PX));
-        if (h) c = handleCursor(h, this.viewer.rotation);
+        let turn = 0;
+        for (const m of this.selected())
+          if (!h && m.page === at.page && (h = handleAt(m, at.p, this.tolPt(HANDLE_PX), this.tolPt(1)))) turn = turnOf(m);
+        if (h) c = handleCursor(h, this.viewer.rotation, turn);
         else {
           // Text markups don't move: over one, the text tool's cursor shows.
           const top = this.topAt(at.page, at.p);
@@ -617,7 +623,7 @@ export class MarkupTool {
   }
 
   private get drawContext(): DrawContext {
-    return { textStyle: this.opts.textStyle(this.tool), pick: this.tolPt(HANDLE_PX) };
+    return { textStyle: this.opts.textStyle(this.tool), pick: this.tolPt(HANDLE_PX), viewRotation: this.viewer.rotation };
   }
 
   private newMarkup(def: KindDef, page: number, shape: Shape<Markup>): Markup {
@@ -691,9 +697,11 @@ export class MarkupTool {
         make(d.make([g.points.slice()]));
         break;
       }
-      case "place":
-        if (d.box) make(d.box(box(), this.drawContext));
+      case "place": {
+        const s = d.box?.(box(), this.drawContext);
+        if (s) make(s);
         break;
+      }
     }
   }
 
@@ -734,7 +742,11 @@ export class MarkupTool {
         m = this.newMarkup(def, g.page, d.make([simplify(g.points, this.tolPt(0.6))]));
         break;
       case "place":
-        if (tooSmall(m, true)) m = this.newMarkup(def, g.page, d.make(g.a, this.drawContext));
+        if (tooSmall(m, true)) {
+          // Stage 8: nothing chosen to place yet (a signature still loading), nothing placed.
+          const s = d.make(g.a, this.drawContext);
+          m = s ? this.newMarkup(def, g.page, s) : null;
+        }
         break;
     }
     if (!m) return;
@@ -943,7 +955,10 @@ export class MarkupTool {
     if (g?.kind === "draw" && g.page === page && g.draft) paintOps(ctx, opsFor(g.draft), m);
     // A "place" tool's preview, following the pointer until the click.
     const def = this.def;
-    if (!g && this.placeAt?.page === page && def?.draw.gesture === "place") paintOps(ctx, opsFor(this.newMarkup(def, page, def.draw.make(this.placeAt.p, this.drawContext))), m);
+    if (!g && this.placeAt?.page === page && def?.draw.gesture === "place") {
+      const s = def.draw.make(this.placeAt.p, this.drawContext);
+      if (s) paintOps(ctx, opsFor(this.newMarkup(def, page, s)), m);
+    }
     const accent = this.opts.accent ?? "#0d9488";
     const dev = (p: Pt): Pt => [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -987,7 +1002,7 @@ export class MarkupTool {
       }
       // Stage 6: square grips (a box's) first, then round ones (corners on the shape) over them.
       // A shape with both shows its box as a dashed outline, so the square grips read as the box's.
-      const hs = handles(x);
+      const hs = handles(x, this.tolPt(1));
       if (hs.some((q) => q.round) && hs.some((q) => !q.round)) {
         const b = shapeBounds(x);
         const pts = ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] as Pt[]).map(dev);
@@ -1000,6 +1015,11 @@ export class MarkupTool {
       }
       for (const h of [...hs.filter((q) => !q.round), ...hs.filter((q) => q.round)]) {
         const [hx, hy] = dev(h.at);
+        // Stage 8: the rotate grip, round, on a stem from the middle of the top edge.
+        if (h.id === "rotate") {
+          paintRotateGrip(ctx, x, dev, [hx, hy], r);
+          continue;
+        }
         ctx.fillStyle = "#ffffff";
         if (h.round) {
           ctx.beginPath();
@@ -1038,6 +1058,23 @@ export function lockTo(d: Draw<Markup>, placed: Pt[], p: Pt, shift: boolean): Pt
   if (rule.lock === "none") return p;
   if (rule.lock === "ortho") return shift ? p : orthoFrom(from, p);
   return shift ? snapAngle(from, p) : p;
+}
+
+// Stage 8
+/** A rotate grip: a stem from the middle of the markup's top edge (as turned), then a round grip. */
+function paintRotateGrip(ctx: CanvasRenderingContext2D, x: Markup, dev: (p: Pt) => Pt, at: Pt, r: number): void {
+  const from = "rect" in x ? dev(topMiddle(x.rect as Rect, turnOf(x))) : null;
+  if (from) {
+    ctx.beginPath();
+    ctx.moveTo(from[0], from[1]);
+    ctx.lineTo(at[0], at[1]);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(at[0], at[1], r + 0.5, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.stroke();
 }
 
 /** Stamp the modification time. */

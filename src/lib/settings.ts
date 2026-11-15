@@ -87,7 +87,7 @@ export const DEFAULTS: Settings = {
   measure: { format: { ...DEFAULT_FORMAT }, labelSize: DEFAULT_LABEL_SIZE, pageScales: {}, look: { ...DEFAULT_LOOK } },
 
   // Stamps
-  stamps: { sub: true, colour: null, custom: "" },
+  stamps: { sub: true, colour: null, custom: "", last: {} },
 
   // Text markups
   textMarks: {},

@@ -4,7 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getSignature, getSignatureStrokes, type SignatureItem } from "../signature/api";
 import { parse } from "../signature/strokes";
-import { type StampContent, imageContent, strokesContent } from "../markup/stamps";
+import { type StampContent, fromBase64, imageContent, strokesContent } from "../markup/stamps";
 
 export interface StampItem {
   id: string;
@@ -42,3 +42,25 @@ export async function signatureContent(item: SignatureItem): Promise<StampConten
 export async function stampContent(item: StampItem): Promise<StampContent | null> {
   return imageContent(await getStamp(item.id));
 }
+
+// Stage 8: the Image tool
+
+/** Picture types the Image tool opens (whatever the backend's `image` crate reads). */
+export const PICTURE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp", "gif"];
+
+/** A picture as the clipboard and the Image tool hand it over: PNG base64, at most 2000 px on its long side. */
+export interface Picture {
+  png: string;
+  w: number;
+  h: number;
+}
+
+/** A picture file, scaled to the size limit on the way in (src-tauri/src/clipboard.rs, picture_open). */
+export async function openPicture(path: string): Promise<Picture> {
+  const r = await invoke<{ kind: string } & Partial<Picture>>("picture_open", { path });
+  if (r.kind !== "picture" || !r.png) throw new Error("[picture_unreadable] not a picture");
+  return { png: r.png, w: r.w ?? 0, h: r.h ?? 0 };
+}
+
+/** A picture's content, ready to place. */
+export const pictureContent = (p: Picture): Promise<StampContent | null> => imageContent(fromBase64(p.png));

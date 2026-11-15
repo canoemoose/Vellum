@@ -63,6 +63,8 @@ const MESSAGES: Record<string, string> = {
   stamp_image: "Couldn't {verb}: a stamp's picture couldn't be read.",
   stamp_not_found: "That stamp isn't in the library any more.",
   stamp_too_small: "That picture is too small to use as a stamp.",
+  // Stage 8: the Image tool (and a picture pasted from the clipboard)
+  picture_unreadable: "Couldn't {verb}: that file isn't a picture Vellum can read.",
   recovery_unreadable: "Unsaved markups from a crash couldn't be read back.",
 };
 

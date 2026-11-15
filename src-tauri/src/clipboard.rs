@@ -75,6 +75,21 @@ pub fn picture_png(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
     Ok((png, img.width(), img.height()))
 }
 
+/// Stage 8: a picture file (the Image tool) as a PNG no larger than MAX_PICTURE_PX on its long
+/// side, as a pasted picture is. Anything the `image` crate reads (PNG, JPEG, WebP, TIFF, BMP,
+/// GIF); an unreadable one is `[picture_unreadable]`, a missing one an I/O error.
+pub fn picture_file(path: &std::path::Path) -> Result<(Vec<u8>, u32, u32), String> {
+    let bytes = std::fs::read(path).map_err(|e| crate::errcode::io(&e, format!("{}: {e}", path.display())))?;
+    picture_png(&bytes)
+}
+
+/// The picture file the Image tool picked, for placing: as `Clip::Picture`, or an error.
+#[tauri::command]
+pub async fn picture_open(path: String) -> Result<Clip, String> {
+    let (png, w, h) = tauri::async_runtime::spawn_blocking(move || picture_file(std::path::Path::new(&path))).await.map_err(|e| e.to_string())??;
+    Ok(Clip::Picture { png: base64(&png), w, h })
+}
+
 /// Standard base64 (the front end's `fromBase64` reads it).
 pub fn base64(b: &[u8]) -> String {
     const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

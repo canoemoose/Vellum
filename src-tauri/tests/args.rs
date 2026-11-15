@@ -41,3 +41,16 @@ fn legacy_renderer_flag_consumes_its_value() {
     let a = p(&["v", "--renderer", "pdfium", "x.pdf"]);
     assert_eq!(a.file.as_deref(), Some("x.pdf"));
 }
+
+#[test]
+fn stamp_popouts_only_for_one() {
+    use vellum_lib::stamp_popouts;
+    assert!(stamp_popouts(Some("1")));
+    assert!(stamp_popouts(Some(" 1 ")));
+    assert!(!stamp_popouts(Some("0")));
+    assert!(!stamp_popouts(Some("")));
+    assert!(!stamp_popouts(Some("yes")));
+    assert!(!stamp_popouts(None));
+    // Never from the command line: the default is the context bar's pickers.
+    assert!(!p(&["v", "x.pdf"]).stamp_popouts);
+}

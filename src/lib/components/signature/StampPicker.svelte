@@ -16,7 +16,8 @@
     author: string;
     prefs: StampPrefs;
     onPrefs: (p: StampPrefs) => void;
-    onPick: (c: StampContent) => void;
+    /** `id`: an image stamp's library id (stage 8 remembers it, by id only). */
+    onPick: (c: StampContent, id?: string) => void;
     onClose: () => void;
   }
   let { author, prefs, onPrefs, onPick, onClose }: Props = $props();
@@ -69,7 +70,7 @@
     busy = true;
     try {
       const c = await stampContent(i);
-      if (c) onPick(c);
+      if (c) onPick(c, i.id);
       else error = "That stamp's picture couldn't be read.";
     } catch (e) {
       error = userMessage(e, "use the stamp");

@@ -7,6 +7,7 @@ import type { Op } from "./ops";
 import { baseFont, fontResource, pdfString } from "./fonts";
 // Stamps
 import { imageResName } from "./stamps";
+import { turnedCorners } from "./turn"; // Stage 8
 
 /** A page's /Rotate (quarter turns clockwise) and visible box in user space [l, b, r, t]. */
 export interface Frame {
@@ -92,8 +93,13 @@ export function toContent(f: Frame, ops: Op[]): Content {
       // The image's unit square onto its box: (0, 0) is the picture's bottom left, which sits
       // at the box's bottom left on the page (y down); worked out through toUser so a rotated
       // page keeps the picture upright as rendered.
-      const [x0, y0, x1, y1] = op.rect;
-      const o = toUser(f, x0, y1), u = toUser(f, x1, y1), v = toUser(f, x0, y0);
+      // Stage 8: a turned picture's corners turn about its centre first; see-through via /GS0.
+      const [tl, , br, bl] = turnedCorners(op.rect, op.angle ?? 0);
+      const o = toUser(f, bl[0], bl[1]), u = toUser(f, br[0], br[1]), v = toUser(f, tl[0], tl[1]);
+      if (op.opacity !== undefined && op.opacity < 1) {
+        fillOpacity = op.opacity;
+        out.push("/GS0 gs");
+      }
       out.push(`${n(u[0] - o[0])} ${n(u[1] - o[1])} ${n(v[0] - o[0])} ${n(v[1] - o[1])} ${n(o[0])} ${n(o[1])} cm`, `/${imageResName(op.hash)} Do`, "Q");
       continue;
     }
@@ -123,6 +129,11 @@ export function toContent(f: Frame, ops: Op[]): Content {
       }
       out.push(op.fill && op.stroke ? "B" : op.fill ? "f" : op.stroke ? "S" : "n");
     } else {
+      // Stage 8: see-through text (a stamp's opacity) fills through /GS0.
+      if (op.opacity !== undefined && op.opacity < 1) {
+        fillOpacity = op.opacity;
+        out.push("/GS0 gs");
+      }
       const res = fontResource(op.face);
       fonts[res] = baseFont(op.face);
       if (op.clip) {

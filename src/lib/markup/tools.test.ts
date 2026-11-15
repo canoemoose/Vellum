@@ -59,13 +59,13 @@ describe("letters (rule 8)", () => {
     const table: Record<string, string[]> = {
       v: ["select"], a: ["arrow"], l: ["line", "polyline"], r: ["rect"], e: ["ellipse"], c: ["cloud"], g: ["polygon"],
       t: ["text", "callout", "note"], p: ["ink"], h: ["highlighter"], d: ["measureLength", "measurePath", "measureArea", "measureAngle"],
-      s: ["stamp", "signature"],
+      s: ["stamp", "signature"], i: ["image"],
     };
     const got: Record<string, string[]> = {};
     for (const t of TOOLS) if (t.key) (got[t.key] ??= []).push(t.id);
-    // Stage 8 adds the Image tool on I.
-    delete got.i;
     expect(got).toEqual(table);
+    // The Image tool sits in the Stamp group, after Signature.
+    expect(TOOLS.filter((t) => t.group === "stamp").map((t) => t.id)).toEqual(["stamp", "signature", "image"]);
     // Calibrate has no letter.
     expect(toolById("measureCalibrate")!.key).toBe("");
   });
