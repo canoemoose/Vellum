@@ -7,13 +7,18 @@ import type { Viewer } from "./viewer";
 import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor } from "../markup/ops";
-import { fitText, refitText } from "../markup/kinds/text";
+import { fitText } from "../markup/kinds/text";
+import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, rectPts, simplify, snapAngle, squareFrom } from "../markup/geometry";
+import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
+import type { DrawContext, KindDef, Shape } from "../markup/kinds/kind";
+import { defOf, kindOf } from "../markup/kinds";
 
-export { fitText, refitText };
-import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, simplify, snapAngle, squareFrom } from "../markup/geometry";
-import { type Markup, type MarkupKind, type Pt, type Style, type TextStyle, newId, normRect } from "../markup/types";
+export { fitText, refitText } from "../markup/kinds/text";
 
 export type Tool = "select" | MarkupKind;
+
+/** A markup that holds typed text in a box (a text box; later, a callout). */
+export type TypedMarkup = Extract<Markup, { rect: Rect; text: string; textStyle: TextStyle }>;
 
 export interface Mods {
   shift: boolean;
@@ -38,8 +43,6 @@ const PICK_PX = 5;
 const HANDLE_PX = 7;
 /** CSS px the pointer must move with the button down before a press becomes a drag. */
 const DRAG_PX = 3;
-/** A new text box clicked rather than dragged is this wide (points on paper). */
-const TEXT_WIDTH = 160;
 
 type Gesture =
   | { kind: "move"; page: number; start: Pt; before: Markup[]; ids: string[]; moved: boolean }
@@ -54,8 +57,10 @@ export class MarkupTool {
   /** The text box being typed into, if any. */
   editing: { id: string; isNew: boolean; before: Markup[] } | null = null;
   private gesture: Gesture | null = null;
-  /** A cloud being clicked out, point by point. */
-  private cloud: { page: number; points: Pt[]; hover: Pt | null } | null = null;
+  /** A shape being clicked out, point by point (the "points" gesture). */
+  private clicking: { def: KindDef; page: number; points: Pt[]; hover: Pt | null } | null = null;
+  /** Where a "place" tool's preview follows the pointer. */
+  private placeAt: { page: number; p: Pt } | null = null;
   private clipboard: Markup[] = [];
   private opsCache = new WeakMap<Markup, Op[]>();
   private hoverCursor: string | null = null;
@@ -73,7 +78,8 @@ export class MarkupTool {
   attach(doc: MarkupDoc | null): void {
     this.finishText();
     this.gesture = null;
-    this.cloud = null;
+    this.clicking = null;
+    this.placeAt = null;
     this.previewBase = null;
     this.doc = doc;
     this.redraw();
@@ -81,7 +87,8 @@ export class MarkupTool {
 
   setTool(t: Tool): void {
     this.finishText();
-    this.finishCloud(false);
+    this.finishPoints(false);
+    this.placeAt = null;
     // With a drawing tool, the selection is only ever the shape just drawn (each new shape is
     // selected), so the properties bar restyles it as well as what's drawn next. Markups picked
     // out before switching mustn't be restyled by it.
@@ -204,9 +211,10 @@ export class MarkupTool {
   private styled(from: Markup[], sel: Set<string>, patch: Partial<Style>, text?: Partial<TextStyle>): Markup[] {
     return from.map((m) => {
       if (!sel.has(m.id)) return m;
-      const next = { ...m, style: { ...m.style, ...patch } } as Markup;
-      if (m.kind === "text" && next.kind === "text") return touch(refitText(m, text ? { ...next, textStyle: { ...next.textStyle, ...text } } : next));
-      return touch(next);
+      let next = { ...m, style: { ...m.style, ...patch } } as Markup;
+      if (text && "textStyle" in next) next = { ...next, textStyle: { ...next.textStyle, ...text } };
+      const def = defOf(m);
+      return touch(def.restyled ? def.restyled(m, next) : next);
     });
   }
 
@@ -278,9 +286,9 @@ export class MarkupTool {
     if (!this.doc) return false;
     if (this.editing) {
       this.finishText();
-      if (this.tool === "text") return true; // the click ends typing; the next one draws
+      if (this.def?.typed) return true; // the click ends typing; the next one draws
     }
-    if (this.tool !== "select") return this.drawDown(sx, sy, clicks);
+    if (this.tool !== "select") return this.drawDown(sx, sy, clicks, mods);
     const at = this.pointOn(sx, sy);
     if (!at) {
       if (!mods.shift) this.clearSelection();
@@ -301,7 +309,7 @@ export class MarkupTool {
       if (!mods.shift) this.clearSelection();
       return false; // the text tool, then the marquee, get it
     }
-    if (clicks === 2 && hit.kind === "text") {
+    if (clicks === 2 && defOf(hit).typed) {
       this.select([hit.id]);
       this.startText(hit.id, false);
       return true;
@@ -329,7 +337,7 @@ export class MarkupTool {
   move(sx: number, sy: number, mods: Mods): void {
     const g = this.gesture;
     if (!g) {
-      this.hover(sx, sy);
+      this.hover(sx, sy, mods);
       return;
     }
     const at = this.pointOn(sx, sy, g.page);
@@ -360,7 +368,7 @@ export class MarkupTool {
     this.viewer.requestFrame();
   }
 
-  up(sx: number, sy: number, mods: Mods): void {
+  up(_sx: number, _sy: number, _mods: Mods): void {
     const g = this.gesture;
     this.gesture = null;
     if (!g || !this.doc) return;
@@ -372,7 +380,7 @@ export class MarkupTool {
         const final = this.markups;
         this.doc.history.replace(g.before);
         const changed = g.kind === "move" ? new Set(g.ids) : new Set([g.id]);
-        this.commit(final.map((m) => (changed.has(m.id) ? touch(fitIfText(m)) : m)));
+        this.commit(final.map((m) => (changed.has(m.id) ? touch(settle(m)) : m)));
         break;
       }
       case "marquee": {
@@ -382,7 +390,7 @@ export class MarkupTool {
         break;
       }
       case "draw":
-        this.drawUp(g, sx, sy, mods);
+        this.drawUp(g);
         break;
     }
     this.redraw();
@@ -397,7 +405,7 @@ export class MarkupTool {
     return this.hoverCursor;
   }
 
-  private hover(sx: number, sy: number): void {
+  private hover(sx: number, sy: number, mods: Mods): void {
     let c: string | null = null;
     if (this.tool === "select" && this.doc) {
       const at = this.pointOn(sx, sy);
@@ -408,9 +416,15 @@ export class MarkupTool {
         else if (this.topAt(at.page, at.p)) c = "move";
       }
     }
-    if (this.cloud) {
-      const at = this.pointOn(sx, sy, this.cloud.page);
-      this.cloud.hover = at?.p ?? null;
+    const c0 = this.clicking;
+    if (c0) {
+      const at = this.pointOn(sx, sy, c0.page);
+      const last = c0.points[c0.points.length - 1];
+      c0.hover = at ? (mods.shift ? snapAngle(last, at.p) : at.p) : null;
+      this.viewer.requestFrame();
+    } else if (this.def?.draw.gesture === "place") {
+      const at = this.pointOn(sx, sy);
+      this.placeAt = at ? { page: at.page, p: at.p } : null;
       this.viewer.requestFrame();
     }
     this.hoverCursor = c;
@@ -422,100 +436,158 @@ export class MarkupTool {
   }
 
   // ---------------------------------------------------------------- drawing tools
+  //
+  // Each gesture is written once here; a kind says which gesture draws it and turns the
+  // gesture's result into its geometry (kinds/kind.ts, Draw).
 
-  private newMarkup(kind: MarkupKind, page: number, geom: Partial<Markup>): Markup {
-    const now = new Date().toISOString();
-    const base = { id: newId(), page, style: this.opts.styleFor(kind), meta: { author: this.opts.author(), created: now, modified: now } };
-    return { ...base, kind, ...geom } as Markup;
+  /** The kind the current tool draws, or null for Select. */
+  private get def(): KindDef | null {
+    return this.tool === "select" ? null : (kindOf(this.tool) as unknown as KindDef);
   }
 
-  private drawDown(sx: number, sy: number, clicks: number): boolean {
-    const at = this.pointOn(sx, sy, this.cloud?.page);
+  private get drawContext(): DrawContext {
+    return { textStyle: this.opts.textStyle() };
+  }
+
+  private newMarkup(def: KindDef, page: number, shape: Shape<Markup>): Markup {
+    const now = new Date().toISOString();
+    const base = { id: newId(), page, style: this.opts.styleFor(def.kind), meta: { author: this.opts.author(), created: now, modified: now } };
+    return { ...base, kind: def.kind, ...shape } as Markup;
+  }
+
+  private drawDown(sx: number, sy: number, clicks: number, mods: Mods): boolean {
+    const def = this.clicking?.def ?? this.def;
+    if (!def) return false;
+    const at = this.pointOn(sx, sy, this.clicking?.page);
     if (!at) return false;
-    if (this.tool === "cloud" && this.cloud) {
-      // Clicking out a cloud: a double-click (or Enter) finishes it.
-      if (clicks >= 2) this.finishCloud(true);
-      else this.cloud.points.push(at.p);
+    const c = this.clicking;
+    if (c && def.draw.gesture === "points") {
+      // Clicking out a shape: a double-click (or Enter) finishes it; so does a click on the
+      // first point of a closed one.
+      const last = c.points[c.points.length - 1];
+      const p = mods.shift ? snapAngle(last, at.p) : at.p;
+      const first = c.points[0];
+      const onFirst = def.draw.closed && c.points.length >= def.draw.min && Math.hypot(p[0] - first[0], p[1] - first[1]) <= this.tolPt(HANDLE_PX);
+      if (clicks >= 2 || onFirst) this.finishPoints(true);
+      else c.points.push(p);
       this.viewer.requestFrame();
       return true;
     }
+    this.placeAt = null;
     this.gesture = { kind: "draw", page: at.page, a: at.p, sx, sy, draft: null, points: [at.p] };
     return true;
   }
 
   private drawMove(g: Extract<Gesture, { kind: "draw" }>, sx: number, sy: number, p: Pt, mods: Mods): void {
+    const def = this.def;
+    if (!def) return;
     const far = Math.hypot(sx - g.sx, sy - g.sy) >= DRAG_PX;
     if (!far && !g.draft) return;
     const a = g.a;
-    switch (this.tool) {
-      case "rect":
-      case "text": {
-        const b = mods.shift ? squareFrom(a, p) : p;
-        const r = normRect([a[0], a[1], b[0], b[1]]);
-        g.draft = this.newMarkup(this.tool, g.page, this.tool === "text" ? { rect: r, text: "", textStyle: this.opts.textStyle() } : { rect: r });
+    const d = def.draw;
+    const make = (shape: Shape<Markup>) => (g.draft = this.newMarkup(def, g.page, shape));
+    const box = (): Rect => {
+      const b = mods.shift ? squareFrom(a, p) : p;
+      return normRect([a[0], a[1], b[0], b[1]]);
+    };
+    switch (d.gesture) {
+      case "line":
+        make(d.make(a, mods.shift ? snapAngle(a, p) : p));
         break;
-      }
-      case "arrow":
-        g.draft = this.newMarkup("arrow", g.page, { from: a, to: mods.shift ? snapAngle(a, p) : p });
+      case "box":
+        make(d.make(box(), this.drawContext));
         break;
-      case "cloud": {
-        // Pressed and dragged: a rectangular cloud in one go.
-        const r = normRect([a[0], a[1], p[0], p[1]]);
-        g.draft = this.newMarkup("cloud", g.page, { vertices: [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]], intensity: 1 });
+      case "points":
+        // Pressed and dragged: a rectangle of points, or a straight line, in one go.
+        if (d.drag === "box") make(d.make(rectPts(normRect([a[0], a[1], p[0], p[1]]))));
+        else make(d.make([a, mods.shift ? snapAngle(a, p) : p]));
         break;
-      }
-      case "ink": {
+      case "freehand": {
         const last = g.points[g.points.length - 1];
         if (Math.hypot(p[0] - last[0], p[1] - last[1]) * this.viewer.view.scale >= 1.5) g.points.push(p);
-        g.draft = this.newMarkup("ink", g.page, { strokes: [g.points.slice()] });
+        make(d.make([g.points.slice()]));
         break;
       }
+      case "place":
+        if (d.box) make(d.box(box(), this.drawContext));
+        break;
     }
   }
 
-  private drawUp(g: Extract<Gesture, { kind: "draw" }>, sx: number, sy: number, mods: Mods): void {
-    void mods;
-    const dragged = g.draft !== null;
+  private drawUp(g: Extract<Gesture, { kind: "draw" }>): void {
+    const def = this.def;
+    if (!def) return;
+    const d = def.draw;
     let m = g.draft;
-    if (this.tool === "cloud" && !dragged) {
-      // A click: start clicking out a cloud.
-      this.cloud = { page: g.page, points: [g.a], hover: null };
-      return;
+    const size = (x: Markup): [number, number] => {
+      const b = def.bounds(x);
+      return [b[2] - b[0], b[3] - b[1]];
+    };
+    /** Under `px` screen pixels both ways (or with `either`, either way). */
+    const small = (x: Markup, px: number, either = false) => {
+      const [w, h] = size(x);
+      const min = this.tolPt(px);
+      return either ? w < min || h < min : w < min && h < min;
+    };
+    switch (d.gesture) {
+      case "line":
+        if (!m || Math.hypot(...size(m)) < this.tolPt(4)) return;
+        break;
+      case "box":
+        if (d.click && (!m || small(m, 8))) m = this.newMarkup(def, g.page, d.click(g.a, this.drawContext));
+        else if (!m || small(m, 4)) return;
+        break;
+      case "points":
+        if (!m) {
+          // A click: start clicking out the shape.
+          this.clicking = { def, page: g.page, points: [g.a], hover: null };
+          return;
+        }
+        if (d.drag === "box" ? small(m, 4, true) : Math.hypot(...size(m)) < this.tolPt(4)) return;
+        break;
+      case "freehand":
+        if (!m) return;
+        m = this.newMarkup(def, g.page, d.make([simplify(g.points, this.tolPt(0.6))]));
+        break;
+      case "place":
+        m ??= this.newMarkup(def, g.page, d.make(g.a, this.drawContext));
+        break;
     }
-    if (this.tool === "text" && (!m || boxTooSmall(m, this.tolPt(8)))) {
-      // A click: a default-width box at the point.
-      m = this.newMarkup("text", g.page, { rect: [g.a[0], g.a[1], g.a[0] + TEXT_WIDTH, g.a[1] + 20], text: "", textStyle: this.opts.textStyle() });
-    }
-    if (!m) return;
-    if (m.kind === "ink") m = { ...m, strokes: m.strokes.map((s) => simplify(s, this.tolPt(0.6))) };
-    if ((m.kind === "rect" || m.kind === "cloud") && boxTooSmall(m, this.tolPt(4))) return;
-    if (m.kind === "arrow" && Math.hypot(m.to[0] - m.from[0], m.to[1] - m.from[1]) < this.tolPt(4)) return;
-    if (m.kind === "text") m = fitText(m);
+    if (def.finish) m = def.finish(m);
     const before = this.markups;
     this.commit([...before, m]);
     this.select([m.id]);
-    if (m.kind === "text") this.startText(m.id, true, before);
-    void sx;
-    void sy;
+    if (def.typed) this.startText(m.id, true, before);
   }
 
-  /** Finish (or with keep false, abandon) a cloud being clicked out. */
-  finishCloud(keep: boolean): void {
-    const c = this.cloud;
-    this.cloud = null;
-    if (!c) return;
+  /** Finish (or with keep false, abandon) a shape being clicked out. */
+  finishPoints(keep: boolean): void {
+    const c = this.clicking;
+    this.clicking = null;
+    if (!c || c.def.draw.gesture !== "points") return;
     // A double-click adds its point twice: drop repeats.
     const pts = c.points.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 1e-6);
-    if (keep && pts.length >= 3) {
-      const m = this.newMarkup("cloud", c.page, { vertices: pts, intensity: 1 });
+    if (keep && pts.length >= c.def.draw.min) {
+      let m = this.newMarkup(c.def, c.page, c.def.draw.make(pts));
+      if (c.def.finish) m = c.def.finish(m);
       this.commit([...this.markups, m]);
       this.select([m.id]);
     }
     this.viewer.requestFrame();
   }
 
+  /** True while a shape is being clicked out (Enter finishes it, Esc abandons it). */
+  get drawingPoints(): boolean {
+    return this.clicking !== null;
+  }
+
+  /** The names from when only the cloud was clicked out. */
+  finishCloud(keep: boolean): void {
+    this.finishPoints(keep);
+  }
+
   get drawingCloud(): boolean {
-    return this.cloud !== null;
+    return this.drawingPoints;
   }
 
   // ---------------------------------------------------------------- text boxes
@@ -526,9 +598,9 @@ export class MarkupTool {
   }
 
   /** The text box being edited, if any. */
-  editingMarkup(): Extract<Markup, { kind: "text" }> | null {
+  editingMarkup(): TypedMarkup | null {
     const m = this.editing ? this.doc?.byId(this.editing.id) : undefined;
-    return m?.kind === "text" ? m : null;
+    return m && defOf(m).typed ? (m as TypedMarkup) : null;
   }
 
   /** The editor typed: update the box (growing it to fit), without an undo step yet. */
@@ -547,7 +619,7 @@ export class MarkupTool {
     const m = this.doc.byId(e.id);
     const final = this.markups;
     this.doc.history.replace(e.before);
-    if (m?.kind === "text" && !m.text.trim()) {
+    if (m && defOf(m).typed && !(m as TypedMarkup).text.trim()) {
       if (!e.isNew) this.commit(final.filter((x) => x.id !== e.id));
       else this.redraw();
       return;
@@ -571,12 +643,18 @@ export class MarkupTool {
     for (const mk of d.markups) if (mk.page === page) paintOps(ctx, this.opsOf(mk), m, mk.id === editing);
     const g = this.gesture;
     if (g?.kind === "draw" && g.page === page && g.draft) paintOps(ctx, opsFor(g.draft), m);
+    // A "place" tool's preview, following the pointer until the click.
+    const def = this.def;
+    if (!g && this.placeAt?.page === page && def?.draw.gesture === "place") paintOps(ctx, opsFor(this.newMarkup(def, page, def.draw.make(this.placeAt.p, this.drawContext))), m);
     const accent = this.opts.accent ?? "#0d9488";
     const dev = (p: Pt): Pt => [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // Clicking out a cloud: the points so far and a rubber band to the pointer.
-    if (this.cloud?.page === page) {
-      const pts = [...this.cloud.points, ...(this.cloud.hover ? [this.cloud.hover] : [])].map(dev);
+    // Clicking out a shape: the points so far and a rubber band to the pointer (and back to the
+    // first point, for a closed shape).
+    const c = this.clicking;
+    if (c?.page === page) {
+      const closed = c.def.draw.gesture === "points" && c.def.draw.closed && c.points.length >= 2;
+      const pts = [...c.points, ...(c.hover ? [c.hover] : []), ...(closed ? [c.points[0]] : [])].map(dev);
       ctx.strokeStyle = accent;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([6, 4]);
@@ -619,15 +697,8 @@ function touch(m: Markup): Markup {
   return { ...m, meta: { ...m.meta, modified: new Date().toISOString() } };
 }
 
-function boxTooSmall(m: Markup, min: number): boolean {
-  if (m.kind === "rect" || m.kind === "text") return m.rect[2] - m.rect[0] < min && m.rect[3] - m.rect[1] < min;
-  if (m.kind === "cloud") {
-    const xs = m.vertices.map((v) => v[0]), ys = m.vertices.map((v) => v[1]);
-    return Math.max(...xs) - Math.min(...xs) < min || Math.max(...ys) - Math.min(...ys) < min;
-  }
-  return false;
-}
-
-function fitIfText(m: Markup): Markup {
-  return m.kind === "text" ? fitText(m) : m;
+/** A markup made whole after a move or resize (a text box grown to fit). */
+function settle(m: Markup): Markup {
+  const def = defOf(m);
+  return def.settle ? def.settle(m) : m;
 }

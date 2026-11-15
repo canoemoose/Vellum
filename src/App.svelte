@@ -1132,10 +1132,10 @@
       const step = e.shiftKey ? 10 : 1;
       const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
       markupTool.nudge(d[0], d[1]);
-    } else if (e.key === "Enter" && !isTyping(e) && markupTool?.drawingCloud) {
-      markupTool.finishCloud(true);
-    } else if (e.key === "Escape" && !isTyping(e) && markupTool && (markupTool.drawingCloud || markupTool.tool !== "select" || markupTool.hasSelection)) {
-      if (markupTool.drawingCloud) markupTool.finishCloud(false);
+    } else if (e.key === "Enter" && !isTyping(e) && markupTool?.drawingPoints) {
+      markupTool.finishPoints(true);
+    } else if (e.key === "Escape" && !isTyping(e) && markupTool && (markupTool.drawingPoints || markupTool.tool !== "select" || markupTool.hasSelection)) {
+      if (markupTool.drawingPoints) markupTool.finishPoints(false);
       else if (markupTool.tool !== "select") markupTool.setTool("select");
       else markupTool.clearSelection();
     } else if (!ctrl && !e.altKey && !e.shiftKey && k === "v" && !isTyping(e)) {
