@@ -175,9 +175,18 @@ impl StampLibrary {
     }
 }
 
+/// The roaming app data folder, where the signature and stamp libraries live; or
+/// `VELLUM_DATA_DIR` when set, so scripted runs and tests use a scratch folder and never the
+/// user's own signatures.
+pub fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Some(d) = std::env::var_os("VELLUM_DATA_DIR").filter(|d| !d.is_empty()) {
+        return Ok(PathBuf::from(d));
+    }
+    app.path().app_data_dir().map_err(|e| format!("no app data folder: {e}"))
+}
+
 fn library(app: &tauri::AppHandle) -> Result<StampLibrary, String> {
-    let dir = app.path().app_data_dir().map_err(|e| format!("no app data folder: {e}"))?;
-    Ok(StampLibrary::new(dir.join("stamps")))
+    Ok(StampLibrary::new(data_dir(app)?.join("stamps")))
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {

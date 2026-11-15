@@ -9,12 +9,11 @@ pub mod wic;
 
 use library::{Kind, Library, ListItem, Listing, Meta};
 use std::time::Instant;
-use tauri::Manager;
 
 /// The library lives in the roaming app data folder (DPAPI keys roam with the profile too).
+/// (`VELLUM_DATA_DIR` points it at a scratch folder for scripted runs: crate::stamps::data_dir.)
 fn library(app: &tauri::AppHandle) -> Result<Library, String> {
-    let dir = app.path().app_data_dir().map_err(|e| format!("no app data folder: {e}"))?;
-    Ok(Library::new(dir.join("signatures")))
+    Ok(Library::new(crate::stamps::data_dir(app)?.join("signatures")))
 }
 
 /// The upright picture as a JPEG, for choosing the framing on (binary, not JSON).
