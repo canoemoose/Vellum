@@ -46,6 +46,9 @@
   import Loupe from "./lib/components/Loupe.svelte";
   import { type MeasureFormat, type PageMeasure, setMeasureSource } from "./lib/markup/measure";
   import { drawingLine, isMeasurement, measurementLine, resizeLabels, reformat, revalue } from "./lib/markup/measurements";
+  // Dimensions (stage 5)
+  import { type Measurement, hasEnds, relook } from "./lib/markup/measurements";
+  import { type DimensionLook, setDimensionLook } from "./lib/markup/dimension";
   import { calibratePaperMm } from "./lib/markup/kinds/measureCalibrate";
   import { type PageOverrides, fromRemembered, pageScaleText, rememberPages, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
 
@@ -381,6 +384,7 @@
 
   // New measurements take their page's scale, and the format and label size set in the bar.
   setMeasureSource({ page: (p) => pageMeasure(active, p), format: () => settings.measure.format, labelSize: () => settings.measure.labelSize });
+  setDimensionLook(() => settings.measure.look); // Dimensions (stage 5)
 
   /** A measuring tool (Calibrate included) is out. */
   const measuring = $derived(toolById(toolNow)?.group === "measure");
@@ -523,6 +527,46 @@
     if (!sel.length || !sel.every(isMeasurement)) return {};
     return { measure: { labelSize: sel[0].labelSize, format: sel[0].fmt }, onMeasure };
   });
+
+  // Dimensions (stage 5)
+  /**
+   * The bar's dimension controls: the ends (only where every measurement involved has a
+   * dimension line) and the value's font. Like every control they change the selection; with a
+   * measuring tool out, the tools remember them (rule 7).
+   */
+  function onDimension(patch: Partial<DimensionLook>) {
+    const t = active;
+    const mt = markupTool;
+    if (mt && toolById(mt.tool)?.group === "measure") {
+      settings.measure = { ...settings.measure, look: { ...settings.measure.look, ...patch } };
+      save();
+    }
+    if (t && mt) {
+      const next = relook(t.marks.markups, new Set(mt.selected().map((m) => m.id)), patch);
+      if (next !== t.marks.markups) {
+        t.marks.history.push(next);
+        viewer?.requestFrame();
+      }
+    }
+    onMarkupsChanged();
+  }
+
+  const dimensionStrip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    if (!mt) return {};
+    const tool = toolById(mt.tool);
+    const look = settings.measure.look;
+    if (tool?.kind) {
+      if (tool.group !== "measure" || tool.kind === "measureCalibrate") return {};
+      return { dimension: { ends: hasEnds({ kind: tool.kind }) ? look.ends : null, font: look.font }, onDimension };
+    }
+    const sel = mt.selected();
+    if (!sel.length || !sel.every(isMeasurement)) return {};
+    const m = sel[0] as Measurement;
+    return { dimension: { ends: sel.every(hasEnds) ? (m.ends ?? "bar") : null, font: m.font ?? "helvetica" }, onDimension };
+  });
+  // End dimensions
 
   const measureBar = $derived.by(() => {
     void markVersion;
@@ -2263,6 +2307,7 @@
         <PropertiesStrip
           bar={strip.bar} kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label}
           {...measureStrip}
+          {...dimensionStrip}
           dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
           onStyle={stripStyle} onText={stripText}
           onDock={(d, done) => {

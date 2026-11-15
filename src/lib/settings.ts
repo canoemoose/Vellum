@@ -13,6 +13,7 @@ import { type TextMarkVariant, sanitiseTextMarks } from "./markup/kinds/textmark
 // Measuring
 import { type MeasureFormat, DEFAULT_FORMAT, DEFAULT_LABEL_SIZE, sanitiseFormat } from "./markup/measure";
 import { type RememberedPages, sanitiseRememberedPages } from "./shell/pageScale";
+import { type DimensionLook, DEFAULT_LOOK, sanitiseLook } from "./markup/dimension"; // Dimensions (stage 5)
 // Stamps
 import { type StampPrefs, sanitiseStampPrefs } from "./markup/stamps";
 
@@ -47,7 +48,13 @@ export interface Settings {
   markup: MarkupPrefs;
   // Measuring
   /** How measurements are written and labelled, and per-page scales by file (pathKey). */
-  measure: { format: MeasureFormat; labelSize: number; pageScales: Record<string, RememberedPages> };
+  measure: {
+    format: MeasureFormat;
+    labelSize: number;
+    pageScales: Record<string, RememberedPages>;
+    /** Dimensions (stage 5): the ends and value font new measurements take, set in the bar. */
+    look: DimensionLook;
+  };
 
   // Stamps
   /** The Stamp tool's picker: second line on, colour (null: each stamp's own), last custom wording. */
@@ -77,7 +84,7 @@ export const DEFAULTS: Settings = {
   updateCheck: true,
   markup: defaultPrefs(),
   // Measuring
-  measure: { format: { ...DEFAULT_FORMAT }, labelSize: DEFAULT_LABEL_SIZE, pageScales: {} },
+  measure: { format: { ...DEFAULT_FORMAT }, labelSize: DEFAULT_LABEL_SIZE, pageScales: {}, look: { ...DEFAULT_LOOK } },
 
   // Stamps
   stamps: { sub: true, colour: null, custom: "" },
@@ -128,7 +135,7 @@ export function sanitiseSettings(raw: unknown): Settings {
 function sanitiseMeasure(raw: unknown): Settings["measure"] {
   const m = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const size = typeof m.labelSize === "number" && Number.isFinite(m.labelSize) && m.labelSize >= 4 && m.labelSize <= 72 ? m.labelSize : DEFAULT_LABEL_SIZE;
-  return { format: sanitiseFormat(m.format), labelSize: size, pageScales: sanitiseRememberedPages(m.pageScales) };
+  return { format: sanitiseFormat(m.format), labelSize: size, pageScales: sanitiseRememberedPages(m.pageScales), look: sanitiseLook(m.look) };
 }
 // End measuring
 

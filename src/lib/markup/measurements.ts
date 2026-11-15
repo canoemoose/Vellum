@@ -105,7 +105,7 @@ export function reformat(markups: Markup[], fmt: MeasureFormat, ids?: ReadonlySe
 
 // Dimensions (stage 5)
 /** The measurements that have ends to choose (a dimension line): length and polyline length. */
-export const hasEnds = (m: Markup): boolean => m.kind === "measureLength" || m.kind === "measurePath";
+export const hasEnds = (m: { kind: MarkupKind }): boolean => m.kind === "measureLength" || m.kind === "measurePath";
 
 /**
  * The markups with every selected measurement given the look `patch` sets: its ends (those with
