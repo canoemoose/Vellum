@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4 and 9.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -303,7 +303,7 @@ Where: `markup/kinds/measure*.ts`, `markup/measure.ts`, `markup/dimension.ts`,
   - The tool remembers the last stamp or signature, so picking the tool goes straight to
     placing.
 
-## Stage 9: selecting, copying and pasting
+## Stage 9: selecting, copying and pasting ✓
 
 Where: `engine/markupTool.ts` (`clipboard`), the key handler and menus in `App.svelte`.
 
@@ -321,6 +321,25 @@ Where: `engine/markupTool.ts` (`clipboard`), the key handler and menus in `App.s
   - **Signatures are the exception.** A signature's image never goes on the system
     clipboard. A copied signature travels as a reference that only the running app that
     copied it can resolve; pasted into another Vellum window it is skipped with a message.
+
+Built (as done):
+
+- `src-tauri/src/clipboard.rs` puts markups on Windows' clipboard in a registered format
+  ("Vellum.Markups.v1", JSON), with the three standard formats that keep it out of
+  clipboard history and the cloud clipboard ("ExcludeClipboardContentFromMonitorProcessing",
+  "CanIncludeInClipboardHistory" 0, "CanUploadToCloudClipboard" 0). Reading takes Vellum's
+  format first, else a picture ("PNG", else CF_DIB), scaled to 2000 px on its long side.
+- `markup/clip.ts` writes and reads the JSON: a signature is only `{signature: ref, page,
+  bounds}`; the markup itself stays in the copying tool's memory under a per-run id. What's
+  read back is checked as a saved copy is (known kind, a style, a box); anything else is
+  skipped.
+- Ctrl+A with a drawing tool out switches to Select first (a drawing tool's selection is
+  only what it just drew, rule 7), then selects the page's markups. The Edit menu has
+  "Select all markups on the page" beside the text one, and "Cut markups".
+- The Edit menu's Paste lands in the middle of the view; Ctrl+V at the pointer when it's on
+  a page.
+- The real clipboard isn't touched by any test (it's Matt's): Win+V and pasting between
+  two windows are on the list to check by eye.
 
 ## Stage 10: checks, docs and hand-over
 

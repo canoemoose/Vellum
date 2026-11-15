@@ -183,7 +183,7 @@ describe("selecting and editing", () => {
     expect(t.nudge(10, 0)).toBe(true);
     expect(only(doc, "rect").rect[0]).toBeCloseTo(107.5); // 10 px at 100% is 7.5 pt
     expect(t.copy()).toBe(true);
-    expect(t.paste()).toBe(true);
+    expect(await t.paste()).toBe(true);
     expect(doc.markups.length).toBe(4);
     expect(new Set(doc.markups.map((m) => m.id)).size).toBe(4);
     expect(t.deleteSelection()).toBe(true);

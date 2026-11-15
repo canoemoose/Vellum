@@ -13,6 +13,7 @@ import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type Text
 import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
 import { toolById, withPreset } from "../markup/tools";
+import { centredOn, fromClip, newSession, toClip } from "../markup/clip";
 
 export { fitText, refitText } from "../markup/textbox";
 
@@ -44,7 +45,22 @@ export interface MarkupToolOptions {
    * still draws from the file should be hidden there now, so it isn't drawn twice.
    */
   onLift?(ids: string[]): void;
+  /**
+   * Stage 9: the system clipboard (src-tauri/src/clipboard.rs). Without it (tests), copies are
+   * held in memory for this tool alone.
+   */
+  clipboard?: {
+    write(json: string): Promise<void>;
+    read(): Promise<ClipRead>;
+  };
+  /** A picture was pasted: make it an Image markup on `page`, centred on `at` (stage 8). */
+  onPicture?(pic: { png: string; w: number; h: number }, page: number, at: Pt): void;
+  /** Something to tell the user (a signature that couldn't be pasted here). */
+  notify?(msg: string): void;
 }
+
+/** What the system clipboard held, as far as pasting goes. */
+export type ClipRead = { kind: "markups"; json: string } | { kind: "picture"; png: string; w: number; h: number } | { kind: "none" };
 
 /** CSS px: how close the pointer must be to pick a markup, and a handle. */
 const PICK_PX = 5;
@@ -74,7 +90,15 @@ export class MarkupTool {
   private clicking: { def: KindDef; page: number; points: Pt[]; hover: Pt | null } | null = null;
   /** Where a "place" tool's preview follows the pointer. */
   private placeAt: { page: number; p: Pt } | null = null;
-  private clipboard: Markup[] = [];
+  // Stage 9: copy, cut and paste through the system clipboard.
+  /** This run of the app: a copied signature can be pasted only where this matches (markup/clip.ts). */
+  private readonly session = newSession();
+  /** The last copy's signatures, held here by reference: their content never goes on the clipboard. */
+  private held = new Map<string, Markup>();
+  /** With no system clipboard (tests): the last copy's JSON. */
+  private memClip: string | null = null;
+  /** Where the pointer is on a page, for pasting there (null off the pages). */
+  private pointer: { page: number; p: Pt } | null = null;
   private opsCache = new WeakMap<Markup, Op[]>();
   private hoverCursor: string | null = null;
 
@@ -221,36 +245,92 @@ export class MarkupTool {
     return true;
   }
 
+  /**
+   * Copy the selection to the system clipboard, in Vellum's own format. Text markups belong to
+   * the text they mark, and some annotations from the file can't be redrawn: neither is copied
+   * (pasted elsewhere they'd land on nothing). A signature goes as a reference only.
+   */
   copy(): boolean {
-    // Text markups belong to the text they mark, and some annotations from the file can't be
-    // redrawn: neither is copied (pasted elsewhere they'd land on nothing).
     const s = this.selected().filter((m) => !defOf(m).ofText && !defOf(m).fixed);
     if (!s.length) return false;
-    this.clipboard = s;
+    const { json, held } = toClip(s, this.session);
+    this.held = held;
+    if (this.opts.clipboard) {
+      this.memClip = null;
+      this.opts.clipboard.write(json).catch((e) => {
+        console.warn("copy: clipboard write failed:", String(e));
+        this.opts.notify?.("Couldn't copy the markups to the clipboard");
+      });
+    } else this.memClip = json;
     return true;
   }
 
+  /** Copy the selection, then delete it: one undo step. */
+  cut(): boolean {
+    if (!this.copy()) return false;
+    const d = this.doc!;
+    const gone = new Set(this.selected().filter((m) => !defOf(m).ofText && !defOf(m).fixed).map((m) => m.id));
+    this.commit(this.markups.filter((m) => !gone.has(m.id)));
+    d.selection.clear();
+    this.redraw();
+    return true;
+  }
+
+  /** Whether Paste can be offered: with the system clipboard, always (it's read when pasting). */
   get canPaste(): boolean {
-    return this.clipboard.length > 0 && !!this.doc;
+    return !!this.doc && (!!this.opts.clipboard || this.memClip !== null);
+  }
+
+  /** Select every markup on a page that can be selected (Ctrl+A with markups in hand). */
+  selectAllOnPage(page: number): boolean {
+    const d = this.doc;
+    if (!d) return false;
+    const ids = this.markups.filter((m) => m.page === page && d.editable(m)).map((m) => m.id);
+    this.select(ids);
+    return ids.length > 0;
+  }
+
+  /** The pointer left the drawing: paste goes to the middle of the view. */
+  leave(): void {
+    this.pointer = null;
+  }
+
+  /** Where a paste lands: the pointer, if it's on a page and `where` allows; else the middle of the view. */
+  private pasteTarget(where: "pointer" | "centre"): { page: number; p: Pt } | null {
+    if (where === "pointer" && this.pointer) return this.pointer;
+    const at = this.pointOn(this.viewer.vw / 2, this.viewer.vh / 2) ?? this.pointOn(this.viewer.vw / 2, this.viewer.vh / 2, this.viewer.currentPageIndex);
+    return at;
   }
 
   /**
-   * Paste copies of the copied markups onto the current page, nudged so they're seen. (Text
-   * markups and annotations Vellum can't redraw are never copied: copy() leaves them out.)
+   * Paste whatever is on the clipboard: Vellum's markups (the middle of them on the pointer,
+   * or, from the menu or with the pointer off the page, the middle of the view), or a picture
+   * as an Image markup. True if anything was pasted.
    */
-  paste(): boolean {
-    if (!this.canPaste || !this.doc) return false;
-    const page = this.viewer.currentPageIndex;
+  async paste(where: "pointer" | "centre" = "pointer"): Promise<boolean> {
+    if (!this.doc) return false;
+    const target = this.pasteTarget(where);
+    const clip: ClipRead = this.opts.clipboard ? await this.opts.clipboard.read() : this.memClip ? { kind: "markups", json: this.memClip } : { kind: "none" };
+    if (!this.doc || !target) return false;
+    if (clip.kind === "picture") {
+      if (!this.opts.onPicture) return false;
+      this.opts.onPicture(clip, target.page, target.p);
+      return true;
+    }
+    if (clip.kind !== "markups") return false;
+    const r = fromClip(clip.json, this.session, this.held);
+    if (!r) return false;
+    if (r.skipped) this.opts.notify?.(r.skipped === 1 ? "A signature can only be pasted in the window it was copied from" : `${r.skipped} signatures or markups couldn't be pasted here`);
+    if (!r.markups.length) return false;
     const now = new Date().toISOString();
-    const copies = this.clipboard.map((m) => ({
-      ...moveBy(m, 10, 10),
+    const copies = centredOn(r.markups, target.p).map((m) => ({
+      ...m,
       id: newId(),
-      page,
+      page: target.page,
       meta: { author: this.opts.author(), created: now, modified: now },
-    }));
+    })) as Markup[];
     this.commit([...this.markups, ...copies]);
     this.select(copies.map((c) => c.id));
-    this.clipboard = copies;
     return true;
   }
 
@@ -403,6 +483,9 @@ export class MarkupTool {
   }
 
   move(sx: number, sy: number, mods: Mods): void {
+    // Stage 9: where a paste would land.
+    const on = this.pointOn(sx, sy);
+    this.pointer = on;
     const g = this.gesture;
     if (!g) {
       this.hover(sx, sy, mods);

@@ -16,7 +16,7 @@
   import PropertiesStrip from "./lib/components/PropertiesStrip.svelte";
   import TextEditor from "./lib/components/TextEditor.svelte";
   import ChoiceDialog, { type Choice } from "./lib/components/dialogs/ChoiceDialog.svelte";
-  import { MarkupTool, type Tool } from "./lib/engine/markupTool";
+  import { type ClipRead, MarkupTool, type Tool } from "./lib/engine/markupTool";
   import { labelOf } from "./lib/markup/kinds";
   import { toolById, toolForKey } from "./lib/markup/tools";
   import { barFor, subjectOf, subjectOfTool } from "./lib/markup/bar";
@@ -1538,13 +1538,15 @@
           { label: "Undo", shortcut: "Ctrl+Z", disabled: !markupTool?.drawingPoints && !markupTool?.doc?.history.canUndo, action: () => (markupTool?.drawingPoints ? markupTool.removeLastPoint() : markupTool?.undo()) },
           { label: "Redo", shortcut: "Ctrl+Y", disabled: !markupTool?.doc?.history.canRedo, action: () => markupTool?.redo() },
           { separator: true },
+          { label: "Cut markups", shortcut: "Ctrl+X", disabled: !markupTool?.hasSelection, action: () => markupTool?.cut() },
           { label: "Copy", shortcut: "Ctrl+C", disabled: !textUi.hasSelection && !markupTool?.hasSelection, action: () => (markupTool?.hasSelection ? markupTool.copy() : copySelection()) },
-          { label: "Paste markups", shortcut: "Ctrl+V", disabled: !markupTool?.canPaste, action: () => markupTool?.paste() },
+          { label: "Paste", shortcut: "Ctrl+V", disabled: !pdfDoc || !markupTool?.canPaste, action: () => void markupTool?.paste("centre") },
           { label: "Delete markups", shortcut: "Delete", disabled: !markupTool?.hasSelection, action: () => markupTool?.deleteSelection() },
           // Existing annotations
           { label: unlockedNow ? "Lock document" : "Unlock document…", disabled: !pdfDoc, action: () => void toggleEditLock() },
           { separator: true },
-          { label: "Select all text on the page", shortcut: "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
+          { label: "Select all markups on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? "Ctrl+A" : undefined, disabled: !pdfDoc, action: selectAllMarkups },
+          { label: "Select all text on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? undefined : "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
           // Text markups
           { label: "Highlight text", shortcut: "Ctrl+H", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("highlight") },
           { label: "Underline text", shortcut: "Ctrl+U", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("underline") },
@@ -1671,6 +1673,15 @@
     };
   }
 
+  /** Stage 9: select the current page's markups (in Select: a drawing tool's selection is only what it drew). */
+  function selectAllMarkups() {
+    const mt = markupTool;
+    if (!mt || !pdfDoc) return;
+    if (mt.tool !== "select") setTool("select");
+    textTool?.clear();
+    mt.selectAllOnPage(ui.page);
+  }
+
   // ------------------------------------------------------------------ keyboard (shell-level; navigation keys live in input.ts)
 
   /** A modal (a dialog, or the print dialog unless it's hidden for an area pick) owns the keyboard. */
@@ -1729,8 +1740,12 @@
       if (markupTool?.hasSelection) markupTool.copy();
       else if (textUi.hasSelection) copySelection();
       else handled = false;
+    } else if (ctrl && !e.shiftKey && k === "x" && !isTyping(e)) {
+      if (!markupTool?.cut()) handled = false;
     } else if (ctrl && !e.shiftKey && k === "v" && !isTyping(e)) {
-      if (!markupTool?.paste()) handled = false;
+      // Whatever was copied last, anywhere: markups (at the pointer) or a picture.
+      if (pdfDoc && markupTool) void markupTool.paste("pointer");
+      else handled = false;
     } else if (e.key === "Backspace" && !isTyping(e) && markupTool?.drawingPoints) {
       markupTool.removeLastPoint();
     } else if ((e.key === "Delete" || e.key === "Backspace") && !isTyping(e)) {
@@ -1753,8 +1768,10 @@
       // (rule 8, markup/tools.ts).
       if (pdfDoc) setTool(toolForKey(k, markupTool.tool, settings.markup.lastForKey, e.shiftKey)!);
     } else if (ctrl && !e.shiftKey && k === "a" && !isTyping(e)) {
-      // Never the WebView's select-all, which would highlight the whole shell.
-      if (textDoc) textTool?.selectPage(ui.page);
+      // Never the WebView's select-all, which would highlight the whole shell. With a markup
+      // selected or a markup tool out, the page's markups; otherwise the page's text.
+      if (pdfDoc && markupTool && (markupTool.hasSelection || markupTool.tool !== "select")) selectAllMarkups();
+      else if (textDoc) textTool?.selectPage(ui.page);
     } else if (e.key === "Escape" && !isTyping(e) && textUi.hasSelection) {
       textTool?.clear();
     } else if (e.key === "F1") {
@@ -1874,6 +1891,15 @@
         author: () => settings.markup.author ?? author,
         onChange: onMarkupsChanged,
         onLift: (ids) => liftNow(ids), // Existing annotations
+        // Stage 9: markups go on the system clipboard in Vellum's own format (src-tauri/src/clipboard.rs).
+        clipboard: {
+          write: (json) => invoke<void>("clipboard_put_markups", { json }),
+          read: () => invoke<ClipRead>("clipboard_take").catch((e) => {
+            console.warn("paste: clipboard read failed:", String(e));
+            return { kind: "none" } as const;
+          }),
+        },
+        notify,
       });
       markupTool = mt;
       // With --debug, scripted checks (DevTools) can reach the engine. Never in a normal launch.
@@ -1926,7 +1952,10 @@
             if (mt.active) mt.up(x, y, mods);
             else tt.pointerUp();
           },
-          leave: () => tt.pointerLeave(),
+          leave: () => {
+            tt.pointerLeave();
+            mt.leave(); // a paste now goes to the middle of the view
+          },
           cursor: () => (pdfDoc ? mt.cursor() : null) ?? (textDoc && mt.tool === "select" ? tt.cursor() : null),
         },
         contextMenu: (x, y) => {
