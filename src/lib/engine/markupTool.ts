@@ -31,7 +31,8 @@ export interface Mods {
 export interface MarkupToolOptions {
   /** The style a tool draws with (each tool remembers its last). */
   styleFor(kind: MarkupKind, tool: Tool): Style;
-  textStyle(): TextStyle;
+  /** The text style a typing tool draws with (each remembers its own). */
+  textStyle(tool: Tool): TextStyle;
   /** Written into each markup (agreed: the account's display name). */
   author(): string;
   /** Anything the shell shows changed: tool, selection, markups, text editing. */
@@ -521,7 +522,7 @@ export class MarkupTool {
   }
 
   private get drawContext(): DrawContext {
-    return { textStyle: this.opts.textStyle() };
+    return { textStyle: this.opts.textStyle(this.tool) };
   }
 
   private newMarkup(def: KindDef, page: number, shape: Shape<Markup>): Markup {

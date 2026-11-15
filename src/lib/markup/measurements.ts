@@ -88,11 +88,15 @@ export function revalue(markups: Markup[], pages: Set<number> | null, pageOf: (p
   return { markups: changed || out.some((m, i) => m !== markups[i]) ? out : markups, changed };
 }
 
-/** The markups with every measurement written in format `fmt`, and how many changed. */
-export function reformat(markups: Markup[], fmt: MeasureFormat): { markups: Markup[]; changed: number } {
+/**
+ * The markups with every measurement (or with `ids`, only those) written in format `fmt`, and
+ * how many changed. Units and decimals change the selection like any control (rule 7); every
+ * measurement is the right-click menu's "Apply to all measurements".
+ */
+export function reformat(markups: Markup[], fmt: MeasureFormat, ids?: ReadonlySet<string>): { markups: Markup[]; changed: number } {
   let changed = 0;
   const out = markups.map((m) => {
-    if (!isMeasurement(m) || (m.fmt.units === fmt.units && m.fmt.decimals === fmt.decimals)) return m;
+    if (!isMeasurement(m) || (ids && !ids.has(m.id)) || JSON.stringify(m.fmt) === JSON.stringify(fmt)) return m;
     changed++;
     return { ...m, fmt: { ...fmt }, meta: { ...m.meta, modified: new Date().toISOString() } };
   });

@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 and 2.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 3.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -150,7 +150,7 @@ Built (as done): the last tool used per letter is remembered between runs
 tool: the one last used; L again for the next, Shift+L for the one before"), so a tool no
 longer reads "L twice". The palette's flyout shows Calibrate without a letter.
 
-## Stage 3: the context bar and what tools remember
+## Stage 3: the context bar and what tools remember ✓
 
 Rules 6 and 7. Where: `App.svelte` (`strip`, `measureStrip`, `stripStyle`, `stampsOnly`),
 `components/PropertiesStrip.svelte`, `markup/prefs.ts`, `markup/measurements.ts`.
@@ -177,6 +177,25 @@ Rules 6 and 7. Where: `App.svelte` (`strip`, `measureStrip`, `stripStyle`, `stam
   stop sharing one text style: `settings.markup.text` splits per tool, existing settings
   carried over to both.
 - **Restyling an old markup doesn't change the tool** [A6]: rule 7.
+
+Built (as done):
+
+- Which controls show is one pure function, `barFor` in `markup/bar.ts`, for a tool or a
+  selection (the intersection). A kind with `noBar` (Calibrate; stamps until stage 8) gets
+  no bar; `controls.pattern: false` drops the pattern alone (the highlighter).
+- An arrow's ends: whichever end is "None", the other end's list leaves "None" out.
+- Rule 7 is "remember only with a tool out": with a tool out the selection can only be
+  what it just drew (switching tools clears it), so in Select nothing is remembered.
+- The measuring tools share one remembered format and label size, as before (all five
+  tools are one family); only the per-selection change is new. The file-wide re-format on
+  every format change is gone; "Apply its units and decimals to all measurements" is on the
+  canvas right-click menu with a measurement selected.
+- Dropdowns: units list a length written that way ("1240 mm") beside the name
+  ("Millimetres"); decimals a number ("12.40") beside "2 decimal places". The box shows the
+  short form ("mm", "0.00"). The other dropdowns (font, size, spacing, pattern, ends, label
+  size) already show a picture beside a name.
+- Text markups (highlight, underline, strike) still remember a variant's colour when one
+  just made is restyled, as before; their "tool" is the text selection.
 
 ## Stage 4: the arrowhead
 

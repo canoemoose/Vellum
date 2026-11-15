@@ -1,5 +1,5 @@
 // What Vellum remembers about markup between sessions (part of the settings): each tool's last
-// style, the text style, which files have had their first save confirmed, the author name if
+// style and text style (rule 7: each tool its own), which files have had their first save confirmed, the author name if
 // one was set by hand, and each tool group's last tool. Validated field by field, like the rest
 // of the settings. Pure.
 
@@ -11,7 +11,8 @@ import { type ToolDef, GROUPS, TOOLS, toolById, toolDefaults, withPreset } from 
 export interface MarkupPrefs {
   /** By tool id (a kind's own tool has the kind's name, so styles saved before tools had ids still apply). */
   styles: Partial<Record<string, Style>>;
-  text: TextStyle;
+  /** Each typing tool's last text style, by tool id (the text box and the callout apart). */
+  texts: Partial<Record<string, TextStyle>>;
   /** pathKeys of files whose save into the original has been confirmed once. */
   confirmed: string[];
   /** Author written into markups; null means the account's display name. */
@@ -27,7 +28,7 @@ export interface MarkupPrefs {
 const MAX_CONFIRMED = 500;
 
 export function defaultPrefs(): MarkupPrefs {
-  return { styles: {}, text: { ...DEFAULT_TEXT }, confirmed: [], author: null, dock: { ...DEFAULT_DOCK }, lastInGroup: {}, lastForKey: {} };
+  return { styles: {}, texts: {}, confirmed: [], author: null, dock: { ...DEFAULT_DOCK }, lastInGroup: {}, lastForKey: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
@@ -73,10 +74,21 @@ export function sanitisePrefs(raw: unknown): MarkupPrefs {
   const lastForKey: Partial<Record<string, string>> = {};
   const lk = (p.lastForKey && typeof p.lastForKey === "object" ? p.lastForKey : {}) as Record<string, unknown>;
   for (const [k, id] of Object.entries(lk)) if (typeof id === "string" && k && toolById(id)?.key === k) lastForKey[k] = id;
-  const t = (p.text && typeof p.text === "object" ? p.text : {}) as Record<string, unknown>;
+  // Before each tool had its own, one text style ("text") served both: it carries over to each.
+  const textStyle = (v: unknown): TextStyle => {
+    const t = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+    return fullText({ ...(t as Partial<TextStyle>), size: num(t.size, 4, 144) ?? DEFAULT_TEXT.size, colour: rgb(t.colour) ?? DEFAULT_TEXT.colour });
+  };
+  const rt = (p.texts && typeof p.texts === "object" ? p.texts : {}) as Record<string, unknown>;
+  const texts: Partial<Record<string, TextStyle>> = {};
+  for (const t of TOOLS) {
+    if (!t.kind || !kindOf(t.kind).controls.text) continue;
+    const v = rt[t.id] ?? p.text;
+    if (v && typeof v === "object") texts[t.id] = textStyle(v);
+  }
   return {
     styles,
-    text: fullText({ ...(t as Partial<TextStyle>), size: num(t.size, 4, 144) ?? DEFAULT_TEXT.size, colour: rgb(t.colour) ?? DEFAULT_TEXT.colour }),
+    texts,
     confirmed: Array.isArray(p.confirmed) ? p.confirmed.filter((x): x is string => typeof x === "string").slice(-MAX_CONFIRMED) : [],
     author: typeof p.author === "string" && p.author.trim() ? p.author.trim().slice(0, 100) : null,
     dock: sanitiseDock(p.dock),
@@ -90,6 +102,11 @@ export function styleFor(p: MarkupPrefs, toolId: string): Style {
   const t = toolById(toolId);
   if (!t?.kind) throw new Error(`no drawing tool ${toolId}`);
   return withPreset(t, p.styles[toolId] ?? toolDefaults(t));
+}
+
+/** A typing tool's text style: what it was last used with, or the default. */
+export function textFor(p: MarkupPrefs, toolId: string): TextStyle {
+  return p.texts[toolId] ?? { ...DEFAULT_TEXT };
 }
 
 /** Record that a file's first save was confirmed (oldest dropped past the cap). */

@@ -61,8 +61,8 @@ describe("markup preferences", () => {
     });
     expect(p.styles.rect).toEqual({ stroke: [0, 0, 1], width: 3, fill: null, opacity: 0.5, fillOpacity: 0.5, dash: [4, 3] });
     expect(p.styles.arrow!.stroke).toEqual(styleFor(defaultPrefs(), "arrow").stroke);
-    expect(p.text.size).toBe(10);
-    expect(p.text.colour).toEqual([1, 0, 0]);
+    expect(p.texts.text!.size).toBe(10);
+    expect(p.texts.text!.colour).toEqual([1, 0, 0]);
     expect(p.confirmed).toEqual(["a", "b"]);
     expect(p.author).toBe("Crew lead");
     expect(sanitisePrefs("rubbish")).toEqual(defaultPrefs());

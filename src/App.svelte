@@ -17,10 +17,11 @@
   import TextEditor from "./lib/components/TextEditor.svelte";
   import ChoiceDialog, { type Choice } from "./lib/components/dialogs/ChoiceDialog.svelte";
   import { MarkupTool, type Tool } from "./lib/engine/markupTool";
-  import { kindOf, labelOf } from "./lib/markup/kinds";
-  import { toolById, toolForKey, toolForMarkup } from "./lib/markup/tools";
+  import { labelOf } from "./lib/markup/kinds";
+  import { toolById, toolForKey } from "./lib/markup/tools";
+  import { barFor, subjectOf, subjectOfTool } from "./lib/markup/bar";
   import { MarkupDoc } from "./lib/engine/markupDoc";
-  import { confirm as confirmSave, styleFor } from "./lib/markup/prefs";
+  import { confirm as confirmSave, styleFor, textFor } from "./lib/markup/prefs";
   import type { Frame } from "./lib/markup/pdf";
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, Style, TextStyle } from "./lib/markup/types";
@@ -286,29 +287,29 @@
     scheduleRecovery();
   }
 
-  /** What the properties strip shows: the tool's style, or the selection's. */
+  /**
+   * What the properties strip shows (rule 6: only the controls that do something, markup/bar.ts):
+   * the tool's style, or the selection's. `tool`: the tool whose remembered settings the bar
+   * also sets (rule 7: with a tool out, the selection is only what it just drew; in Select,
+   * restyling a markup changes that markup only).
+   */
   const strip = $derived.by(() => {
     void markVersion;
     const mt = markupTool;
     if (!mt || !pdfDoc) return null;
     const tool = toolById(mt.tool);
-    if (stampsOnly(mt)) return null; // Stamps: nothing in the bar applies to a stamp
-    // Existing annotations: one Vellum can't redraw can't be restyled.
-    if (mt.tool === "select" && mt.selected().length && mt.selected().every((m) => kindOf(m.kind).fixed)) return null;
     if (tool?.kind) {
-      const k = tool.kind;
-      return {
-        kinds: [k], tools: [tool.id], style: styleFor(settings.markup, tool.id), text: kindOf(k).controls.text ? settings.markup.text : null,
-        label: `${tool.label} tool`, noEnds: tool.preset?.ends !== undefined,
-      };
+      const bar = barFor([subjectOfTool(tool)]);
+      if (!bar) return null;
+      return { bar, kinds: [tool.kind], tool: tool.id, style: styleFor(settings.markup, tool.id), text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool` };
     }
     const sel = mt.selected();
-    if (!sel.length) return null;
+    // Several kinds: only the controls they all have; none (a stamp, an annotation Vellum can't redraw), no bar.
+    const bar = barFor(sel.map(subjectOf));
+    if (!bar) return null;
     const kinds = [...new Set(sel.map((m) => m.kind))];
-    // Restyling a markup also sets the style of the tool that draws it.
-    const tools = [...new Set(sel.map((m) => toolForMarkup(m)?.id).filter((id): id is string => !!id))];
     const t = sel.find((m) => "textStyle" in m) as Extract<Markup, { textStyle: TextStyle }> | undefined;
-    return { kinds, tools, noEnds: false, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected` };
+    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected` };
   });
 
   /** The properties bar's dock while it's being dragged (saved when let go). */
@@ -322,11 +323,12 @@
       mt.preview(patch);
       return;
     }
-    // Each tool remembers its last style; restyling a markup also sets it for its tool.
-    const next = { ...settings.markup.styles };
-    for (const id of strip.tools) next[id] = { ...styleFor(settings.markup, id), ...patch };
-    settings.markup = { ...settings.markup, styles: next };
-    save();
+    // Each tool remembers its last style: set with the tool out (rule 7).
+    const id = strip.tool;
+    if (id) {
+      settings.markup = { ...settings.markup, styles: { ...settings.markup.styles, [id]: { ...styleFor(settings.markup, id), ...patch } } };
+      save();
+    }
     // The selection: what is picked out, or with a drawing tool, the shape just drawn.
     mt.restyle(patch);
     markVersion++;
@@ -335,8 +337,11 @@
   function stripText(patch: Partial<TextStyle>) {
     const mt = markupTool;
     if (!mt) return;
-    settings.markup = { ...settings.markup, text: { ...settings.markup.text, ...patch } };
-    save();
+    const id = strip?.tool;
+    if (id) {
+      settings.markup = { ...settings.markup, texts: { ...settings.markup.texts, [id]: { ...textFor(settings.markup, id), ...patch } } };
+      save();
+    }
     mt.restyle({}, patch);
     markVersion++;
   }
@@ -444,9 +449,9 @@
   });
 
   /**
-   * Measurements follow their page's scale and the number format: whenever either changes (or
-   * an undo brings back older values), re-value them in place, with no undo step of their own.
-   * A changed scale says how many it re-valued.
+   * Measurements follow their page's scale: whenever it changes (or an undo brings back older
+   * values), re-value them in place, with no undo step of their own, and say how many. Their
+   * units and decimals are each one's own (set from the bar, rule 7).
    */
   const scaleSeen = new Map<number, string>();
   $effect(() => {
@@ -455,14 +460,12 @@
     const v = viewer;
     if (!t || t.status !== "open" || !v || !markupTool) return;
     const sig = JSON.stringify([t.scale?.ratio ?? null, settings.measure.pageScales[pathKey(t.path)] ?? null, userUnits[t.id] ?? null]);
-    const fmt: MeasureFormat = settings.measure.format;
     untrack(() => {
       const r = revalue(t.marks.markups, null, (p) => pageMeasure(t, p));
-      const f = reformat(r.markups, fmt);
       const before = scaleSeen.get(t.id);
       scaleSeen.set(t.id, sig);
-      if (f.markups !== t.marks.markups) {
-        t.marks.history.replace(f.markups);
+      if (r.markups !== t.marks.markups) {
+        t.marks.history.replace(r.markups);
         v.requestFrame();
         onMarkupsChanged();
       }
@@ -473,21 +476,40 @@
     });
   });
 
-  /** The properties bar's measuring section: label size and number format. */
+  /**
+   * The properties bar's measuring section: label size and number format. Like every control,
+   * it changes the selection; with a measuring tool out, the tools remember it (rule 7).
+   */
   function onMeasure(patch: { labelSize?: number; format?: MeasureFormat }) {
-    settings.measure = { ...settings.measure, ...patch };
-    save();
     const t = active;
     const mt = markupTool;
-    if (patch.labelSize && t && mt) {
-      const next = resizeLabels(t.marks.markups, new Set(mt.selected().map((m) => m.id)), patch.labelSize);
+    if (mt && toolById(mt.tool)?.group === "measure") {
+      settings.measure = { ...settings.measure, ...patch };
+      save();
+    }
+    if (t && mt) {
+      const ids = new Set(mt.selected().map((m) => m.id));
+      let next = t.marks.markups;
+      if (patch.labelSize) next = resizeLabels(next, ids, patch.labelSize);
+      if (patch.format) next = reformat(next, patch.format, ids).markups;
       if (next !== t.marks.markups) {
         t.marks.history.push(next);
         viewer?.requestFrame();
       }
     }
-    // A new format reaches every measurement through the effect above.
     onMarkupsChanged();
+  }
+
+  /** The right-click menu's "Apply to all measurements": every one takes this one's units and decimals. */
+  function formatAllLike(fmt: MeasureFormat) {
+    const t = active;
+    if (!t) return;
+    const r = reformat(t.marks.markups, fmt);
+    if (!r.changed) return;
+    t.marks.history.push(r.markups);
+    viewer?.requestFrame();
+    onMarkupsChanged();
+    notify(r.changed === 1 ? "1 measurement changed" : `${r.changed} measurements changed`);
   }
 
   const measureStrip = $derived.by(() => {
@@ -499,7 +521,7 @@
     if (tool?.kind) return tool.group === "measure" && tool.kind !== "measureCalibrate" ? { measure: ms, onMeasure } : {};
     const sel = mt.selected();
     if (!sel.length || !sel.every(isMeasurement)) return {};
-    return { measure: { ...ms, labelSize: sel[0].labelSize }, onMeasure };
+    return { measure: { labelSize: sel[0].labelSize, format: sel[0].fmt }, onMeasure };
   });
 
   const measureBar = $derived.by(() => {
@@ -550,14 +572,6 @@
 
   // A stamp's picture decoded after it was first drawn: draw again.
   setImageReady(() => viewer?.requestFrame());
-
-  /** Nothing in the properties bar applies to stamps: hidden for the stamp tools and stamps alone. */
-  function stampsOnly(mt: MarkupTool): boolean {
-    const tool = toolById(mt.tool);
-    if (tool) return tool.kind === "stamp";
-    const sel = mt.selected();
-    return sel.length > 0 && sel.every((m) => m.kind === "stamp");
-  }
 
   function stampToolPicked(t: Tool) {
     if (t === "signature" || t === "stamp") {
@@ -1856,7 +1870,7 @@
       textTool = tt;
       const mt = new MarkupTool(v, {
         styleFor: (_k, tool) => styleFor(settings.markup, tool),
-        textStyle: () => settings.markup.text,
+        textStyle: (tool) => textFor(settings.markup, tool),
         author: () => settings.markup.author ?? author,
         onChange: onMarkupsChanged,
         onLift: (ids) => liftNow(ids), // Existing annotations
@@ -1926,6 +1940,12 @@
                 { label: "Cancel", shortcut: "Esc", action: () => mt.finishPoints(false) },
               ],
             };
+            return;
+          }
+          // Measuring: the rare case of every measurement in the file taking one's units and decimals.
+          const m = mt.tool === "select" ? mt.selected().find(isMeasurement) : undefined;
+          if (m) {
+            contextMenu = { x, y, items: [{ label: "Apply its units and decimals to all measurements", action: () => formatAllLike(m.fmt) }] };
             return;
           }
           if (!tt.hasSelection) return;
@@ -2241,7 +2261,7 @@
         <!-- Floats over the top of the canvas: showing or hiding it never resizes the canvas,
              so the drawing doesn't move under the pointer. -->
         <PropertiesStrip
-          kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label} noEnds={strip.noEnds}
+          bar={strip.bar} kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label}
           {...measureStrip}
           dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
           onStyle={stripStyle} onText={stripText}

@@ -45,7 +45,7 @@ describe("standard fonts", () => {
 describe("text box styles", () => {
   it("reads older text styles with the defaults", () => {
     expect(fullText({ size: 12, colour: [0, 0, 0] })).toEqual({ ...DEFAULT_TEXT, size: 12 });
-    expect(sanitisePrefs({ text: { size: 12, family: "times", bold: true, align: "middle" } }).text).toMatchObject({ family: "times", bold: true, align: "left" });
+    expect(sanitisePrefs({ text: { size: 12, family: "times", bold: true, align: "middle" } }).texts.text).toMatchObject({ family: "times", bold: true, align: "left" });
   });
 
   it("aligns each line within the box", () => {
