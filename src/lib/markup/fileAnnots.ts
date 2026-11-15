@@ -46,6 +46,9 @@ export interface FileAnnot {
   rotate: number | null;
   vellum: string | null;
   measured: boolean;
+  // Notes (tool consistency stage 7)
+  /** A Text annotation's pop-up's /Open: true pinned open, false closed, null or absent when it has no pop-up. */
+  popupOpen?: boolean | null;
 }
 
 export interface PageAnnots {
@@ -277,7 +280,8 @@ function fromKeys(a: FileAnnot, f: Frame): (Record<string, unknown> & { kind: Ma
     case "Text": {
       const r = pageRect(f, a.rect);
       const base = kindOf("note").defaultStyle();
-      return { kind: "note", at: [r[0], r[1]], text: a.contents ?? "", style: { ...base, stroke: colourOf(a.colour) ?? base.stroke, opacity: a.opacity ?? 1 } };
+      const pinned = a.popupOpen === true; // stage 7: pinned open when its pop-up is open
+      return { kind: "note", at: [r[0], r[1]], text: a.contents ?? "", ...(pinned ? { pinned } : {}), style: { ...base, stroke: colourOf(a.colour) ?? base.stroke, opacity: a.opacity ?? 1 } };
     }
     default:
       return null;
@@ -304,6 +308,8 @@ export function fromFile(p: PageAnnots, used: Set<string>, now = new Date().toIS
     const origin: FileOrigin = { page: p.page, index: a.index, nm: a.nm, subtype: a.subtype, exact: false };
     const exact = a.vellum ? fromEntry(a, p.page, p.frame, id) : null;
     if (exact) {
+      // Stage 7: a note's pin follows its pop-up, which another app may open or close without changing the note.
+      if (exact.kind === "note" && typeof a.popupOpen === "boolean" && a.popupOpen !== !!exact.pinned) exact.pinned = a.popupOpen;
       out.push({ markup: exact, origin: { ...origin, exact: true } });
       continue;
     }

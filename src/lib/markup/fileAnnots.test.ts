@@ -31,6 +31,7 @@ const SAMPLES: Markup[] = [
   mk("callout", { tip: [250, 180], elbow: [230, 160], rect: [100, 100, 220, 130], text: "Here", textStyle: { size: 10, colour: [0, 0, 0] } }),
   mk("textmark", { variant: "underline", quads: [[[100, 100], [200, 100], [100, 110], [200, 110]]], text: "Hello" }),
   mk("note", { at: [100, 100], text: "Check this" }),
+  mk("note", { at: [100, 100], text: "Pinned open", pinned: true }), // stage 7
   mk("measureLength", { from: [100, 100], to: [200, 150], scale: 100, userUnit: 1, fmt, labelSize: 8 }),
   mk("measurePath", { vertices: [[100, 100], [150, 150], [200, 100]], scale: 100, userUnit: 1, fmt, labelSize: 8 }),
   mk("measureArea", { vertices: [[100, 100], [200, 100], [150, 150]], scale: 100, userUnit: 1, fmt, labelSize: 8 }),
@@ -51,6 +52,7 @@ function readBack(s: AnnotSpec, index = 0): FileAnnot {
     contents: s.contents ?? null, author: s.author ?? null, modified: s.modified ?? null, created: s.created ?? null,
     defaultAppearance: s.defaultAppearance ?? null, defaultStyle: s.defaultStyle ?? null, quadding: s.quadding ?? null,
     name: s.icon ?? s.stampName ?? null, rotate: s.rotate ?? null, vellum: s.vellum ?? null, measured: !!s.measure,
+    popupOpen: s.popup ? s.popup.open : null,
   };
 }
 
@@ -221,5 +223,33 @@ describe("ids across pages", () => {
     const used = new Set<string>();
     const ids = [fromFile({ page: 0, frame: A4, annots: [a("dup")] }, used), fromFile({ page: 1, frame: A4, annots: [a("dup")] }, used)].flat().map((x) => x.markup.id);
     expect(ids).toEqual(["dup", "file-p1-a0"]);
+  });
+});
+
+// Stage 7: a note's pin is its pop-up's /Open.
+describe("a note's pin", () => {
+  const note = (pinned?: boolean) => mk("note", { at: [100, 100], text: "Ring me", ...(pinned === undefined ? {} : { pinned }) });
+
+  it("comes from its pop-up's /Open when mapped from the standard keys", () => {
+    const keys = (popupOpen: boolean | null) => ({ ...readBack(toSpec(note(), A4)), vellum: null, popupOpen });
+    expect((one(A4, keys(true)).markup as MarkupOf<"note">).pinned).toBe(true);
+    expect((one(A4, keys(false)).markup as MarkupOf<"note">).pinned).toBeFalsy();
+    // No pop-up at all (another app's note): unpinned.
+    expect((one(A4, keys(null)).markup as MarkupOf<"note">).pinned).toBeFalsy();
+  });
+
+  it("follows the pop-up when another app opened or closed it without changing the note", () => {
+    const opened = one(A4, { ...readBack(toSpec(note(false), A4)), popupOpen: true });
+    expect(opened.origin.exact).toBe(true);
+    expect((opened.markup as MarkupOf<"note">).pinned).toBe(true);
+    const closed = one(A4, { ...readBack(toSpec(note(true), A4)), popupOpen: false });
+    expect((closed.markup as MarkupOf<"note">).pinned).toBe(false);
+  });
+
+  it("is unpinned for a note Vellum saved before pins (no pinned field, no pop-up)", () => {
+    const old = one(A4, { ...readBack(toSpec(note(), A4)), popupOpen: null });
+    expect(old.origin.exact).toBe(true);
+    expect(old.markup).toEqual(note());
+    expect((old.markup as MarkupOf<"note">).pinned).toBeFalsy();
   });
 });
