@@ -4,6 +4,7 @@
 // file, like a hand-set document scale. Pure. See docs/editing-phase4-scope.md.
 
 import { type DocScale, formatRatio, scaleStatusText } from "./scale";
+import type { Units } from "./paper";
 
 /** Page index (0-based) to its own scale. */
 export type PageOverrides = Record<number, DocScale>;
@@ -22,10 +23,10 @@ export function withPageScale(pages: PageOverrides | undefined, page: number, s:
 }
 
 /** The status bar text for the page in view: "Scale 1:50 (this page)" when it has its own. */
-export function pageScaleText(doc: DocScale | null, pages: PageOverrides | undefined, page: number): string {
+export function pageScaleText(doc: DocScale | null, pages: PageOverrides | undefined, page: number, units: Units = "metric"): string {
   const own = pages?.[page];
-  if (own) return `Scale ${formatRatio(own.ratio)} (this page)`;
-  return scaleStatusText(doc);
+  if (own) return `Scale ${formatRatio(own.ratio, units)} (this page)`;
+  return scaleStatusText(doc, units);
 }
 
 /** Overrides as remembered in the settings: page index to ratio. */
