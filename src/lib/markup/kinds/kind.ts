@@ -16,6 +16,8 @@ export type Shape<M extends Markup> = Omit<M, "id" | "page" | "style" | "meta" |
 export interface DrawContext {
   /** The text style new text takes (the properties bar's). */
   textStyle: TextStyle;
+  /** Stage 8: the view's turn, degrees clockwise (quarter turns): a new stamp starts upright as viewed. */
+  viewRotation?: number;
 }
 
 /**
@@ -51,9 +53,10 @@ export type Draw<M extends Markup> =
   /**
    * Place at a click, centred on the pointer, with a preview following the pointer before the
    * click; or drag to size it (`box`; without it, a drag places at the press). A box under the
-   * minimum either way places at the press.
+   * minimum either way places at the press. Null (stage 8): nothing chosen to place yet, so no
+   * preview and nothing placed.
    */
-  | { gesture: "place"; make(at: Pt, ctx: DrawContext): Shape<M>; box?(r: Rect, ctx: DrawContext): Shape<M> };
+  | { gesture: "place"; make(at: Pt, ctx: DrawContext): Shape<M> | null; box?(r: Rect, ctx: DrawContext): Shape<M> | null };
 
 /** CSS px: a dragged box under this either way makes nothing (rule 1: one minimum for all). */
 export const MIN_BOX_PX = 4;
@@ -89,8 +92,20 @@ export interface KindDef<M extends Markup = Markup> {
   bounds(m: M): Rect;
   /** Whether page point p picks it; `t` is the pick tolerance plus half the line weight. */
   hits(m: M, p: Pt, t: number): boolean;
-  /** The grips it shows when selected. */
-  handles(m: M): Handle[];
+  /**
+   * The grips it shows when selected. `ptPerPx` (stage 8): points per CSS pixel at the current
+   * zoom, for a grip that sits a fixed distance off the shape on screen (a stamp's rotate grip).
+   */
+  handles(m: M, ptPerPx?: number): Handle[];
+  /** Stage 8: degrees its own frame is turned on the page (a turned stamp), for its grips' cursors. */
+  turn?(m: M): number;
+  /**
+   * Stage 8: its context bar is its own (a stamp's: a picker, then only what its content takes)
+   * rather than the line controls. `variant` is the content: "text", "signature" or "image".
+   */
+  ownBar?(variant: string | undefined): { colour: boolean; dateLine: boolean };
+  /** Stage 8: which variant of its own bar a markup takes. */
+  variantOf?(m: M): string;
   /** Grip `h` dragged to p; `constrain` is Shift. Stays at least minSize where that applies. */
   dragHandle(m: M, h: HandleId, p: Pt, constrain: boolean, minSize: number): M;
   moveBy(m: M, dx: number, dy: number): M;

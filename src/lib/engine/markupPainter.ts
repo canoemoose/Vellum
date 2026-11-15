@@ -70,6 +70,7 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
         ctx.clip();
       }
       ctx.fillStyle = css(op.colour);
+      if (op.opacity !== undefined) ctx.globalAlpha = op.opacity; // Stage 8: a stamp's opacity
       ctx.font = cssFont(op.face, op.size);
       ctx.textBaseline = "alphabetic";
       const ang = Math.atan2(op.dir[1], op.dir[0]);

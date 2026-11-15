@@ -167,9 +167,9 @@ describe("the stamp kind", () => {
     expect(dragCorner(r, "nw", [0, 90], 2)).toEqual([0, 50, 200, 150]);
     // Past the fixed corner: held at the minimum, never turned inside out.
     expect(dragCorner(r, "ne", [50, 200], 2, 8)).toEqual([100, 146, 108, 150]);
-    // Edge grips aren't offered.
+    // Edge grips aren't offered; the rotate grip is (stage 8).
     const m = mk(approved, r);
-    expect(handles(m).map((h) => h.id)).toEqual(["nw", "ne", "se", "sw"]);
+    expect(handles(m).map((h) => h.id)).toEqual(["nw", "ne", "se", "sw", "rotate"]);
     const big = dragHandle(m, "se", [300, 400], false) as Markup & { rect: Rect };
     const a = aspectOf(approved);
     expect((big.rect[2] - big.rect[0]) / (big.rect[3] - big.rect[1])).toBeCloseTo(a);

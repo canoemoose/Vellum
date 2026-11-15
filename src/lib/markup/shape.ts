@@ -39,7 +39,7 @@ export function insidePolygon(p: Pt, v: Pt[]): boolean {
 /** A box's corners, clockwise from the top left. */
 export const rectPts = (r: Rect): Pt[] => [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
 
-export type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "from" | "to" | `v${number}`;
+export type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "from" | "to" | `v${number}` | "rotate"; // Stage 8: rotate
 
 export interface Handle {
   id: HandleId;
@@ -170,11 +170,20 @@ export function simplify(pts: Pt[], tol: number): Pt[] {
  * view is turned a quarter turn), or the four-way move arrows for a point (an arrow's end, a
  * cloud's corner). Never a hand: that means panning.
  */
-export function handleCursor(h: HandleId, viewRotation: number): string {
-  if (!/^(nw|ne|se|sw|n|s|e|w)$/.test(h)) return "move";
-  const quarter = (((Math.round(viewRotation / 90) % 4) + 4) % 4) % 2 === 1;
-  if (h === "n" || h === "s") return quarter ? "ew-resize" : "ns-resize";
-  if (h === "e" || h === "w") return quarter ? "ns-resize" : "ew-resize";
-  const diagonal = h === "nw" || h === "se";
-  return diagonal !== quarter ? "nwse-resize" : "nesw-resize";
+export function handleCursor(h: HandleId, viewRotation: number, turn = 0): string {
+  // Stage 8: the rotate grip has its own; a turned box's grips point the way they face on screen.
+  if (h === "rotate") return ROTATE_CURSOR;
+  const dir = GRIP_DIR[h];
+  if (dir === undefined) return "move";
+  const on = (((Math.round((dir + viewRotation + turn) / 45) * 45) % 180) + 180) % 180;
+  return on === 0 ? "ew-resize" : on === 45 ? "nwse-resize" : on === 90 ? "ns-resize" : "nesw-resize";
 }
+
+// Stage 8
+/** Which way each box grip points from the box's middle, degrees clockwise from the right (y down). */
+const GRIP_DIR: Partial<Record<HandleId, number>> = { e: 0, se: 45, s: 90, sw: 135, w: 180, nw: 225, n: 270, ne: 315 };
+
+/** The rotate grip's cursor: a circling arrow (there's no standard one), its hot spot in the middle. */
+export const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 12a6.5 6.5 0 1 1-2-4.7" stroke="#fff" stroke-width="4"/><path d="M17 3.5v4.5h-4.5" stroke="#fff" stroke-width="4"/><path d="M18.5 12a6.5 6.5 0 1 1-2-4.7" stroke="#000" stroke-width="1.6"/><path d="M17 3.5v4.5h-4.5" stroke="#000" stroke-width="1.6"/></g></svg>',
+)}") 12 12, crosshair`;

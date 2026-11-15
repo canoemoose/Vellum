@@ -9,6 +9,7 @@
 import { type LineEnd, type Pt, type Rect, type Rgb, type Style, type TextStyle, faceOf, fillOpacity, fullText, normRect } from "./base";
 import { type Face, textWidth, wrap } from "./fonts";
 import { drawnDash } from "./dash";
+import { turnedCorners } from "./turn"; // Stage 8
 
 export type Seg = ["M", number, number] | ["L", number, number] | ["C", number, number, number, number, number, number] | ["Z"];
 
@@ -49,6 +50,8 @@ export interface TextOp {
   face: Face;
   /** Each line's start along `dir` from the origin (alignment). */
   offsets: number[];
+  /** Stage 8: see-through text (a stamp's opacity), 0..1; opaque without it. */
+  opacity?: number;
 }
 
 export type Op = PathOp | TextOp | ImageOp;
@@ -62,6 +65,10 @@ export interface ImageOp {
   png: string;
   /** Hex SHA-256 of the PNG bytes. */
   hash: string;
+  /** Stage 8: degrees turned clockwise (as seen on the page) about the box's centre. */
+  angle?: number;
+  /** Stage 8: 0..1; opaque without it. */
+  opacity?: number;
 }
 
 export const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
@@ -385,7 +392,7 @@ export function opsBounds(ops: Op[]): Rect {
   };
   for (const op of ops) {
     if (op.t === "path") for (const p of segPoints(op.segs)) take(p, op.width / 2 + 1);
-    else if (op.t === "image") for (const p of [[op.rect[0], op.rect[1]], [op.rect[2], op.rect[3]]] as Pt[]) take(p, 0);
+    else if (op.t === "image") for (const p of turnedCorners(op.rect, op.angle ?? 0)) take(p, 0); // Stage 8: turned
     else if (op.clip) for (const p of op.clip) take(p, 1);
     else
       op.lines.forEach((l, i) => {

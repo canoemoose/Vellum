@@ -34,16 +34,21 @@ export function insideMarquee(m: Markup, r: Rect): boolean {
   return b[0] >= q[0] && b[1] >= q[1] && b[2] <= q[2] && b[3] <= q[3];
 }
 
-/** The grips a selected markup shows. */
-export function handles(m: Markup): Handle[] {
-  return defOf(m).handles(m);
+/** The grips a selected markup shows (`ptPerPx`: points per CSS pixel, stage 8). */
+export function handles(m: Markup, ptPerPx?: number): Handle[] {
+  return defOf(m).handles(m, ptPerPx);
+}
+
+/** Stage 8: degrees the markup's own frame is turned on the page (0 for most). */
+export function turnOf(m: Markup): number {
+  return defOf(m).turn?.(m) ?? 0;
 }
 
 /** The handle under p, within tol points. */
-export function handleAt(m: Markup, p: Pt, tol: number): HandleId | null {
+export function handleAt(m: Markup, p: Pt, tol: number, ptPerPx?: number): HandleId | null {
   let best: HandleId | null = null;
   let bd = Infinity;
-  for (const h of handles(m)) {
+  for (const h of handles(m, ptPerPx)) {
     const d = Math.hypot(p[0] - h.at[0], p[1] - h.at[1]);
     if (d <= tol && d < bd) {
       best = h.id;

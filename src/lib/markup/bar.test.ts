@@ -23,6 +23,11 @@ describe("rule 6: only controls that do something", () => {
         expect(b, t.id).toBeNull();
         continue;
       }
+      // Stage 8: a kind with its own bar has no line controls (below).
+      if (d.ownBar) {
+        expect(b, t.id).toMatchObject({ weight: false, pattern: false, ends: "none", fill: false, text: false, opacity: true });
+        continue;
+      }
       expect(b!.fill, t.id).toBe(d.controls.fill);
       expect(b!.text, t.id).toBe(d.controls.text);
       expect(b!.weight, t.id).toBe(!d.lineless);
@@ -31,10 +36,33 @@ describe("rule 6: only controls that do something", () => {
     }
   });
 
-  it("gives Calibrate no bar, and stamps none yet", () => {
+  it("gives Calibrate no bar", () => {
     expect(tool("measureCalibrate")).toBeNull();
-    expect(tool("stamp")).toBeNull();
-    expect(tool("signature")).toBeNull();
+  });
+
+  // Stage 8: a stamp's own bar, by what it holds (rule 6: only controls that do something).
+  it("gives a text stamp its picker, colour, date line and opacity; a signature or a picture its picker and opacity", () => {
+    const st = (id: string, variant: string) => barFor([subjectOfTool(toolById(id)!, variant)]);
+    expect(st("stamp", "text")).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false, opacity: true, dateLine: true, picker: "text" } satisfies Bar);
+    // The Stamp tool with one of your image stamps armed: no colour or date line.
+    expect(st("stamp", "image")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "image" });
+    expect(st("signature", "signature")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "signature" });
+    expect(st("image", "image")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "image" });
+    // Selected: the same bar, from what each one holds.
+    const stamp = (content: object, signature = false) => ({ id: "s", page: 0, kind: "stamp", rect: [0, 0, 10, 10], content, signature, style: defaultStyle("stamp"), meta }) as unknown as Markup;
+    const text = stamp({ type: "text", label: "APPROVED", sub: null, colour: [0, 1, 0] });
+    const sig = stamp({ type: "image", png: "", hash: "h", w: 1, h: 1 }, true);
+    const pic = stamp({ type: "image", png: "", hash: "h", w: 1, h: 1 });
+    expect(barFor([subjectOf(text)])).toMatchObject({ colour: true, dateLine: true, opacity: true, picker: "text" });
+    expect(barFor([subjectOf(sig)])).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "signature" });
+    expect(barFor([subjectOf(pic)])).toMatchObject({ colour: false, opacity: true, picker: "image" });
+    // Several: what they all have, and no picker (it's for one).
+    expect(barFor([subjectOf(text), subjectOf(text)])).toMatchObject({ colour: true, dateLine: true, picker: null });
+    expect(barFor([subjectOf(text), subjectOf(sig)])).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: null });
+    // A stamp and a rectangle: colour and opacity apply to both; nothing else.
+    const rect = { id: "r", page: 0, kind: "rect", rect: [0, 0, 1, 1], style: defaultStyle("rect"), meta } as Markup;
+    expect(barFor([subjectOf(text), subjectOf(rect)])).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false, opacity: true, dateLine: false, picker: null } satisfies Bar);
+    expect(barFor([subjectOf(sig), subjectOf(rect)])).toMatchObject({ colour: false, weight: false, opacity: true });
   });
 
   it("gives the highlighter no line pattern", () => {
@@ -61,11 +89,11 @@ describe("rule 6: only controls that do something", () => {
     // A text box and a rectangle: fill, but no text.
     expect(of("text", "rect")).toMatchObject({ fill: true, text: false });
     // A note and a rectangle: colour only.
-    expect(of("note", "rect")).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false } satisfies Bar);
+    expect(of("note", "rect")).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false, opacity: true, dateLine: false, picker: null } satisfies Bar);
     // An arrow and a polyline: ends, keeping the arrow's rule.
     expect(of("arrow", "polyline")!.ends).toBe("arrow");
-    // Anything with a stamp: nothing applies to them all.
-    expect(of("rect", "stamp")).toBeNull();
+    // A rectangle and a stamp (stage 8): only opacity applies to both (whether a stamp has a colour depends on what it holds).
+    expect(of("rect", "stamp")).toMatchObject({ colour: false, weight: false, opacity: true });
     expect(barFor([])).toBeNull();
   });
 

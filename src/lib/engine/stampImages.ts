@@ -44,6 +44,14 @@ export function preloadImage(hash: string, png: string): void {
 
 /** Draw an image operation (the context already maps page points to pixels). */
 export function paintImage(ctx: CanvasRenderingContext2D, op: ImageOp): void {
+  // Stage 8: turned about its centre, and see-through.
+  if (op.angle) {
+    const cx = (op.rect[0] + op.rect[2]) / 2, cy = (op.rect[1] + op.rect[3]) / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((op.angle * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+  }
+  if (op.opacity !== undefined) ctx.globalAlpha = op.opacity;
   const [x0, y0, x1, y1] = op.rect;
   const bmp = ready.get(op.hash);
   if (bmp) {

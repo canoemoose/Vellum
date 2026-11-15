@@ -3,13 +3,15 @@
 // something; with several kinds selected, only the controls they all have. Pure.
 
 import { type Markup, type MarkupKind, arrowEnds } from "./base";
-import { kindOf } from "./kinds";
+import { defOf, kindOf } from "./kinds";
 import type { ToolDef } from "./tools";
 
 /** What the bar is for: a kind, and whether it's a plain line (an arrow kind with no ends). */
 export interface Subject {
   kind: MarkupKind;
   line?: boolean;
+  /** Stage 8: a kind with its own bar, which of it (a stamp: "text", "signature" or "image"). */
+  variant?: string;
 }
 
 /**
@@ -24,16 +26,30 @@ export interface Bar {
   ends: "none" | "all" | "arrow";
   fill: boolean;
   text: boolean;
+  // Stage 8
+  /** Opacity, under the colour (or alone, for a signature or a picture). */
+  opacity: boolean;
+  /** A text stamp's date line (the second line: name and date). */
+  dateLine: boolean;
+  /** One stamp's picker ("Stamp: APPROVED"), by what it holds; none for several. */
+  picker: string | null;
 }
 
-export const subjectOfTool = (t: ToolDef): Subject => ({ kind: t.kind!, line: t.preset?.ends !== undefined });
+/** A tool's subject; `variant` (stage 8) is what a stamp tool has armed. */
+export const subjectOfTool = (t: ToolDef, variant?: string): Subject => ({ kind: t.kind!, line: t.preset?.ends !== undefined, ...(variant ? { variant } : {}) });
 
-export const subjectOf = (m: Markup): Subject => ({ kind: m.kind, line: m.kind === "arrow" && arrowEnds(m.style).every((e) => e === "none") });
+export const subjectOf = (m: Markup): Subject => {
+  const variant = defOf(m).variantOf?.(m); // Stage 8
+  return { kind: m.kind, line: m.kind === "arrow" && arrowEnds(m.style).every((e) => e === "none"), ...(variant ? { variant } : {}) };
+};
 
 /** One subject's controls, or null when nothing in the bar does anything for it. */
 function controlsOf(s: Subject): Bar | null {
   const d = kindOf(s.kind);
   if (d.fixed || d.noBar) return null;
+  // Stage 8: a stamp's own bar: its picker, colour only if it has one, and opacity.
+  const own = d.ownBar?.(s.variant);
+  if (own) return { colour: own.colour, weight: false, pattern: false, ends: "none", fill: false, text: false, opacity: true, dateLine: own.dateLine, picker: s.variant ?? null };
   const c = d.controls;
   const lined = !d.lineless;
   return {
@@ -43,6 +59,9 @@ function controlsOf(s: Subject): Bar | null {
     ends: !c.ends || s.line ? "none" : s.kind === "arrow" ? "arrow" : "all",
     fill: c.fill,
     text: c.text,
+    opacity: true,
+    dateLine: false,
+    picker: null,
   };
 }
 
@@ -61,6 +80,9 @@ export function barFor(subjects: Subject[]): Bar | null {
           ends: bar.ends === "none" || b.ends === "none" ? "none" : bar.ends === "arrow" || b.ends === "arrow" ? "arrow" : "all",
           fill: bar.fill && b.fill,
           text: bar.text && b.text,
+          opacity: bar.opacity && b.opacity,
+          dateLine: bar.dateLine && b.dateLine,
+          picker: null,
         }
       : b;
   }
