@@ -342,13 +342,15 @@ describe("saved with the standard keys", () => {
     });
   }
 
-  it("writes no /LL in line, and no /CO where the value is where other apps would put it", () => {
+  it("writes no /LL in line, and a /CO that puts other apps' caption where Vellum's value is", () => {
     const A3: Frame = { quarterTurns: 0, bbox: [0, 0, 1191, 842] };
     const m = len([100, 100], [300, 100], 0);
     const s = toSpec(m, A3);
     expect(s.leader).toBeUndefined();
-    // Its value sits valueGap above the line; other apps' twice the weight. A small difference.
-    expect(s.captionOffset?.[0] ?? 0).toBeCloseTo(0, 3);
+    // Its value sits valueGap above the line, other apps' caption twice the weight: /CO makes up
+    // the small difference, square to the line only.
+    expect(s.captionOffset![0]).toBeCloseTo(0, 3);
+    expect(s.captionOffset![1]).toBeCloseTo(valueGap(m.style.width) - 2 * m.style.width, 2);
     // An upright one's value is on the right, which other apps' top caption isn't: /CO says so.
     const up = toSpec(len([100, 300], [100, 100], 0), A3);
     expect(Math.abs(up.captionOffset![1])).toBeGreaterThan(5);
