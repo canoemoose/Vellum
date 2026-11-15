@@ -8,6 +8,7 @@ import { drawnDash } from "./dash";
 import { type Frame, rectToUser, toContent } from "./pdf";
 import { type AnnotSpec, pdfDate } from "./annotation";
 import { defOf } from "./kinds";
+import { reeditEntry } from "./reedit";
 
 export * from "./annotation";
 
@@ -35,5 +36,7 @@ export function toSpec(m: Markup, f: Frame): AnnotSpec {
   };
   if (s.fill) spec.interior = s.fill;
   defOf(m).spec(m, f, spec);
+  // Vellum's own copy, so the markup can be brought back exactly as drawn (reedit.ts).
+  spec.vellum = reeditEntry(m);
   return spec;
 }

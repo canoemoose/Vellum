@@ -10,6 +10,10 @@ use serde::Serialize;
 
 use super::spec::{AnnotSpec, Appearance, Change};
 
+/// The private key Vellum's own copy of a markup is written under (AnnotSpec::vellum). A
+/// second-class name in the PDF's sense: other apps leave keys they don't know alone.
+pub const REEDIT_KEY: &str = "Vellum_Markup";
+
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileInfo {
@@ -350,6 +354,15 @@ impl Writer {
         if let Some(cl) = &s.callout {
             d.set("CL", reals(cl));
         }
+        if let Some(v) = &s.vellum {
+            d.set(REEDIT_KEY, text(v));
+        }
+        // Measuring
+
+        // Stamps
+
+        // Text markups
+
         let ap = self.appearance_stream(&s.appearance)?;
         d.set("AP", dictionary! { "N" => Object::Reference(ap) });
         Ok(d)

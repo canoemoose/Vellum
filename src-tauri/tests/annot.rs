@@ -20,33 +20,16 @@ fn square(page: usize, nm: &str, r: [f64; 4]) -> AnnotSpec {
         appearance: Appearance {
             ops: format!("1 0 0 RG 1 0 0 rg {} {} {} {} re f", r[0], r[1], r[2] - r[0], r[3] - r[1]),
             bbox: r,
-            opacity: None,
-            fill_opacity: None,
-            font: false,
-            fonts: Default::default(),
+            ..Default::default()
         },
         author: Some("Test".into()),
         modified: Some("D:20261114120000Z".into()),
         created: Some("D:20261114120000Z".into()),
         contents: Some("note".into()),
-        flags: None,
         colour: Some([1.0, 0.0, 0.0]),
         interior: Some([1.0, 0.0, 0.0]),
-        opacity: None,
         border_width: Some(1.0),
-        dash: None,
-        line: None,
-        line_ends: None,
-        vertices: None,
-        ink: None,
-        cloud: None,
-        intent: None,
-        default_appearance: None,
-        default_style: None,
-        quadding: None,
-        inset: None,
-        rotate: None,
-        callout: None,
+        ..Default::default()
     }
 }
 
@@ -212,4 +195,51 @@ fn appearances_name_the_standard_fonts_they_use() {
     assert_eq!(font.get(b"Encoding").unwrap().as_name().unwrap(), b"WinAnsiEncoding");
     // PDFium draws it.
     assert!(ink_with_annots(out).is_some());
+}
+
+#[test]
+fn the_private_reedit_entry_is_written_and_reads_back() {
+    // JSON with what a literal PDF string has to escape, and text outside ASCII.
+    let model = r#"{"v":1,"m":"D:20261114120000Z","markup":{"kind":"text","text":"Check (this) \ bolt, 5° off"}}"#;
+    let mut spec = square(0, "r", [10.0, 10.0, 60.0, 40.0]);
+    spec.vellum = Some(model.into());
+    let out = annot::apply(blank(), "", &[Change::Add { spec }, Change::Add { spec: square(0, "plain", [100.0, 100.0, 150.0, 140.0]) }]).unwrap();
+
+    // lopdf: the key sits beside the standard ones, only where it was given.
+    let doc = lopdf::Document::load_mem(&out).unwrap();
+    let page = *doc.get_pages().get(&1).unwrap();
+    let annots = match doc.get_dictionary(page).unwrap().get(b"Annots").unwrap() {
+        lopdf::Object::Reference(id) => doc.get_object(*id).unwrap().as_array().unwrap().clone(),
+        o => o.as_array().unwrap().clone(),
+    };
+    let first = doc.get_dictionary(annots[0].as_reference().unwrap()).unwrap();
+    assert!(first.has(annot::writer::REEDIT_KEY.as_bytes()));
+    assert!(first.has(b"M") && first.has(b"NM") && first.has(b"AP"));
+    let second = doc.get_dictionary(annots[1].as_reference().unwrap()).unwrap();
+    assert!(!second.has(annot::writer::REEDIT_KEY.as_bytes()));
+
+    // PDFium, as phase 7b will read it: the whole JSON comes back unchanged.
+    let read = out.clone();
+    let got = pdfium()
+        .run_on_worker(move |ctx| {
+            let b = ctx.bindings();
+            unsafe {
+                let doc = b.FPDF_LoadMemDocument64(&read, None);
+                let page = b.FPDF_LoadPage(doc, 0);
+                let a = b.FPDFPage_GetAnnot(page, 0);
+                let n = b.FPDFAnnot_GetStringValue(a, annot::writer::REEDIT_KEY, std::ptr::null_mut(), 0) as usize;
+                let mut buf = vec![0u16; n / 2];
+                b.FPDFAnnot_GetStringValue(a, annot::writer::REEDIT_KEY, buf.as_mut_ptr(), n as _);
+                b.FPDFPage_CloseAnnot(a);
+                b.FPDF_ClosePage(page);
+                b.FPDF_CloseDocument(doc);
+                String::from_utf16_lossy(&buf[..buf.len().saturating_sub(1)])
+            }
+        })
+        .unwrap();
+    assert_eq!(got, model);
+
+    // And PDFium still draws both annotations.
+    let bb = ink_with_annots(out).expect("ink");
+    assert_near(bb, (10.0, 60.0, 150.0, 190.0), 0.6, "squares");
 }

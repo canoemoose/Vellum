@@ -33,6 +33,11 @@ export interface AnnotSpec {
   inset?: [number, number, number, number];
   rotate?: number;
   callout?: number[];
+  /**
+   * Vellum's own copy of the markup (reedit.ts), written as the private key /Vellum_Markup
+   * beside the standard ones. Other apps ignore it.
+   */
+  vellum?: string;
   // Measuring
 
   // Stamps

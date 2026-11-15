@@ -82,6 +82,11 @@ export interface KindDef<M extends Markup = Markup> {
   restyled?(before: M, after: M): M;
   /** It holds text typed on the canvas: typing starts once it's drawn, and a double-click edits it. */
   typed?: boolean;
+  /**
+   * What Vellum's private copy in the saved annotation keeps of it (../reedit.ts), when not
+   * the whole markup: an image is referred to by its hash, never carried a second time.
+   */
+  saved?(m: M): unknown;
 }
 
 /** Declare a kind (types each method by the kind's own markup). */

@@ -1,11 +1,13 @@
 //! What the front end sends to save: annotation specs in PDF user space (src/lib/markup/spec.ts
-//! builds them). Every field is optional except the ones every annotation has.
+//! builds them). Every field is optional except the ones every annotation has. Later phases
+//! add their fields inside their own blocks below (Measuring, Stamps, Text markups); build
+//! specs in tests with `..Default::default()` so a new field doesn't break them.
 
 use serde::Deserialize;
 
 /// The annotation's normal appearance: content-stream operators in user space and the box
 /// they cover, plus the resources they use.
-#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Appearance {
     pub ops: String,
@@ -24,7 +26,7 @@ pub struct Appearance {
     pub fonts: std::collections::BTreeMap<String, String>,
 }
 
-#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnotSpec {
     /// Zero-based page.
@@ -76,6 +78,17 @@ pub struct AnnotSpec {
     pub rotate: Option<i64>,
     /// /CL for callouts.
     pub callout: Option<Vec<f64>>,
+    /// Vellum's private copy of the markup, written as /Vellum_Markup: JSON with the format
+    /// version, the /M date it was written with and the markup's own model
+    /// (src/lib/markup/reedit.ts). Other apps ignore keys they don't know; a later Vellum uses
+    /// it to bring the markup back exactly as drawn, unless /M shows another app changed it.
+    #[serde(default)]
+    pub vellum: Option<String>,
+    // Measuring
+
+    // Stamps
+
+    // Text markups
 }
 
 /// One change to save.
