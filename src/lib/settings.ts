@@ -8,6 +8,8 @@ import { type DocMemory, sanitiseDocs } from "./shell/docMemory";
 import type { Units } from "./shell/paper";
 import type { ThemePref } from "./shell/theme";
 import type { Bounds } from "./shell/windowPlacement";
+// Stamps
+import { type StampPrefs, sanitiseStampPrefs } from "./markup/stamps";
 
 const KEY = "vellum.settings.v1";
 
@@ -41,6 +43,8 @@ export interface Settings {
   // Measuring
 
   // Stamps
+  /** The Stamp tool's picker: second line on, colour (null: each stamp's own), last custom wording. */
+  stamps: StampPrefs;
 
   // Text markups
 }
@@ -66,6 +70,7 @@ export const DEFAULTS: Settings = {
   // Measuring
 
   // Stamps
+  stamps: { sub: true, colour: null, custom: "" },
 
   // Text markups
 };
@@ -100,6 +105,7 @@ export function sanitiseSettings(raw: unknown): Settings {
     // Measuring
 
     // Stamps
+    stamps: sanitiseStampPrefs(s.stamps),
 
     // Text markups
   };

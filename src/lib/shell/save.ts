@@ -82,3 +82,39 @@ export function copyName(path: string): string {
 }
 
 // Stamps
+
+/** The question on the first save after placing signatures: bake them in, or keep them movable. */
+export interface BakeQuestion {
+  title: string;
+  message: string;
+  /** The buttons, the safer one first (it's the default). */
+  keep: string;
+  bake: string;
+}
+
+export function bakeQuestion(count: number, copy: boolean): BakeQuestion {
+  const one = count === 1;
+  const it = one ? "it" : "them";
+  const where = copy ? "the copy's page" : "the page";
+  return {
+    title: one ? "Bake in the signature?" : `Bake in ${count} signatures?`,
+    message:
+      `Bake ${one ? "the signature you placed" : `the ${count} signatures you placed`} into ${where}, or keep ${it} movable? ` +
+      `Baked in, ${one ? "it becomes" : "they become"} part of the drawing and can't be moved or lifted off; once saved, that can't be undone. ` +
+      `Movable, ${one ? "it stays a stamp" : "they stay stamps"} that can be moved or deleted later, here or in another PDF editor.`,
+    keep: "Keep movable",
+    bake: "Bake in",
+  };
+}
+
+/** The ids of signatures placed since the last save: the ones the bake question is about. */
+export function newSignatureIds(saved: { id: string }[], current: { id: string; kind: string; signature?: boolean }[]): string[] {
+  const before = new Set(saved.map((m) => m.id));
+  return current.filter((m) => m.kind === "stamp" && m.signature === true && !before.has(m.id)).map((m) => m.id);
+}
+
+/** A save's changes with the chosen signatures baked in instead of added as annotations. */
+export function withBakes<C extends { op: string; spec?: { nm: string } }>(changes: C[], bake: ReadonlySet<string>): (C | { op: "bake"; spec: NonNullable<C["spec"]> })[] {
+  if (!bake.size) return changes;
+  return changes.map((c) => (c.op === "add" && c.spec && bake.has(c.spec.nm) ? { op: "bake" as const, spec: c.spec } : c));
+}

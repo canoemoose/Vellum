@@ -49,6 +49,19 @@ export class History {
     this.present = next;
     return true;
   }
+
+  // Stamps
+  /**
+   * Take markups out of every state, past and future: a signature baked into the page is part
+   * of the page now, so undo and redo mustn't bring it back as a markup.
+   */
+  forget(ids: ReadonlySet<string>): void {
+    if (!ids.size) return;
+    const f = (l: Markup[]) => (l.some((m) => ids.has(m.id)) ? l.filter((m) => !ids.has(m.id)) : l);
+    this.present = f(this.present);
+    this.past = this.past.map(f);
+    this.future = this.future.map(f);
+  }
 }
 
 /**

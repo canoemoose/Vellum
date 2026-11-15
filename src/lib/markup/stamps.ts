@@ -281,3 +281,22 @@ export function strokesContent(stored: { strokes: { x: number; y: number }[][]; 
     colour: [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255],
   };
 }
+
+// ---------------------------------------------------------------- the picker's settings
+
+/** What the Stamp tool's picker remembers (settings.ts). Never a signature. */
+export interface StampPrefs {
+  /** Text stamps get the second line (name and date). */
+  sub: boolean;
+  /** Text stamps' colour; null for each stamp's own. */
+  colour: Rgb | null;
+  /** The last custom wording. */
+  custom: string;
+}
+
+export function sanitiseStampPrefs(raw: unknown): StampPrefs {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const c = o.colour;
+  const colour = Array.isArray(c) && c.length === 3 && c.every((v) => typeof v === "number" && v >= 0 && v <= 1) ? (c as Rgb) : null;
+  return { sub: o.sub !== false, colour, custom: typeof o.custom === "string" ? cleanLabel(o.custom) : "" };
+}
