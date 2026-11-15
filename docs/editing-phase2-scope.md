@@ -171,6 +171,15 @@ settings (tool styles, confirmed files, author).
   - With a drawing tool active, a change restyles the shape just drawn as well as the next ones;
     picking a drawing tool clears an earlier selection, so it isn't restyled by mistake.
   - The canvas no longer takes presses on overlays (the bar, the text editor) (`input.ts`).
+- More after that, also with Matt:
+  - Patterns scale with line weight and are fitted to corners on straight edges (a dash or dot
+    centred on every corner and line end, whole repeats between); dots are zero-length dashes,
+    so round caps make true circles. Curves (clouds, ink) keep an ordinary pattern.
+  - Arrows have a style per end: none, open, filled, dot, bar, slash (PDF's /LE names).
+  - Cloud scallops grow with line weight.
+  - Text boxes: resizing stops where the text no longer fits; changing the text size or border
+    keeps a snug box snug. Font (Helvetica, Times, Courier), bold, italic, underline,
+    strikethrough, alignment and line spacing, per box (`markup/fonts.ts`).
 
 ## Tests (for Matt)
 
@@ -194,8 +203,12 @@ settings (tool styles, confirmed files, author).
    them back into the model), planned for after phase 3; so does the padlock.
 2. **Edge fixes deferred** (from phase 0): text boxes turning transparent and callouts losing
    their leader when edited in Edge. Waiting for Matt's Acrobat reference file.
-3. **Text**: Helvetica only, so characters outside Western European text come out as "?"; no
-   bold, italic or alignment; the text box grows downwards to fit but never shrinks.
+3. **Text**: the PDF standard fonts only (Helvetica, Times, Courier; plain, bold, italic, bold
+   italic), so nothing is embedded but characters outside Western European text come out as
+   "?". Styles apply to a whole box, not to words within it. The widths were measured from
+   Windows' Arial, Times New Roman and Courier New (the screen fonts); their ASCII range matches
+   Adobe's AFM files exactly, but a few rarer Latin-1 characters may differ by a few thousandths
+   of an em from what a PDF reader uses.
 4. **The author can't be changed in the app**: the setting exists (`markup.author`) but there's
    no settings dialog to edit it yet. The account's display name is used.
 5. **Rotated view while typing in a text box**: the editor is rotated with the view; not tried.

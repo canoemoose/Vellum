@@ -4,7 +4,7 @@
 
 import type { Pt, Rect } from "./types";
 import type { Op } from "./ops";
-import { pdfString } from "./helvetica";
+import { baseFont, fontResource, pdfString } from "./fonts";
 
 /** A page's /Rotate (quarter turns clockwise) and visible box in user space [l, b, r, t]. */
 export interface Frame {
@@ -69,8 +69,8 @@ export interface Content {
   /** Line (/CA) and fill (/ca) opacity for /GS0, if any operation uses it. */
   opacity: number | null;
   fillOpacity: number | null;
-  /** /Helv is used. */
-  font: boolean;
+  /** The fonts used: resource name to /BaseFont. */
+  fonts: Record<string, string>;
 }
 
 /** Drawing operations as appearance-stream operators in user space. */
@@ -78,7 +78,7 @@ export function toContent(f: Frame, ops: Op[]): Content {
   const out: string[] = [];
   let opacity: number | null = null;
   let fillOpacity: number | null = null;
-  let font = false;
+  const fonts: Record<string, string> = {};
   const pt = (x: number, y: number) => {
     const u = toUser(f, x, y);
     return `${n(u[0])} ${n(u[1])}`;
@@ -93,7 +93,7 @@ export function toContent(f: Frame, ops: Op[]): Content {
       if (so || fo) out.push("/GS0 gs");
       if (op.stroke) out.push(`${rgb(op.stroke)} RG`);
       if (op.fill) out.push(`${rgb(op.fill)} rg`);
-      out.push(`${n(op.width)} w`, "1 j 1 J");
+      out.push(`${n(op.width)} w`, op.decoration ? "1 j 0 J" : "1 j 1 J");
       if (op.dash?.length) out.push(`[${op.dash.map(n).join(" ")}] 0 d`);
       for (const s of op.segs) {
         if (s[0] === "M") out.push(`${pt(s[1], s[2])} m`);
@@ -103,7 +103,8 @@ export function toContent(f: Frame, ops: Op[]): Content {
       }
       out.push(op.fill && op.stroke ? "B" : op.fill ? "f" : op.stroke ? "S" : "n");
     } else {
-      font = true;
+      const res = fontResource(op.face);
+      fonts[res] = baseFont(op.face);
       if (op.clip) {
         out.push(`${pt(op.clip[0][0], op.clip[0][1])} m`);
         for (const p of op.clip.slice(1)) out.push(`${pt(p[0], p[1])} l`);
@@ -113,10 +114,12 @@ export function toContent(f: Frame, ops: Op[]): Content {
       // quarter turn), carried into user space, so the text stays upright on screen.
       const d = dirToUser(f, op.dir);
       const up = dirToUser(f, [op.dir[1], -op.dir[0]]);
-      out.push("BT", `${rgb(op.colour)} rg`, `/Helv ${n(op.size)} Tf`);
+      out.push("BT", `${rgb(op.colour)} rg`, `/${res} ${n(op.size)} Tf`);
       op.lines.forEach((line, i) => {
         // Line i starts i leadings "down" from the first, down being (-dir.y, dir.x) on the page.
-        const u = toUser(f, op.origin[0] - op.dir[1] * i * op.leading, op.origin[1] + op.dir[0] * i * op.leading);
+        // Moved along the line by its alignment offset.
+        const o = op.offsets[i] ?? 0;
+        const u = toUser(f, op.origin[0] - op.dir[1] * i * op.leading + op.dir[0] * o, op.origin[1] + op.dir[0] * i * op.leading + op.dir[1] * o);
         out.push(`${n(d[0])} ${n(d[1])} ${n(up[0])} ${n(up[1])} ${n(u[0])} ${n(u[1])} Tm`, `(${pdfString(line)}) Tj`);
       });
       out.push("ET");
@@ -128,5 +131,5 @@ export function toContent(f: Frame, ops: Op[]): Content {
     opacity ??= 1;
     fillOpacity ??= 1;
   }
-  return { ops: out.join("\n"), opacity, fillOpacity, font };
+  return { ops: out.join("\n"), opacity, fillOpacity, fonts };
 }

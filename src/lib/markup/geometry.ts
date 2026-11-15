@@ -1,7 +1,7 @@
 // Hit-testing, handles, moving and resizing markups. Page coordinates. Pure.
 
 import { type Markup, type Pt, type Rect, normRect } from "./types";
-import { cloudChord, opsBounds, opsFor } from "./ops";
+import { cloudChord, opsBounds, opsFor, textHeight, textLines } from "./ops";
 
 /** The markup's geometry box (not counting stroke or scallops). */
 export function shapeBounds(m: Markup): Rect {
@@ -75,7 +75,7 @@ export function hits(m: Markup, p: Pt, tol: number): boolean {
     case "cloud":
       if (m.style.fill && insidePolygon(p, m.vertices)) return true;
       // The scallops stand out from the edges by up to half a chord.
-      return distToPolyline(p, m.vertices, true) <= t + cloudChord(m.intensity) / 2;
+      return distToPolyline(p, m.vertices, true) <= t + cloudChord(m.intensity, m.style.width) / 2;
     case "ink":
       return m.strokes.some((s) => distToPolyline(p, s, false) <= t);
   }
@@ -205,6 +205,7 @@ export function dragHandle(m: Markup, h: HandleId, p: Pt, constrain: boolean, mi
     const map = (v: Pt): Pt => [r[0] + (v[0] - old[0]) * sx, r[1] + (v[1] - old[1]) * sy];
     return { ...m, strokes: m.strokes.map((s) => s.map(map)) };
   }
+  if (m.kind === "text") return { ...m, rect: holdText(m, r, h, old) };
   return { ...m, rect: r };
 }
 
@@ -240,4 +241,33 @@ export function handleCursor(h: HandleId, viewRotation: number): string {
   if (h === "e" || h === "w") return quarter ? "ns-resize" : "ew-resize";
   const diagonal = h === "nw" || h === "se";
   return diagonal !== quarter ? "nwse-resize" : "nesw-resize";
+}
+
+/**
+ * A text box being resized to `r` by handle `h`, stopped where its text would no longer fit:
+ * a top or bottom edge stops at the height the text needs (at the new width); a side edge stops
+ * at the narrowest width whose wrapped text still fits the height.
+ */
+function holdText(m: Extract<Markup, { kind: "text" }>, r: Rect, h: HandleId, old: Rect): Rect {
+  const need = (w: number) => textHeight(textLines(m.text, [0, 0, w, 0], m.textStyle, m.style.width).length, m.textStyle, m.style.width);
+  let [x0, y0, x1, y1] = r;
+  if (h.includes("n") || h.includes("s")) {
+    const n = need(x1 - x0);
+    if (y1 - y0 < n) {
+      if (h.includes("n")) y0 = y1 - n;
+      else y1 = y0 + n;
+    }
+    return [x0, y0, x1, y1];
+  }
+  // A side: the height stays, so the width can't go below what fits in it.
+  const height = y1 - y0;
+  if (need(x1 - x0) <= height) return r;
+  let lo = x1 - x0, hi = Math.max(lo, old[2] - old[0]);
+  // (If even the old width didn't fit, it stays at the old width.)
+  for (let i = 0; i < 24 && need(hi) <= height; i++) {
+    const mid = (lo + hi) / 2;
+    if (need(mid) <= height) hi = mid;
+    else lo = mid;
+  }
+  return h.includes("w") ? [x1 - hi, y0, x1, y1] : [x0, y0, x0 + hi, y1];
 }

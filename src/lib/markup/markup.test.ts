@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Markup, type Pt, defaultStyle, DEFAULT_TEXT, newId } from "./types";
-import { pdfString, textWidth, wrap } from "./helvetica";
+import { pdfString, textWidth, wrap } from "./fonts";
 import { opsBounds, opsFor, signedArea, textLines, type PathOp, type TextOp } from "./ops";
 import { type Frame, toContent, toPage, toUser, n } from "./pdf";
 import { pdfDate, toSpec } from "./spec";
@@ -126,7 +126,7 @@ describe("drawing operations", () => {
     expect(t.lines.length).toBeGreaterThan(1);
     expect(t.lines.every((l) => textWidth(l, 10) <= 120 - 2 * 5)).toBe(true);
     expect(t.clip).toEqual([[100, 100], [220, 100], [220, 140], [100, 140]]);
-    expect(textLines("x", [0, 0, 5, 5], 10, 1)).toEqual(["x"]); // never narrower than one size
+    expect(textLines("x", [0, 0, 5, 5], DEFAULT_TEXT, 1)).toEqual(["x"]); // never narrower than one size
   });
 });
 
@@ -155,7 +155,7 @@ describe("page frame", () => {
     // On a page shown a quarter turn clockwise, reading left to right on screen runs up the
     // page's user space (+y), and "up" on screen is user -x.
     const c = toContent(frames[1], opsFor(text("Hi")));
-    expect(c.font).toBe(true);
+    expect(c.fonts).toEqual({ Helv: "Helvetica" });
     expect(c.ops).toMatch(/\n0 1 -1 0 [\d.]+ [\d.]+ Tm\n\(Hi\) Tj/);
     const plain = toContent(A4, opsFor(text("Hi")));
     expect(plain.ops).toMatch(/\n1 0 0 1 [\d.]+ [\d.]+ Tm\n\(Hi\) Tj/);

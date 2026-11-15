@@ -202,7 +202,7 @@ export class MarkupTool {
     return from.map((m) => {
       if (!sel.has(m.id)) return m;
       const next = { ...m, style: { ...m.style, ...patch } } as Markup;
-      if (text && next.kind === "text") return touch(fitText({ ...next, textStyle: { ...next.textStyle, ...text } }));
+      if (m.kind === "text" && next.kind === "text") return touch(refitText(m, text ? { ...next, textStyle: { ...next.textStyle, ...text } } : next));
       return touch(next);
     });
   }
@@ -629,9 +629,26 @@ function boxTooSmall(m: Markup, min: number): boolean {
 export function fitText<M extends Markup>(m: M): M {
   if (m.kind !== "text") return m;
   const r = normRect(m.rect);
-  const lines = textLines(m.text, r, m.textStyle.size, m.style.width);
-  const need = textHeight(lines.length, m.textStyle.size, m.style.width);
+  const lines = textLines(m.text, r, m.textStyle, m.style.width);
+  const need = textHeight(lines.length, m.textStyle, m.style.width);
   return r[3] - r[1] >= need ? ({ ...m, rect: r } as M) : ({ ...m, rect: [r[0], r[1], r[2], r[1] + need] as Rect } as M);
+}
+
+/** The height a text box's text needs at its width. */
+function textNeed(m: Extract<Markup, { kind: "text" }>): number {
+  const r = normRect(m.rect);
+  return textHeight(textLines(m.text, r, m.textStyle, m.style.width).length, m.textStyle, m.style.width);
+}
+
+/**
+ * A text box after its text size or border weight changed: a box that fitted its text snugly
+ * stays snug (shrinking with smaller text too); one made taller by hand only grows if it must.
+ */
+export function refitText(before: Extract<Markup, { kind: "text" }>, after: Extract<Markup, { kind: "text" }>): Extract<Markup, { kind: "text" }> {
+  const r = normRect(before.rect);
+  const snug = r[3] - r[1] <= textNeed(before) + 0.5;
+  if (!snug) return fitText(after);
+  return { ...after, rect: [r[0], r[1], r[2], r[1] + textNeed(after)] };
 }
 
 function fitIfText(m: Markup): Markup {

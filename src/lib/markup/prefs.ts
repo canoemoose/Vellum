@@ -2,7 +2,7 @@
 // style, the text style, which files have had their first save confirmed, and the author name
 // if one was set by hand. Validated field by field, like the rest of the settings. Pure.
 
-import { type MarkupKind, type Rgb, type Style, type TextStyle, DEFAULT_TEXT, defaultStyle } from "./types";
+import { type MarkupKind, type Rgb, type Style, type TextStyle, DEFAULT_TEXT, arrowEnds, defaultStyle, fullText } from "./types";
 import { type Dock, DEFAULT_DOCK, sanitiseDock } from "../shell/dock";
 
 export interface MarkupPrefs {
@@ -35,8 +35,10 @@ function style(v: unknown, kind: MarkupKind): Style {
   const d = defaultStyle(kind);
   if (!v || typeof v !== "object") return d;
   const s = v as Record<string, unknown>;
-  const dash = Array.isArray(s.dash) && s.dash.length && s.dash.every((x) => num(x, 0.1, 100) !== null) ? (s.dash as number[]) : null;
-  return {
+  // Dots were once 0.1 pt dashes; they're now dashes of no length (round caps draw them).
+  const raw = Array.isArray(s.dash) && s.dash.length && s.dash.every((x) => num(x, 0, 100) !== null) ? (s.dash as number[]).map((x) => (x === 0.1 ? 0 : x)) : null;
+  const dash = raw && raw.some((x) => x > 0) ? raw : null;
+  const out: Style = {
     stroke: rgb(s.stroke) ?? d.stroke,
     width: num(s.width, 0, 50) ?? d.width,
     fill: s.fill === null ? null : (rgb(s.fill) ?? d.fill),
@@ -45,6 +47,8 @@ function style(v: unknown, kind: MarkupKind): Style {
     fillOpacity: num(s.fillOpacity, 0.05, 1) ?? num(s.opacity, 0.05, 1) ?? d.fillOpacity,
     dash,
   };
+  if (kind === "arrow") out.ends = arrowEnds(s as unknown as Style);
+  return out;
 }
 
 export function sanitisePrefs(raw: unknown): MarkupPrefs {
@@ -55,7 +59,7 @@ export function sanitisePrefs(raw: unknown): MarkupPrefs {
   const t = (p.text && typeof p.text === "object" ? p.text : {}) as Record<string, unknown>;
   return {
     styles,
-    text: { size: num(t.size, 4, 144) ?? DEFAULT_TEXT.size, colour: rgb(t.colour) ?? DEFAULT_TEXT.colour },
+    text: fullText({ ...(t as Partial<TextStyle>), size: num(t.size, 4, 144) ?? DEFAULT_TEXT.size, colour: rgb(t.colour) ?? DEFAULT_TEXT.colour }),
     confirmed: Array.isArray(p.confirmed) ? p.confirmed.filter((x): x is string => typeof x === "string").slice(-MAX_CONFIRMED) : [],
     author: typeof p.author === "string" && p.author.trim() ? p.author.trim().slice(0, 100) : null,
     dock: sanitiseDock(p.dock),

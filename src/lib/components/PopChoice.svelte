@@ -1,17 +1,22 @@
-<script lang="ts">
-  // Line pattern: a box showing the current pattern. Clicking it drops the patterns out of the
-  // bar (the same way the weight slider does); picking one sets it.
-  import { onMount, tick } from "svelte";
-  import { DASHES, dashOption, sameDash } from "../markup/dash";
+<script lang="ts" generics="K extends string">
+  // A choice from a short list that drops out of the properties bar: a box showing the current
+  // option's picture; clicking it opens the list (away from the bar's edge, like the weight
+  // slider), each option a picture and a name. Arrow keys move through the list; Esc closes it.
+  import { type Snippet, onMount, tick } from "svelte";
   import { type Out, popoutPosition } from "../shell/popout";
 
   interface Props {
-    value: number[] | null;
+    /** What the choice is: "Line pattern", "Arrow head". */
+    label: string;
+    options: { key: K; name: string }[];
+    /** The current option, or null for one that isn't offered. */
+    value: K | null;
     /** A narrower box (the bar's thin column). */
     compact?: boolean;
-    /** Which way the patterns drop out of the bar. */
     out: Out;
-    onChange: (dash: number[] | null) => void;
+    /** An option's picture, `w` px wide (a null key: the current value, not an offered one). */
+    sample: Snippet<[K | null, number]>;
+    onChange: (key: K) => void;
   }
   let p: Props = $props();
 
@@ -19,10 +24,7 @@
   let btn: HTMLButtonElement;
   let pop = $state<HTMLDivElement>();
   let at = $state({ left: 0, top: 0 });
-  const current = $derived(dashOption(p.value));
-
-  /** The pattern as an SVG dash array: points on paper, drawn a little larger. */
-  const svgDash = (d: number[] | null) => (d?.length ? d.map((v) => v * 1.4).join(" ") : "none");
+  const currentName = $derived(p.options.find((o) => o.key === p.value)?.name ?? "Custom");
 
   async function toggle() {
     open = !open;
@@ -30,13 +32,13 @@
     await tick();
     if (!pop) return;
     at = popoutPosition(btn.getBoundingClientRect(), pop.offsetWidth, pop.offsetHeight, p.out, window.innerWidth, window.innerHeight);
-    (pop.querySelector(".on") as HTMLElement | null)?.focus();
+    ((pop.querySelector(".on") ?? pop.querySelector("button")) as HTMLElement | null)?.focus();
   }
 
-  function choose(d: number[] | null) {
+  function choose(k: K) {
     open = false;
     btn.focus();
-    if (!sameDash(d, p.value)) p.onChange(d);
+    if (k !== p.value) p.onChange(k);
   }
 
   function keys(e: KeyboardEvent) {
@@ -69,12 +71,6 @@
   });
 </script>
 
-{#snippet sample(d: number[] | null, w: number)}
-  <svg width={w} height="10" viewBox="0 0 {w} 10" aria-hidden="true">
-    <line x1="3" y1="5" x2={w - 3} y2="5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray={svgDash(d)} />
-  </svg>
-{/snippet}
-
 <button
   bind:this={btn}
   type="button"
@@ -83,22 +79,22 @@
   class:open
   aria-haspopup="listbox"
   aria-expanded={open}
-  aria-label="Line pattern: {current?.name ?? 'Custom'}"
-  title="Line pattern: {current?.name ?? 'Custom'}"
+  aria-label="{p.label}: {currentName}"
+  title="{p.label}: {currentName}"
   onclick={toggle}
 >
-  {@render sample(p.value, p.compact ? 26 : 34)}
+  {@render p.sample(p.value, p.compact ? 26 : 34)}
   {#if !p.compact}
     <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden="true" class="chev"><path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
   {/if}
 </button>
 
 {#if open}
-  <div class="pop" bind:this={pop} role="listbox" tabindex="-1" aria-label="Line pattern" style:left="{at.left}px" style:top="{at.top}px" onkeydown={keys}>
-    {#each DASHES as o (o.name)}
-      {@const on = sameDash(o.dash, p.value)}
-      <button type="button" role="option" class="opt" class:on aria-selected={on} title={o.name} onclick={() => choose(o.dash)}>
-        {@render sample(o.dash, 64)}
+  <div class="pop" bind:this={pop} role="listbox" tabindex="-1" aria-label={p.label} style:left="{at.left}px" style:top="{at.top}px" onkeydown={keys}>
+    {#each p.options as o (o.key)}
+      {@const on = o.key === p.value}
+      <button type="button" role="option" class="opt" class:on aria-selected={on} title={o.name} onclick={() => choose(o.key)}>
+        {@render p.sample(o.key, 64)}
         <span class="name">{o.name}</span>
       </button>
     {/each}

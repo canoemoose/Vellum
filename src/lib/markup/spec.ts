@@ -1,9 +1,11 @@
 // A markup as the backend's annotation spec (src-tauri/src/annot/spec.rs), in PDF user space,
 // with its appearance stream built from the same drawing operations as the overlay. Pure.
 
-import type { Markup, Pt } from "./types";
+import { type LineEnd, type Markup, type Pt, arrowEnds, faceOf, fullText } from "./types";
+import { fontResource } from "./fonts";
 import { normRect } from "./types";
 import { opsBounds, opsFor } from "./ops";
+import { drawnDash } from "./dash";
 import { type Frame, rectToUser, toContent, toUser } from "./pdf";
 
 export interface AnnotSpec {
@@ -11,7 +13,7 @@ export interface AnnotSpec {
   nm: string;
   subtype: string;
   rect: [number, number, number, number];
-  appearance: { ops: string; bbox: [number, number, number, number]; opacity: number | null; fillOpacity: number | null; font: boolean };
+  appearance: { ops: string; bbox: [number, number, number, number]; opacity: number | null; fillOpacity: number | null; fonts: Record<string, string> };
   author?: string;
   modified?: string;
   created?: string;
@@ -45,6 +47,9 @@ export function pdfDate(iso: string): string {
   return `D:${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
 }
 
+/** Each end as PDF names it (/LE). */
+const LE: Record<LineEnd, string> = { none: "None", open: "OpenArrow", filled: "ClosedArrow", dot: "Circle", bar: "Butt", slash: "Slash" };
+
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 const flat = (f: Frame, pts: Pt[]) => pts.flatMap((p) => toUser(f, p[0], p[1]).map(r3));
 const hex = (c: [number, number, number]) => "#" + c.map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
@@ -60,14 +65,15 @@ export function toSpec(m: Markup, f: Frame): AnnotSpec {
     nm: m.id,
     subtype: "Square",
     rect: box,
-    appearance: { ops: content.ops, bbox: box, opacity: content.opacity, fillOpacity: content.fillOpacity, font: content.font },
+    appearance: { ops: content.ops, bbox: box, opacity: content.opacity, fillOpacity: content.fillOpacity, fonts: content.fonts },
     author: m.meta.author || undefined,
     modified: pdfDate(m.meta.modified),
     created: pdfDate(m.meta.created),
     flags: 4, // Print: markups print (agreed default)
     colour: s.stroke,
     borderWidth: s.width,
-    dash: s.dash ?? undefined,
+    // /BS /D as drawn, so an app that redraws the markup spaces it the same.
+    dash: drawnDash(s.dash, s.width) ?? undefined,
     // No annotation-wide /CA: the line and fill have their own opacities, in the appearance.
   };
   if (s.fill) spec.interior = s.fill;
@@ -82,8 +88,10 @@ export function toSpec(m: Markup, f: Frame): AnnotSpec {
     case "arrow": {
       spec.subtype = "Line";
       spec.line = [...toUser(f, m.from[0], m.from[1]), ...toUser(f, m.to[0], m.to[1])].map(r3) as [number, number, number, number];
-      spec.lineEnds = ["None", "OpenArrow"];
-      delete spec.interior;
+      spec.lineEnds = arrowEnds(s).map((e) => LE[e]);
+      // Filled heads and dots are filled with the line's colour (/IC, as PDF draws them).
+      if (arrowEnds(s).some((e) => e === "filled" || e === "dot")) spec.interior = s.stroke;
+      else delete spec.interior;
       break;
     }
     case "cloud":
@@ -95,10 +103,17 @@ export function toSpec(m: Markup, f: Frame): AnnotSpec {
     case "text": {
       spec.subtype = "FreeText";
       spec.contents = m.text;
-      const c = m.textStyle.colour;
-      spec.defaultAppearance = `${c.map((v) => r3(v)).join(" ")} rg /Helv ${r3(m.textStyle.size)} Tf`;
-      spec.defaultStyle = `font: Helvetica,sans-serif ${r3(m.textStyle.size)}pt; text-align:left; color:${hex(c)}`;
-      spec.quadding = 0;
+      // For apps that redraw the box themselves (Acrobat when it's edited there).
+      const t = fullText(m.textStyle);
+      const c = t.colour;
+      const face = faceOf(t);
+      const css = t.family === "times" ? "Times New Roman,serif" : t.family === "courier" ? "Courier New,monospace" : "Helvetica,sans-serif";
+      const deco = [t.underline ? "underline" : "", t.strike ? "line-through" : ""].filter(Boolean).join(" ");
+      spec.defaultAppearance = `${c.map((v) => r3(v)).join(" ")} rg /${fontResource(face)} ${r3(t.size)} Tf`;
+      spec.defaultStyle =
+        `font: ${t.italic ? "italic " : ""}${t.bold ? "bold " : ""}${r3(t.size)}pt ${css}; text-align:${t.align}; color:${hex(c)}` +
+        (deco ? `; text-decoration:${deco}` : "");
+      spec.quadding = t.align === "center" ? 1 : t.align === "right" ? 2 : 0;
       // FreeText: /C is the background (ISO 32000-1, 12.5.6.6), not the border.
       delete spec.colour;
       delete spec.interior;

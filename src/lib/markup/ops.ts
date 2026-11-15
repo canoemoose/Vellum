@@ -3,8 +3,9 @@
 // same operations into the annotation's appearance stream, so the screen and the file agree.
 // Geometry ported from the phase 0 spike (spikes/annot-writer/src/appearance.rs). Pure.
 
-import { type Markup, type Pt, type Rect, type Rgb, type Style, fillOpacity, normRect } from "./types";
-import { textWidth, wrap } from "./helvetica";
+import { type LineEnd, type Markup, type Pt, type Rect, type Rgb, type Style, type TextStyle, arrowEnds, faceOf, fillOpacity, fullText, normRect } from "./types";
+import { type Face, textWidth, wrap } from "./fonts";
+import { drawnDash } from "./dash";
 
 export type Seg = ["M", number, number] | ["L", number, number] | ["C", number, number, number, number, number, number] | ["Z"];
 
@@ -18,6 +19,8 @@ export interface PathOp {
   /** Line and fill opacity, 0..1. */
   strokeOpacity: number;
   fillOpacity: number;
+  /** Underline or strikethrough: square ends, and hidden with the text while it's typed. */
+  decoration?: boolean;
 }
 
 export interface TextOp {
@@ -32,6 +35,9 @@ export interface TextOp {
   colour: Rgb;
   /** Text is clipped to this quadrilateral (a text box's inside), if set. */
   clip: Pt[] | null;
+  face: Face;
+  /** Each line's start along `dir` from the origin (alignment). */
+  offsets: number[];
 }
 
 export type Op = PathOp | TextOp;
@@ -50,7 +56,90 @@ const rot = (a: Pt, ang: number): Pt => {
 };
 
 function path(segs: Seg[], s: Style, fill: Rgb | null = s.fill, stroke: Rgb | null = s.stroke): PathOp {
-  return { t: "path", segs, stroke, fill, width: stroke ? s.width : 0, dash: s.dash, strokeOpacity: s.opacity, fillOpacity: fillOpacity(s) };
+  let dash = stroke ? drawnDash(s.dash, s.width) : null;
+  // Straight edges: the dashes are drawn out here, fitted to the corners.
+  const fit = dash ? fitDashes(segs, dash) : null;
+  if (fit) {
+    segs = fit;
+    dash = null;
+  }
+  return { t: "path", segs, stroke, fill, width: stroke ? s.width : 0, dash, strokeOpacity: s.opacity, fillOpacity: fillOpacity(s) };
+}
+
+/**
+ * A dashed outline of straight edges, drawn out as solid pieces so every corner (and each end of
+ * an open line) has a dash centred on it, turning the corner with it (a dot, for a dotted line),
+ * and each edge holds a whole number of repeats, stretched or squeezed to fit. Null if the path
+ * has curves (those keep an ordinary dash pattern).
+ */
+export function fitDashes(segs: Seg[], dash: number[]): Seg[] | null {
+  if (segs.some((g) => g[0] === "C")) return null;
+  const pat = dash.length % 2 ? [...dash, ...dash] : dash; // an odd pattern repeats to even
+  const period = pat.reduce((a, b) => a + b, 0);
+  if (period <= 0) return null;
+  // The subpaths as point lists.
+  const subs: { pts: Pt[]; closed: boolean }[] = [];
+  for (const g of segs) {
+    if (g[0] === "M") subs.push({ pts: [[g[1], g[2]]], closed: false });
+    else if (g[0] === "L") subs.at(-1)?.pts.push([g[1], g[2]]);
+    else if (g[0] === "Z" && subs.length) subs[subs.length - 1].closed = true;
+  }
+  const out: Seg[] = [];
+  const eps = 1e-6;
+  for (const { pts, closed } of subs) {
+    const v = pts.filter((p, i) => i === 0 || len(sub(p, pts[i - 1])) > eps);
+    if (closed && v.length > 1 && len(sub(v[0], v[v.length - 1])) <= eps) v.pop();
+    if (v.length < 2) continue;
+    const edges = closed ? v.length : v.length - 1;
+    // Pieces as point lists; a piece reaching an edge's end carries on round the corner.
+    const pieces: Pt[][] = [];
+    let open: Pt[] | null = null;
+    let first: Pt[] | null = null; // a closed outline's piece at its starting corner
+    for (let e = 0; e < edges; e++) {
+      const a = v[e], b = v[(e + 1) % v.length];
+      const L = len(sub(b, a));
+      const u = mul(sub(b, a), 1 / L);
+      const n = Math.max(1, Math.round(L / period));
+      const k = L / (n * period);
+      const at = (t: number): Pt => add(a, mul(u, t));
+      // On-intervals: the pattern from minus half its first dash, so a dash centres on each end.
+      for (let j = 0; j <= n; j++) {
+        let t = j * period * k - (pat[0] * k) / 2;
+        for (let i = 0; i < pat.length; i += 2) {
+          const s0 = Math.max(0, t), s1 = Math.min(L, t + pat[i] * k);
+          t += (pat[i] + pat[i + 1]) * k;
+          if (s1 < s0 - eps) continue; // past the edge's end
+          const startsAtCorner = s0 <= eps, endsAtCorner = s1 >= L - eps;
+          if (startsAtCorner && open) open.push(at(s1));
+          else {
+            if (open) pieces.push(open);
+            open = [at(s0), at(s1)];
+            if (startsAtCorner && e === 0 && closed) first = open;
+          }
+          if (!endsAtCorner) {
+            if (open !== first) pieces.push(open);
+            open = null;
+          }
+        }
+      }
+    }
+    if (open) {
+      // Round the last corner of a closed outline into its first piece.
+      if (closed && first) {
+        first.unshift(...open.slice(0, -1));
+        if (open !== first) open = null;
+      }
+      if (open) pieces.push(open);
+    }
+    if (first) pieces.push(first);
+    for (const pc of pieces) {
+      const q = pc.filter((p, i) => i === 0 || len(sub(p, pc[i - 1])) > eps);
+      // A dot: a point, drawn as a line too short to see so its round caps make a circle.
+      if (q.length === 1) q.push(add(q[0], [0.001, 0]));
+      out.push(["M", q[0][0], q[0][1]], ...q.slice(1).map((p) => ["L", p[0], p[1]] as Seg));
+    }
+  }
+  return out;
 }
 
 /**
@@ -99,12 +188,52 @@ export function arrowLength(width: number): number {
   return 6 + 4 * width;
 }
 
-/** An open arrowhead (two wings) at `tip`, pointing along `dir`. */
-function arrowhead(tip: Pt, dir: Pt, width: number): Seg[] {
-  const back = mul(unit(dir), -arrowLength(width));
-  const w1 = add(tip, rot(back, 0.4636)); // about 26.6 degrees: a 2:1 head
-  const w2 = add(tip, rot(back, -0.4636));
-  return [["M", w1[0], w1[1]], ["L", tip[0], tip[1]], ["L", w2[0], w2[1]]];
+const HEAD_ANGLE = 0.4636; // about 26.6 degrees either side: a 2:1 head
+
+/** A dot end's radius for a line weight. */
+export const dotRadius = (width: number) => 1.5 + 1.25 * width;
+
+/**
+ * One end of a line at `p`, facing outwards along unit `d`: the strokes it adds (wings, a bar,
+ * a slash), the solid shape it fills (a filled head, a dot), and how far back from `p` the line
+ * should stop so it doesn't run under a filled shape (see-through lines would show it twice).
+ */
+function lineEnd(kind: LineEnd, p: Pt, d: Pt, width: number): { segs: Seg[]; solid: Seg[] | null; back: number } {
+  const len = arrowLength(width);
+  const back = mul(d, -len);
+  const n: Pt = [-d[1], d[0]];
+  const half = len * Math.sin(HEAD_ANGLE);
+  const line = (a: Pt, b: Pt): Seg[] => [["M", a[0], a[1]], ["L", b[0], b[1]]];
+  switch (kind) {
+    case "open": {
+      const w1 = add(p, rot(back, HEAD_ANGLE)), w2 = add(p, rot(back, -HEAD_ANGLE));
+      return { segs: [["M", w1[0], w1[1]], ["L", p[0], p[1]], ["L", w2[0], w2[1]]], solid: null, back: 0 };
+    }
+    case "filled": {
+      const w1 = add(p, rot(back, HEAD_ANGLE)), w2 = add(p, rot(back, -HEAD_ANGLE));
+      // The line stops so its round end just meets the head's base.
+      return { segs: [], solid: [["M", p[0], p[1]], ["L", w1[0], w1[1]], ["L", w2[0], w2[1]], ["Z"]], back: len * Math.cos(HEAD_ANGLE) + width / 2 };
+    }
+    case "dot": {
+      const r = dotRadius(width);
+      // Where the line's sides meet the circle.
+      return { segs: [], solid: circle(p, r), back: Math.sqrt(Math.max(0, r * r - (width * width) / 4)) };
+    }
+    case "bar":
+      return { segs: line(add(p, mul(n, half)), add(p, mul(n, -half))), solid: null, back: 0 };
+    case "slash": {
+      // Through the end, 30 degrees off square, as PDF's /Slash.
+      const t = rot(n, Math.PI / 6);
+      return { segs: line(add(p, mul(t, half)), add(p, mul(t, -half))), solid: null, back: 0 };
+    }
+    default:
+      return { segs: [], solid: null, back: 0 };
+  }
+}
+
+/** A full circle as four quarter arcs. */
+function circle(c: Pt, r: number): Seg[] {
+  return [["M", c[0] + r, c[1]], ...arc(c, r, [1, 0], [-1, 0], [0, 1]), ...arc(c, r, [-1, 0], [1, 0], [0, -1]), ["Z"]];
 }
 
 function rectOps(r: Rect, s: Style): Op[] {
@@ -113,8 +242,22 @@ function rectOps(r: Rect, s: Style): Op[] {
 }
 
 function arrowOps(from: Pt, to: Pt, s: Style): Op[] {
-  const dir = sub(to, from);
-  return [path([["M", from[0], from[1]], ["L", to[0], to[1]], ...arrowhead(to, dir, s.width)], s, null)];
+  const u = unit(sub(to, from));
+  const [tailKind, headKind] = arrowEnds(s);
+  const tail = lineEnd(tailKind, from, mul(u, -1), s.width);
+  const head = lineEnd(headKind, to, u, s.width);
+  // The shaft takes the pattern and stops short of filled ends; the ends are always solid.
+  const total = len(sub(to, from));
+  const room = Math.max(0, total - tail.back - head.back);
+  const a = add(from, mul(u, Math.min(tail.back, total)));
+  const b = add(a, mul(u, room));
+  const shaft = path([["M", a[0], a[1]], ["L", b[0], b[1]]], s, null);
+  const ops: Op[] = [{ ...shaft, segs: [...shaft.segs, ...tail.segs, ...head.segs] }];
+  // Filled ends: the line's colour and opacity, no outline (so nothing is drawn twice).
+  for (const e of [tail, head]) {
+    if (e.solid) ops.push({ t: "path", segs: e.solid, stroke: null, fill: s.stroke, width: 0, dash: null, strokeOpacity: s.opacity, fillOpacity: s.opacity });
+  }
+  return ops;
 }
 
 /** Signed area (positive for one winding, negative for the other; either works below). */
@@ -127,9 +270,12 @@ export function signedArea(v: Pt[]): number {
   return a / 2;
 }
 
-/** Scallop chord for a cloud of the given intensity. */
-export function cloudChord(intensity: number): number {
-  return 14 * Math.max(0.5, intensity);
+/**
+ * Scallop chord for a cloud of the given intensity and line weight: 14 pt at the default 1.5 pt,
+ * growing with the weight so heavy lines don't swamp their bumps.
+ */
+export function cloudChord(intensity: number, width = 1.5): number {
+  return Math.max(0.5, intensity) * (10 + (8 / 3) * Math.max(0, width));
 }
 
 interface Scallop {
@@ -141,9 +287,9 @@ interface Scallop {
 }
 
 /** A revision cloud's scallops: each edge divided into equal chords, each a half circle bulging outwards. */
-function scallops(v: Pt[], intensity: number): Scallop[] {
+function scallops(v: Pt[], intensity: number, width: number): Scallop[] {
   const pos = signedArea(v) > 0;
-  const target = cloudChord(intensity);
+  const target = cloudChord(intensity, width);
   const out: Scallop[] = [];
   for (let i = 0; i < v.length; i++) {
     const a = v[i], b = v[(i + 1) % v.length];
@@ -197,7 +343,7 @@ function cloudInner(sc: Scallop[], d: number): Seg[] {
 /** Revision cloud: half-circle scallops along each edge, bulging outwards. */
 function cloudOps(v: Pt[], intensity: number, s: Style): Op[] {
   if (v.length < 2) return [];
-  const sc = scallops(v, intensity);
+  const sc = scallops(v, intensity, s.width);
   if (!sc.length) return [];
   return filled(cloudOutline(sc), () => cloudInner(sc, s.width / 2), s);
 }
@@ -221,39 +367,58 @@ function inkOps(strokes: Pt[][], s: Style): Op[] {
 
 /** Padding inside a text box's border, points. */
 export const TEXT_PAD = 4;
-/** Line spacing as a multiple of the size. */
-export const LEADING = 1.2;
-/** Helvetica's ascent as a share of the size: where the first baseline sits below the top. */
-const ASCENT = 0.78;
+/** Where the first baseline sits below the top, as a share of the size (every family). */
+export const ASCENT = 0.78;
+
+/** A text box's inner width for its text. */
+function innerWidth(r: Rect, size: number, borderWidth: number): number {
+  const [x0, , x1] = normRect(r);
+  return Math.max(size, x1 - x0 - 2 * (TEXT_PAD + borderWidth));
+}
 
 /** A text box's lines, wrapped to its inner width. */
-export function textLines(text: string, r: Rect, size: number, borderWidth: number): string[] {
-  const [x0, , x1] = normRect(r);
-  return wrap(text, Math.max(size, x1 - x0 - 2 * (TEXT_PAD + borderWidth)), size);
+export function textLines(text: string, r: Rect, t: TextStyle, borderWidth: number): string[] {
+  return wrap(text, innerWidth(r, t.size, borderWidth), t.size, faceOf(t));
 }
 
-/** The height a text box needs for its text at its current width. */
-export function textHeight(lines: number, size: number, borderWidth: number): number {
-  return 2 * (TEXT_PAD + borderWidth) + Math.max(1, lines) * size * LEADING - size * (LEADING - 1);
+/** The height a text box needs for `lines` lines. */
+export function textHeight(lines: number, t: TextStyle, borderWidth: number): number {
+  const lead = fullText(t).spacing;
+  return 2 * (TEXT_PAD + borderWidth) + Math.max(1, lines) * t.size * lead - t.size * (lead - 1);
 }
 
-function textOps(r: Rect, text: string, size: number, colour: Rgb, s: Style): Op[] {
+function textOps(r: Rect, text: string, ts: TextStyle, s: Style): Op[] {
+  const t = fullText(ts);
+  const size = t.size, colour: Rgb = t.colour;
   const [x0, y0, x1, y1] = normRect(r);
   const ops: Op[] = [];
   // The border sits inside the box: its centre half a weight in, its inner edge a whole weight.
   if (s.width > 0) ops.push(...filled(box(x0, y0, x1, y1, s.width / 2), () => box(x0, y0, x1, y1, s.width), s));
   else if (s.fill) ops.push(path(box(x0, y0, x1, y1, 0), s, s.fill, null));
   const inset = TEXT_PAD + s.width;
-  ops.push({
-    t: "text",
-    lines: textLines(text, r, size, s.width),
-    origin: [x0 + inset, y0 + inset + size * ASCENT],
-    dir: [1, 0],
-    size,
-    leading: size * LEADING,
-    colour,
-    clip: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
-  });
+  const face = faceOf(t);
+  const lines = textLines(text, r, t, s.width);
+  const inner = innerWidth(r, size, s.width);
+  const widths = lines.map((l) => textWidth(l, size, face));
+  const offsets = widths.map((w) => (t.align === "center" ? (inner - w) / 2 : t.align === "right" ? inner - w : 0));
+  const origin: Pt = [x0 + inset, y0 + inset + size * ASCENT];
+  const leading = size * t.spacing;
+  const clip: Pt[] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  ops.push({ t: "text", lines, origin, dir: [1, 0], size, leading, colour, clip, face, offsets });
+  // Underline and strikethrough: a line under or through each line of text, a twentieth of the
+  // size thick, the underline a tenth of the size below the baseline (as the fonts have it).
+  if (t.underline || t.strike) {
+    const segs: Seg[] = [];
+    const thick = Math.max(0.3, size / 20);
+    lines.forEach((l, i) => {
+      if (!l.trim()) return;
+      const y = origin[1] + i * leading;
+      const xa = origin[0] + offsets[i], xb = xa + widths[i];
+      if (t.underline) segs.push(["M", xa, y + size * 0.1], ["L", xb, y + size * 0.1]);
+      if (t.strike) segs.push(["M", xa, y - size * 0.28], ["L", xb, y - size * 0.28]);
+    });
+    if (segs.length) ops.push({ t: "path", segs, stroke: colour, fill: null, width: thick, dash: null, strokeOpacity: 1, fillOpacity: 1, decoration: true });
+  }
   return ops;
 }
 
@@ -267,7 +432,7 @@ export function opsFor(m: Markup): Op[] {
     case "cloud":
       return cloudOps(m.vertices, m.intensity, m.style);
     case "text":
-      return textOps(m.rect, m.text, m.textStyle.size, m.textStyle.colour, m.style);
+      return textOps(m.rect, m.text, m.textStyle, m.style);
     case "ink":
       return inkOps(m.strokes, m.style);
   }
@@ -296,7 +461,7 @@ export function opsBounds(ops: Op[]): Rect {
       op.lines.forEach((l, i) => {
         const o = add(op.origin, [0, i * op.leading]);
         take(add(o, [0, -op.size]), 1);
-        take(add(o, [textWidth(l, op.size), op.size * 0.25]), 1);
+        take(add(o, [op.offsets[i] + textWidth(l, op.size, op.face), op.size * 0.25]), 1);
       });
   }
   if (!Number.isFinite(b[0])) return [0, 0, 0, 0];

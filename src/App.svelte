@@ -291,10 +291,9 @@
     if (!v || !m) return null;
     const tl = v.pageToScreen(m.page, m.rect[0], m.rect[1]);
     if (!tl) return null;
-    const c = m.textStyle.colour.map((x) => Math.round(x * 255)).join(",");
     return {
       id: m.id, x: tl[0], y: tl[1], w: (m.rect[2] - m.rect[0]) * v.view.scale, h: (m.rect[3] - m.rect[1]) * v.view.scale,
-      rotation: ui.rotation, scale: v.view.scale, size: m.textStyle.size, pad: TEXT_PAD + m.style.width, colour: `rgb(${c})`, text: m.text,
+      rotation: ui.rotation, scale: v.view.scale, textStyle: m.textStyle, pad: TEXT_PAD + m.style.width, text: m.text,
     };
   });
 
@@ -1634,7 +1633,7 @@
         {#key editor.id}
           <TextEditor
             x={editor.x} y={editor.y} w={editor.w} h={editor.h} rotation={editor.rotation} scale={editor.scale}
-            size={editor.size} pad={editor.pad} colour={editor.colour} text={editor.text}
+            textStyle={editor.textStyle} pad={editor.pad} text={editor.text}
             onInput={(s) => markupTool?.setText(s)}
             onDone={() => markupTool?.finishText()}
           />

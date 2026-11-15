@@ -7,12 +7,14 @@
   // the sides it's a thin column where the drawing area is tall enough for the largest bar (a
   // text box's), else a wider stack of sections: decided by the area, never by the tool, so it
   // doesn't jump about. Each palette ends with a custom colour (ColourPicker, with an eyedropper).
-  import { type MarkupKind, type Rgb, type Style, type TextStyle, DEFAULT_TEXT, fillOpacity } from "../markup/types";
+  import { type Align, type LineEnd, type MarkupKind, type Rgb, type Style, type TextStyle, DEFAULT_TEXT, SPACINGS, arrowEnds, fillOpacity, fullText } from "../markup/types";
+  import { type Family, cssFamily } from "../markup/fonts";
   import { type Dock, type Edge, DOCK_MARGIN, dockAt, dockPosition, isSide } from "../shell/dock";
   import { sameColour as same } from "../markup/colour";
   import ColourPicker from "./ColourPicker.svelte";
   import WeightControl from "./WeightControl.svelte";
-  import DashControl from "./DashControl.svelte";
+  import PopChoice from "./PopChoice.svelte";
+  import { DASHES, dashOption } from "../markup/dash";
   import { outFrom } from "../shell/popout";
 
   interface Props {
@@ -52,6 +54,37 @@
     { name: "Pale grey", c: [0.9, 0.9, 0.9] },
   ];
   const SIZES = [6, 8, 10, 12, 14, 18, 24, 36];
+  const SIZE_OPTS = SIZES.map((v) => ({ key: String(v), name: `${v} pt` }));
+  const ENDS: { key: LineEnd; name: string }[] = [
+    { key: "none", name: "None" },
+    { key: "open", name: "Open arrow" },
+    { key: "filled", name: "Filled arrow" },
+    { key: "dot", name: "Dot" },
+    { key: "bar", name: "Bar" },
+    { key: "slash", name: "Slash" },
+  ];
+  const PATTERNS = DASHES.map((o) => ({ key: o.name, name: o.name }));
+  const FAMILIES: { key: Family; name: string }[] = [
+    { key: "helvetica", name: "Helvetica" },
+    { key: "times", name: "Times" },
+    { key: "courier", name: "Courier" },
+  ];
+  const SPACING_OPTS = SPACINGS.map((v) => ({ key: String(v), name: `${v.toFixed(1)} lines` }));
+  const ALIGNS: { key: Align; name: string }[] = [
+    { key: "left", name: "Align left" },
+    { key: "center", name: "Centre" },
+    { key: "right", name: "Align right" },
+  ];
+  /** The pattern as an SVG dash array: points for a 1 pt line, drawn a little larger. */
+  const svgDash = (name: string | null) => {
+    const d = name === null ? p.style.dash : (DASHES.find((o) => o.name === name)?.dash ?? null);
+    return d?.length ? d.map((v) => v * 1.4).join(" ") : "none";
+  };
+  function setEnd(i: 0 | 1, e: LineEnd) {
+    const ends = arrowEnds(p.style);
+    ends[i] = e;
+    p.onStyle({ ends });
+  }
 
   const css = (c: Rgb) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
   const vertical = $derived(isSide(p.dock.edge));
@@ -168,9 +201,21 @@
     <label class="k" for="{idp}-weight">Weight</label>
     <div class="controls">
       <WeightControl id="{idp}-weight" value={p.style.width} min={isText ? 0 : 0.25} compact={narrow} {out} onChange={(wt) => p.onStyle({ width: wt })} onPreview={(wt) => p.onStyle({ width: wt }, true)} />
-      <DashControl value={p.style.dash} compact={narrow} {out} onChange={(d) => p.onStyle({ dash: d })} />
+      <PopChoice label="Line pattern" options={PATTERNS} value={dashOption(p.style.dash)?.name ?? null} compact={narrow} {out} sample={dashSample} onChange={(k) => p.onStyle({ dash: DASHES.find((o) => o.name === k)?.dash ?? null })} />
     </div>
   </div>
+
+  {#if kinds.includes("arrow")}
+    {@const ends = arrowEnds(p.style)}
+    <span class="sep" aria-hidden="true"></span>
+    <div class="prop" role="group" aria-label="Ends">
+      <span class="k">Ends</span>
+      <div class="controls">
+        <PopChoice label="Tail" options={ENDS} value={ends[0]} compact={narrow} {out} sample={tailSample} onChange={(k) => setEnd(0, k)} />
+        <PopChoice label="Head" options={ENDS} value={ends[1]} compact={narrow} {out} sample={headSample} onChange={(k) => setEnd(1, k)} />
+      </div>
+    </div>
+  {/if}
 
   {#if fillable}
     <span class="sep" aria-hidden="true"></span>
@@ -190,14 +235,26 @@
   {/if}
 
   {#if isText && text}
-    {@const t = text}
+    {@const t = fullText(text)}
     <span class="sep" aria-hidden="true"></span>
     <div class="prop" role="group" aria-label="Text">
-      <label class="k" for="{idp}-size">Text</label>
-      <select id="{idp}-size" title="Text size" value={String(t.size)} onchange={(e) => p.onText({ size: Number((e.currentTarget as HTMLSelectElement).value) })}>
-        {#each SIZES as s (s)}<option value={String(s)}>{s} pt</option>{/each}
-        {#if !SIZES.includes(t.size)}<option value={String(t.size)}>{t.size} pt</option>{/if}
-      </select>
+      <span class="k">Text</span>
+      <div class="controls">
+        <PopChoice label="Font" options={FAMILIES} value={t.family} compact={narrow} {out} sample={fontSample} onChange={(k) => p.onText({ family: k })} />
+        <PopChoice label="Text size" options={SIZE_OPTS} value={SIZES.includes(t.size) ? String(t.size) : null} compact={narrow} {out} sample={sizeSample} onChange={(k) => p.onText({ size: Number(k) })} />
+      </div>
+      <div class="controls toggles">
+        {@render toggle("Bold", t.bold, () => p.onText({ bold: !t.bold }), boldIcon)}
+        {@render toggle("Italic", t.italic, () => p.onText({ italic: !t.italic }), italicIcon)}
+        {@render toggle("Underline", t.underline, () => p.onText({ underline: !t.underline }), underIcon)}
+        {@render toggle("Strikethrough", t.strike, () => p.onText({ strike: !t.strike }), strikeIcon)}
+      </div>
+      <div class="controls toggles" role="radiogroup" aria-label="Alignment">
+        {#each ALIGNS as a (a.key)}
+          {@render toggle(a.name, t.align === a.key, () => p.onText({ align: a.key }), alignIcon, a.key)}
+        {/each}
+        <PopChoice label="Line spacing" options={SPACING_OPTS} value={String(t.spacing)} compact={narrow} {out} sample={spacingSample} onChange={(k) => p.onText({ spacing: Number(k) })} />
+      </div>
       <div class="swatches" role="radiogroup" aria-label="Text colour">
         {#each COLOURS as col (col.name)}
           <button type="button" role="radio" class="sw" class:on={same(t.colour, col.c)} aria-checked={same(t.colour, col.c)} aria-label={`Text ${col.name}`} title={`Text: ${col.name}`} style:--c={css(col.c)} onclick={() => p.onText({ colour: col.c })}></button>
@@ -206,6 +263,48 @@
       </div>
     </div>
   {/if}
+{/snippet}
+
+<!-- A small on/off button with an icon (bold, italic, alignment...). -->
+{#snippet toggle(name: string, on: boolean, act: () => void, icon: import("svelte").Snippet<[string]>, arg: string = "")}
+  <button type="button" class="tgl" class:on aria-pressed={on} aria-label={name} title={name} onclick={act}>{@render icon(arg)}</button>
+{/snippet}
+
+{#snippet boldIcon(_: string)}<span class="glyph" style:font-weight="bold">B</span>{/snippet}
+{#snippet italicIcon(_: string)}<span class="glyph" style:font-style="italic" style:font-family="Times New Roman, serif">I</span>{/snippet}
+{#snippet underIcon(_: string)}<span class="glyph" style:text-decoration="underline">U</span>{/snippet}
+{#snippet strikeIcon(_: string)}<span class="glyph" style:text-decoration="line-through">S</span>{/snippet}
+{#snippet alignIcon(a: string)}
+  {@const ws = [12, 8, 12, 6]}
+  <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+    {#each [2, 5.5, 9, 12.5] as y, i (y)}
+      {@const x = a === "left" ? 2 : a === "center" ? 8 - ws[i] / 2 : 14 - ws[i]}
+      <path d="M{x} {y}h{ws[i]}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+    {/each}
+  </svg>
+{/snippet}
+
+{#snippet fontSample(k: Family | null, w: number)}
+  <span class="aa" style:font-family={cssFamily(k ?? "helvetica")} style:width="{Math.min(w, 26)}px">Aa</span>
+{/snippet}
+
+<!-- A size: in the box, the current one as a number (even one not offered); in the list, a
+     letter growing with each size, beside its name. -->
+{#snippet sizeSample(k: string | null, w: number)}
+  {#if k === null || w < 40}
+    <span class="num sz">{k ?? (p.text?.size ?? DEFAULT_TEXT.size)}{w > 30 ? " pt" : ""}</span>
+  {:else}
+    <span class="sz-a" style:font-size="{Math.min(22, 7 + Number(k) * 0.45)}px">A</span>
+  {/if}
+{/snippet}
+
+{#snippet spacingSample(k: string | null, w: number)}
+  {@const g = 2 + 3 * Number(k ?? 1.2)}
+  <svg width={Math.min(w, 34)} height="14" viewBox="0 0 {Math.min(w, 34)} 14" aria-hidden="true">
+    {#each [0, 1, 2] as i (i)}
+      {#if 2 + i * g <= 13}<path d="M3 {2 + i * g}h{Math.min(w, 34) - 6}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />{/if}
+    {/each}
+  </svg>
 {/snippet}
 
 <!-- An opacity slider under its palette (beside it in the column), the track fading from clear
@@ -228,6 +327,39 @@
     onchange={(e) => set(Number((e.currentTarget as HTMLInputElement).value) / 100)}
     onkeydown={(e) => e.stopPropagation()}
   />
+{/snippet}
+
+<!-- Pictures for the pop-out lists: a line pattern; an arrow end (the head at the right, the
+     tail mirrored to the left). -->
+{#snippet dashSample(k: string | null, w: number)}
+  <svg width={w} height="12" viewBox="0 0 {w} 12" aria-hidden="true">
+    <line x1="3" y1="6" x2={w - 3} y2="6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray={svgDash(k)} />
+  </svg>
+{/snippet}
+
+{#snippet endGlyph(e: LineEnd | null, w: number)}
+  {@const x = w - 4}
+  {@const stop = e === "filled" ? x - 6 : e === "dot" ? x - 2 : x}
+  <line x1="4" y1="6" x2={stop} y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  {#if e === "open"}
+    <path d="M{x - 6} 2.5L{x} 6L{x - 6} 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if e === "filled"}
+    <path d="M{x + 0.5} 6L{x - 7} 2L{x - 7} 10Z" fill="currentColor" />
+  {:else if e === "dot"}
+    <circle cx={x - 2} cy="6" r="3" fill="currentColor" />
+  {:else if e === "bar"}
+    <path d="M{x} 2V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  {:else if e === "slash"}
+    <path d="M{x - 2.3} 10L{x + 2.3} 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  {/if}
+{/snippet}
+
+{#snippet headSample(e: LineEnd | null, w: number)}
+  <svg width={w} height="12" viewBox="0 0 {w} 12" aria-hidden="true">{@render endGlyph(e, w)}</svg>
+{/snippet}
+
+{#snippet tailSample(e: LineEnd | null, w: number)}
+  <svg width={w} height="12" viewBox="0 0 {w} 12" aria-hidden="true"><g transform="translate({w} 0) scale(-1 1)">{@render endGlyph(e, w)}</g></svg>
 {/snippet}
 
 <!-- The last swatch of a palette: the current colour when it's none of the presets, otherwise a
@@ -321,11 +453,6 @@
     flex-direction: row;
     align-items: stretch;
     gap: 9px;
-  }
-  .column select {
-    width: 40px;
-    padding: 0 2px;
-    text-align: center;
   }
   .column .grip {
     width: 100%;
@@ -434,19 +561,56 @@
   .sw.custom:not(.on) {
     background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
   }
-  select {
-    height: 24px;
-    min-width: 0;
-    padding: 0 4px;
-    border: 1px solid var(--bd-input);
-    background: var(--app);
-    color: var(--tx);
-    border-radius: 4px;
-    font-size: 12px;
-    font-family: var(--font-num);
+  .toggles {
+    gap: 2px;
   }
-  select:disabled {
-    opacity: 0.45;
+  .tgl {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--tx2);
+    cursor: default;
+  }
+  .tgl:hover {
+    background: var(--hover);
+    color: var(--tx);
+  }
+  .tgl.on {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .glyph {
+    font-size: 13px;
+    line-height: 1;
+    font-family: Arial, sans-serif;
+  }
+  .sz {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .sz-a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 22px;
+    line-height: 1;
+  }
+  .aa {
+    display: inline-block;
+    text-align: center;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .column .toggles {
+    gap: 3px;
   }
   /* A palette: its swatches with the opacity slider underneath. */
   .pal {

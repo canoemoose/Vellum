@@ -1,9 +1,10 @@
 // Draws a markup's operations (src/lib/markup/ops.ts) on the canvas, through the viewer's page
 // transform (Viewer.setPainter). The same operations become the saved appearance stream, so
-// what's drawn here is what other apps show. Text is drawn in Arial, which has Helvetica's
-// widths, so lines break in the same places.
+// what's drawn here is what other apps show. Text is drawn in the Windows font with the same
+// widths as the PDF's (fonts.ts), so lines break in the same places.
 
 import type { Op } from "../markup/ops";
+import { cssFont } from "../markup/fonts";
 import type { Rgb } from "../markup/types";
 
 const css = (c: Rgb, a = 1) => `rgba(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)}, ${a})`;
@@ -17,6 +18,10 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
     ctx.save();
     ctx.setTransform(...m);
     if (op.t === "path") {
+      if (op.decoration && hideText) {
+        ctx.restore();
+        continue;
+      }
       ctx.beginPath();
       for (const s of op.segs) {
         if (s[0] === "M") ctx.moveTo(s[1], s[2]);
@@ -33,7 +38,7 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
         ctx.globalAlpha = op.strokeOpacity;
         ctx.strokeStyle = css(op.stroke);
         ctx.lineWidth = op.width;
-        ctx.lineCap = "round";
+        ctx.lineCap = op.decoration ? "butt" : "round";
         ctx.lineJoin = "round";
         ctx.setLineDash(op.dash ?? []);
         ctx.stroke();
@@ -47,14 +52,14 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
         ctx.clip();
       }
       ctx.fillStyle = css(op.colour);
-      ctx.font = `${op.size}px Arial, Helvetica, sans-serif`;
+      ctx.font = cssFont(op.face, op.size);
       ctx.textBaseline = "alphabetic";
       const ang = Math.atan2(op.dir[1], op.dir[0]);
       op.lines.forEach((line, i) => {
         ctx.save();
         ctx.translate(op.origin[0] - op.dir[1] * i * op.leading, op.origin[1] + op.dir[0] * i * op.leading);
         if (ang) ctx.rotate(ang);
-        ctx.fillText(line, 0, 0);
+        ctx.fillText(line, op.offsets[i] ?? 0, 0);
         ctx.restore();
       });
     }
