@@ -1,6 +1,8 @@
 # Phase 5, stamps and signatures: scope
 
-Status: **scoped 15 November 2026, not started.** One session, in its own worktree, branch
+Status: **in progress (15 November 2026)**, autonomous, on branch `claude/editing-stamps-391fb7`
+(the worktree's own name for `editing-stamps`). Progress, the bake spike's result, tests and
+what isn't verified are at the end. One session, in its own worktree, branch
 `editing-stamps` cut from `editing` after the groundwork
 ([editing-groundwork-scope.md](editing-groundwork-scope.md)) lands. Parent:
 [editing-scope.md](editing-scope.md) ("Stamps and signatures", and "Phases 4, 5 and 7: how
@@ -164,3 +166,39 @@ In the release build: open a document, place a saved signature, save it baked in
 another copy with it movable, reopen both, and each looks right here and in Acrobat; a text
 stamp and an image stamp do the same; no signature data is readable on disk outside the
 encrypted library.
+
+## Progress
+
+### Step 1: the bake spike (go)
+
+**Baking works without a rewrite.** `src-tauri/src/annot/bake.rs`, a new save change
+`Change::Bake { spec }`: the stamp's appearance is written as a form XObject (the stream an
+annotation would carry, images included), the page is copied forward with its /Contents
+turned into `[q, ...the existing streams..., Q + draw the form]` and its own copy of its
+resources (inherited ones resolved from the page tree, indirect ones copied rather than
+changed, the form under a name the page doesn't use). Appended as an incremental update; the
+original bytes stay where they were, and the existing streams are referred to, not copied.
+An annotation with the same /NM on the page is removed in the same update.
+
+Proved on (`cargo test --test stamps_bake`):
+
+- Fixtures built with lopdf for each layout: one content stream; an array whose first stream
+  leaves a `q`, a halving `cm` and a clip in force (without the wrap the stamp would come out
+  half size, moved and clipped); /Contents pointing at an array object; resources inherited
+  from /Pages whose image is already called `VellumStamp0` (the bake takes `VellumStamp1`);
+  a page with no content; two pages sharing one indirect resources dictionary (the other page
+  and the shared object are untouched). Each: original bytes kept, reads without repair, no
+  annotation left, **not one pixel changed outside the stamp's box** (rendered by PDFium at
+  3 px/pt with annotations on before, off after), the stamp drawn at full size where its box
+  is. A stamp saved movable then baked draws the same pixels; two bakes on one page both draw.
+- The real drawings in `test-files` and the five synthetic files (an ignored test,
+  `real_files`, run by hand; nothing from the client files is in the repo): a 150 x 50 pt
+  stamp baked onto page 1 of each and the page rendered at about 2000 px on the long side
+  before and after. Every file: differences only within the stamp's box (on the /Rotate 90
+  drawing, a 50 x 150 box as expected). 0.7 to 16 KB added (the 16 KB is a page whose
+  resources were inline in its parent and are now copied onto the page), 1 to 95 ms.
+- qpdf (pikepdf 10, in a scratch venv, as phase 0's `verify.py` did): no problems in any
+  baked file. The one warning, a duplicated /PageMode in the Xero plan's catalogue, is in
+  the original file too.
+
+Fallback not needed.

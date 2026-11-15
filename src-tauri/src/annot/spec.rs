@@ -104,4 +104,8 @@ pub enum Change {
     Replace { spec: AnnotSpec },
     /// Remove the annotation with this /NM (and its popup) from the page.
     Delete { page: usize, nm: String },
+    // Stamps
+    /// Draw the spec's appearance into its page's content instead of adding an annotation
+    /// (a signature baked in; annot/bake.rs). Removes an annotation with the same /NM.
+    Bake { spec: AnnotSpec },
 }
