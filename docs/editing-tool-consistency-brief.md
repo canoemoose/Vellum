@@ -1,6 +1,7 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 9.
+Status: **built on `editing`, all ten stages, 15 November 2026; waiting for Matt's checks by
+eye** (the list in "For Matt to check", below).
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -428,7 +429,7 @@ Built (as done):
 - The real clipboard isn't touched by any test (it's Matt's): Win+V and pasting between
   two windows are on the list to check by eye.
 
-## Stage 10: checks, docs and hand-over
+## Stage 10: checks, docs and hand-over ✓
 
 - **Check in the running app** [A17]: the note icon and its pinned text stay upright as
   viewed; the regular polygon's "flat side at the bottom" follows the view; the F1 list
@@ -441,6 +442,39 @@ Built (as done):
 - Type check, all Vitest and cargo tests, a release build, and launch it on a file.
 - Hand over in plain terms: what's covered by tests, what isn't, and the list of things
   for Matt to check by eye, stage by stage.
+
+Built (as done): View > Units reads "Units for sizes and measurements", with "Metric:
+millimetres and metres" and "Imperial: feet and inches". The phase scope files carry a
+"superseded" note where this brief overrides them, and the README and groundwork scope give
+the new letters. At the end: type check clean, 1087 Vitest tests and 261 cargo tests pass,
+the release exe builds and opens a PDF (synthetic, scratch data folders, `--new-instance`).
+The stage 10 checks in the running app (the note icon and pinned box upright as viewed, the
+polygon's flat side following the view, the F1 list) are Matt's, below; the F1 list's
+completeness is also tested from the letter table.
+
+### For Matt to check
+
+1. Gestures: Arrow and Line clicked out; the right-click menu while clicking out a shape;
+   Backspace and Ctrl+Z taking back a point; a click away from a text box or a note only
+   ending the typing; empty callouts and notes staying; Calibrate going back to the tool
+   before.
+2. Letters: R, G, P, D, T, S, I, Shift+letter stepping back, H with text selected, ] and [.
+3. The bar: stamps' own bar, the highlighter without a pattern, a line without ends, an
+   arrow never None at both ends, mixed selections, the unit and decimal samples, the
+   text box and callout remembering their own text styles.
+4. The arrowhead and dot meeting their line, at several weights and opacities; any seam.
+5. Dimensions: the three-click placing and its preview, the value's place and grip, ends,
+   the three fonts on a real sheet, ortho lock on Polyline length and Area, the angle
+   corner first, imperial units and precision, the scale and calibrate dialogs in an
+   imperial view, the saved keys and /Measure in Acrobat.
+6. Shapes: the round and square grips, Sides, Shift for a flat bottom at every view turn,
+   adding and removing corners.
+7. Notes: the pinned box, upright and beside its icon at every view turn; how Acrobat and
+   Edge show the pop-ups.
+8. Stamps: the rotate grip and cursor, a turned stamp saved and baked, upright as viewed
+   when placed, the Image tool, the pickers in the bar (and `VELLUM_STAMP_POPOUTS=1`).
+9. Clipboard: Win+V not keeping copied markups, pasting between two Vellum windows (a
+   signature skipped with a message), a screenshot pasted as an image.
 
 ## Not built
 
