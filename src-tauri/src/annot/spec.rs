@@ -25,6 +25,10 @@ pub struct Appearance {
     #[serde(default)]
     pub fonts: std::collections::BTreeMap<String, String>,
     // Stamps
+    /// Images the operators draw (`/name Do`): resource name to the PNG and its hash
+    /// (annot/image.rs). The same hash under several names or annotations is written once.
+    #[serde(default)]
+    pub images: std::collections::BTreeMap<String, super::image::ImageRes>,
 
     // Text markups
 }
@@ -90,6 +94,9 @@ pub struct AnnotSpec {
     // Measuring
 
     // Stamps
+    /// /Name of a Stamp annotation ("Approved", "Signature").
+    #[serde(default)]
+    pub stamp_name: Option<String>,
 
     // Text markups
 }

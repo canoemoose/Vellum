@@ -5,6 +5,8 @@
 import type { Pt, Rect } from "./types";
 import type { Op } from "./ops";
 import { baseFont, fontResource, pdfString } from "./fonts";
+// Stamps
+import { imageResName } from "./stamps";
 
 /** A page's /Rotate (quarter turns clockwise) and visible box in user space [l, b, r, t]. */
 export interface Frame {
@@ -86,6 +88,15 @@ export function toContent(f: Frame, ops: Op[]): Content {
   for (const op of ops) {
     out.push("q");
     // Stamps
+    if (op.t === "image") {
+      // The image's unit square onto its box: (0, 0) is the picture's bottom left, which sits
+      // at the box's bottom left on the page (y down); worked out through toUser so a rotated
+      // page keeps the picture upright as rendered.
+      const [x0, y0, x1, y1] = op.rect;
+      const o = toUser(f, x0, y1), u = toUser(f, x1, y1), v = toUser(f, x0, y0);
+      out.push(`${n(u[0] - o[0])} ${n(u[1] - o[1])} ${n(v[0] - o[0])} ${n(v[1] - o[1])} ${n(o[0])} ${n(o[1])} cm`, `/${imageResName(op.hash)} Do`, "Q");
+      continue;
+    }
 
     // Text markups
     if (op.t === "path") {

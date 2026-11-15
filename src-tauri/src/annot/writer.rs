@@ -360,6 +360,9 @@ impl Writer {
         // Measuring
 
         // Stamps
+        if let Some(n) = s.stamp_name.as_deref().filter(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_alphanumeric())) {
+            d.set("Name", Object::Name(n.as_bytes().to_vec()));
+        }
 
         // Text markups
 
@@ -390,6 +393,8 @@ impl Writer {
             }
             res.set("Font", fd);
         }
+        // Stamps
+        self.add_images(&a.images, &mut res)?;
         let dict = dictionary! {
             "Type" => "XObject",
             "Subtype" => "Form",
