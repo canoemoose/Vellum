@@ -18,6 +18,7 @@
   import ChoiceDialog, { type Choice } from "./lib/components/dialogs/ChoiceDialog.svelte";
   import { MarkupTool, type Tool } from "./lib/engine/markupTool";
   import { kindOf, labelOf } from "./lib/markup/kinds";
+  import { toolById, toolForKey, toolForMarkup } from "./lib/markup/tools";
   import { MarkupDoc } from "./lib/engine/markupDoc";
   import { confirm as confirmSave, styleFor } from "./lib/markup/prefs";
   import type { Frame } from "./lib/markup/pdf";
@@ -228,6 +229,12 @@
 
   function setTool(t: Tool) {
     markupTool?.setTool(t);
+    // A collapsed palette shows each group's last tool, remembered between runs.
+    const g = toolById(t)?.group;
+    if (g && settings.markup.lastInGroup[g] !== t) {
+      settings.markup = { ...settings.markup, lastInGroup: { ...settings.markup.lastInGroup, [g]: t } };
+      save();
+    }
   }
 
   function onMarkupsChanged() {
@@ -240,15 +247,21 @@
     void markVersion;
     const mt = markupTool;
     if (!mt || !pdfDoc) return null;
-    if (mt.tool !== "select") {
-      const k = mt.tool;
-      return { kinds: [k], style: styleFor(settings.markup, k), text: k === "text" ? settings.markup.text : null, label: `${kindOf(k).label} tool` };
+    const tool = toolById(mt.tool);
+    if (tool?.kind) {
+      const k = tool.kind;
+      return {
+        kinds: [k], tools: [tool.id], style: styleFor(settings.markup, tool.id), text: kindOf(k).controls.text ? settings.markup.text : null,
+        label: `${tool.label} tool`, noEnds: tool.preset?.ends !== undefined,
+      };
     }
     const sel = mt.selected();
     if (!sel.length) return null;
     const kinds = [...new Set(sel.map((m) => m.kind))];
-    const t = sel.find((m) => m.kind === "text") as Extract<Markup, { kind: "text" }> | undefined;
-    return { kinds, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected` };
+    // Restyling a markup also sets the style of the tool that draws it.
+    const tools = [...new Set(sel.map((m) => toolForMarkup(m)?.id).filter((id): id is string => !!id))];
+    const t = sel.find((m) => "textStyle" in m) as Extract<Markup, { textStyle: TextStyle }> | undefined;
+    return { kinds, tools, noEnds: false, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected` };
   });
 
   /** The properties bar's dock while it's being dragged (saved when let go). */
@@ -264,7 +277,7 @@
     }
     // Each tool remembers its last style; restyling a markup also sets it for its tool.
     const next = { ...settings.markup.styles };
-    for (const k of strip.kinds) next[k] = { ...styleFor(settings.markup, k), ...patch };
+    for (const id of strip.tools) next[id] = { ...styleFor(settings.markup, id), ...patch };
     settings.markup = { ...settings.markup, styles: next };
     save();
     // The selection: what is picked out, or with a drawing tool, the shape just drawn.
@@ -1137,8 +1150,9 @@
       if (markupTool.drawingPoints) markupTool.finishPoints(false);
       else if (markupTool.tool !== "select") markupTool.setTool("select");
       else markupTool.clearSelection();
-    } else if (!ctrl && !e.altKey && !e.shiftKey && k === "v" && !isTyping(e)) {
-      if (pdfDoc) markupTool?.setTool("select");
+    } else if (!ctrl && !e.altKey && !e.shiftKey && !isTyping(e) && markupTool && toolForKey(k, markupTool.tool) !== null) {
+      // A tool's letter; again for the next tool sharing it (markup/tools.ts).
+      if (pdfDoc) setTool(toolForKey(k, markupTool.tool)!);
     } else if (ctrl && !e.shiftKey && k === "a" && !isTyping(e)) {
       // Never the WebView's select-all, which would highlight the whole shell.
       if (textDoc) textTool?.selectPage(ui.page);
@@ -1255,7 +1269,7 @@
       const tt = new TextTool(v, { openUrl: followUrl, onChange: refreshText });
       textTool = tt;
       const mt = new MarkupTool(v, {
-        styleFor: (k) => styleFor(settings.markup, k),
+        styleFor: (_k, tool) => styleFor(settings.markup, tool),
         textStyle: () => settings.markup.text,
         author: () => settings.markup.author ?? author,
         onChange: onMarkupsChanged,
@@ -1494,6 +1508,7 @@
           tool={toolNow}
           disabled={!pdfDoc}
           disabledReason={hasDoc && !pdfDoc ? "Markups on images come later (they can't be saved into an image)" : undefined}
+          lastInGroup={settings.markup.lastInGroup}
           onTool={setTool}
         />
       {/snippet}
@@ -1616,7 +1631,7 @@
         <!-- Floats over the top of the canvas: showing or hiding it never resizes the canvas,
              so the drawing doesn't move under the pointer. -->
         <PropertiesStrip
-          kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label}
+          kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label} noEnds={strip.noEnds}
           dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
           onStyle={stripStyle} onText={stripText}
           onDock={(d, done) => {

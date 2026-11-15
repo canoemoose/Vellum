@@ -9,6 +9,7 @@ import { MarkupDoc } from "./markupDoc";
 import { type Markup, type MarkupOf, defaultStyle, DEFAULT_TEXT, LINE_STYLE } from "../markup/types";
 import { KINDS } from "../markup/kinds";
 import { defineKind } from "../markup/kinds/kind";
+import { type ToolDef, TOOLS } from "../markup/tools";
 import type { Viewer } from "./viewer";
 
 beforeEach(installFakes);
@@ -158,6 +159,19 @@ describe("points gesture", () => {
 });
 
 describe("line gesture", () => {
+  it("draws a line with the Line tool: the arrow kind with no ends", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("line");
+    drag(t, v, [100, 100], [200, 104], shift);
+    const l = only(doc, "arrow");
+    expect(l.style.ends).toEqual(["none", "none"]);
+    expect(l.to[1]).toBeCloseTo(100);
+    // The Arrow tool still draws its head.
+    t.setTool("arrow");
+    drag(t, v, [100, 200], [200, 200]);
+    expect((doc.markups[1] as MarkupOf<"arrow">).style.ends).toEqual(["none", "open"]);
+  });
+
   it("draws nothing for a drag under 4 px", async () => {
     const { v, doc, t } = await setup();
     t.setTool("arrow");
@@ -176,9 +190,11 @@ describe("place gesture", () => {
     draw: { gesture: "place", make: (at) => ({ rect: [at[0] - 10, at[1] - 10, at[0] + 10, at[1] + 10] }), box: (r) => ({ rect: r }) },
   });
   const reg = KINDS as unknown as Record<string, unknown>;
+  const tool = { id: "dot", group: "stamp", label: "Dot", key: "s", kind: "dot", tip: "", icon: "<circle />" } as unknown as ToolDef;
 
   it("places at a click, centred on it, or sizes it by a drag", async () => {
     reg.dot = dot;
+    TOOLS.push(tool);
     try {
       const { v, doc, t } = await setup();
       t.setTool("dot" as Tool);
@@ -192,6 +208,7 @@ describe("place gesture", () => {
       expect(doc.markups.length).toBe(2);
     } finally {
       delete reg.dot;
+      TOOLS.splice(TOOLS.indexOf(tool), 1);
     }
   });
 });

@@ -2,6 +2,8 @@
   // A choice from a short list that drops out of the properties bar: a box showing the current
   // option's picture; clicking it opens the list (away from the bar's edge, like the weight
   // slider), each option a picture and a name. Arrow keys move through the list; Esc closes it.
+  // With `trigger`, the caller draws what opens it (the tool palette's group buttons) instead of
+  // the box, and the list opens beside that.
   import { type Snippet, onMount, tick } from "svelte";
   import { type Out, popoutPosition } from "../shell/popout";
 
@@ -17,11 +19,17 @@
     /** An option's picture, `w` px wide (a null key: the current value, not an offered one). */
     sample: Snippet<[K | null, number]>;
     onChange: (key: K) => void;
+    /** Draw your own opener instead of the box: call toggle() to open or close the list. */
+    trigger?: Snippet<[{ toggle: () => void; open: boolean }]>;
   }
   let p: Props = $props();
 
   let open = $state(false);
-  let btn: HTMLButtonElement;
+  let btn = $state<HTMLButtonElement>();
+  let trig = $state<HTMLSpanElement>();
+  /** What the list opens beside: the box, or the caller's opener. */
+  const anchor = () => (btn ?? trig) as HTMLElement;
+  const focusAnchor = () => (btn ?? trig?.querySelector("button"))?.focus();
   let pop = $state<HTMLDivElement>();
   let at = $state({ left: 0, top: 0 });
   const currentName = $derived(p.options.find((o) => o.key === p.value)?.name ?? "Custom");
@@ -31,13 +39,13 @@
     if (!open) return;
     await tick();
     if (!pop) return;
-    at = popoutPosition(btn.getBoundingClientRect(), pop.offsetWidth, pop.offsetHeight, p.out, window.innerWidth, window.innerHeight);
+    at = popoutPosition(anchor().getBoundingClientRect(), pop.offsetWidth, pop.offsetHeight, p.out, window.innerWidth, window.innerHeight);
     ((pop.querySelector(".on") ?? pop.querySelector("button")) as HTMLElement | null)?.focus();
   }
 
   function choose(k: K) {
     open = false;
-    btn.focus();
+    focusAnchor();
     if (k !== p.value) p.onChange(k);
   }
 
@@ -53,13 +61,13 @@
   onMount(() => {
     const outside = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (open && !btn.contains(t) && !pop?.contains(t)) open = false;
+      if (open && !anchor().contains(t) && !pop?.contains(t)) open = false;
     };
     const key = (e: KeyboardEvent) => {
       if (open && e.key === "Escape") {
         e.stopPropagation();
         open = false;
-        btn.focus();
+        focusAnchor();
       }
     };
     window.addEventListener("pointerdown", outside, true);
@@ -71,6 +79,9 @@
   });
 </script>
 
+{#if p.trigger}
+  <span class="trigger" bind:this={trig}>{@render p.trigger({ toggle, open })}</span>
+{:else}
 <button
   bind:this={btn}
   type="button"
@@ -88,6 +99,7 @@
     <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden="true" class="chev"><path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
   {/if}
 </button>
+{/if}
 
 {#if open}
   <div class="pop" bind:this={pop} role="listbox" tabindex="-1" aria-label={p.label} style:left="{at.left}px" style:top="{at.top}px" onkeydown={keys}>
@@ -102,6 +114,11 @@
 {/if}
 
 <style>
+  /* A box of its own (not display: contents), so the list can be placed beside it. */
+  .trigger {
+    display: inline-flex;
+    align-items: center;
+  }
   .box {
     height: 24px;
     padding: 0 5px 0 4px;

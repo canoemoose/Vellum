@@ -1,61 +1,165 @@
 <script lang="ts">
-  // The markup tools in the toolbar's centre: Select, then the first five tools. A tool stays
-  // active after drawing; Esc or V goes back to Select.
-  import type { Tool } from "../engine/markupTool";
+  // The markup tools in the toolbar's centre, from the tool registry (markup/tools.ts). Flat
+  // when the toolbar has room for every tool: one row, a thin divider between groups. When it
+  // hasn't, every group collapses to one button showing its last tool, with the rest in a
+  // flyout (the caret beside it, or press and hold). All or nothing, decided by the width
+  // alone (a hidden copy of the flat row is measured against the room), never by the active
+  // tool, so it doesn't change while you work. A tool stays active after drawing; Esc or V
+  // goes back to Select.
+  import { type GroupId, type ToolDef, groupFace, keyLabel, paletteGroups, paletteLayout, toolTip } from "../markup/tools";
+  import PopChoice from "./PopChoice.svelte";
 
   interface Props {
-    tool: Tool;
+    tool: string;
     disabled: boolean;
     /** Why the tools are off, for their tooltips (e.g. an image). */
     disabledReason?: string;
-    onTool: (t: Tool) => void;
+    /** Each group's last tool (settings). */
+    lastInGroup: Partial<Record<string, string>>;
+    onTool: (id: string) => void;
   }
   let p: Props = $props();
 
-  const TOOLS: { id: Tool; label: string; tip: string }[] = [
-    { id: "select", label: "Select", tip: "Select (V, Esc): click a markup to select it, drag to move, drag on empty drawing to select several" },
-    { id: "arrow", label: "Arrow", tip: "Arrow: drag from tail to head; Shift snaps to 15°" },
-    { id: "rect", label: "Rectangle", tip: "Rectangle: drag; Shift makes a square" },
-    { id: "cloud", label: "Revision cloud", tip: "Revision cloud: click the corners and double-click to finish, or drag a box" },
-    { id: "text", label: "Text box", tip: "Text box: drag a box or click, then type; Esc finishes" },
-    { id: "ink", label: "Pen", tip: "Pen: draw freehand" },
-  ];
+  const groups = paletteGroups();
+  /** The room the toolbar leaves, and the whole flat row's width. */
+  let room = $state(0);
+  let full = $state(0);
+  const layout = $derived(paletteLayout(full, room));
+
+  const tip = (t: ToolDef) => (p.disabled && p.disabledReason ? p.disabledReason : toolTip(t));
+  /** What a collapsed group shows: the active tool if it's in the group, else its last. */
+  const faceOf = (g: GroupId, tools: ToolDef[]) => tools.find((t) => t.id === p.tool) ?? groupFace(g, p.lastInGroup);
+
+  // Press and hold a group's button to open its flyout.
+  const HOLD_MS = 450;
+  let holdTimer: ReturnType<typeof setTimeout> | null = null;
+  let held = false;
+  function holdStart(e: PointerEvent, toggle: () => void) {
+    if (e.button !== 0 || p.disabled) return;
+    held = false;
+    holdTimer = setTimeout(() => {
+      held = true;
+      toggle();
+    }, HOLD_MS);
+  }
+  function holdEnd() {
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+  function pressGroup(t: ToolDef) {
+    if (held) {
+      held = false;
+      return;
+    }
+    p.onTool(t.id);
+  }
 </script>
 
-<div class="group" role="radiogroup" aria-label="Markup tools">
-  {#each TOOLS as t (t.id)}
-    <button
-      type="button"
-      role="radio"
-      aria-checked={p.tool === t.id}
-      aria-label={t.label}
-      class="icon-btn"
-      class:on={p.tool === t.id}
-      disabled={p.disabled}
-      title={p.disabled && p.disabledReason ? p.disabledReason : t.tip}
-      onclick={() => p.onTool(t.id)}
-    >
-      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-        {#if t.id === "select"}
-          <path d="M3.5 2.5l9 5.2-4 1.1 2.3 4.2-1.6.9-2.3-4.2-3.4 2.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-        {:else if t.id === "arrow"}
-          <path d="M3 13L12.5 3.5M7.5 3.5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        {:else if t.id === "rect"}
-          <rect x="2.75" y="3.75" width="10.5" height="8.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.5" />
-        {:else if t.id === "cloud"}
-          <path d="M4.2 12.2a2 2 0 0 1-1.6-3.1 2 2 0 0 1 1.4-3.2 2.3 2.3 0 0 1 3.9-1.6 2.3 2.3 0 0 1 4 .9 2 2 0 0 1 1.6 3 2 2 0 0 1-1.7 3.2 2.2 2.2 0 0 1-3.8 1 2.2 2.2 0 0 1-3.8-.2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
-        {:else if t.id === "text"}
-          <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" />
-          <path d="M5 5.5h6M8 5.5v5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        {:else}
-          <path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        {/if}
-      </svg>
-    </button>
+{#snippet icon(t: ToolDef)}
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">{@html t.icon}</svg>
+{/snippet}
+
+{#snippet toolButton(t: ToolDef, measuring: boolean)}
+  <button
+    type="button"
+    role="radio"
+    aria-checked={p.tool === t.id}
+    aria-label={t.label}
+    class="icon-btn"
+    class:on={p.tool === t.id}
+    disabled={p.disabled}
+    tabindex={measuring ? -1 : undefined}
+    title={tip(t)}
+    onclick={() => p.onTool(t.id)}
+  >
+    {@render icon(t)}
+  </button>
+{/snippet}
+
+{#snippet flatRow(measuring: boolean)}
+  {#each groups as g, i (g.group.id)}
+    {#if i > 0}<span class="divider" aria-hidden="true"></span>{/if}
+    {#each g.tools as t (t.id)}
+      {@render toolButton(t, measuring)}
+    {/each}
   {/each}
+{/snippet}
+
+<div class="palette" bind:clientWidth={room}>
+  <!-- The flat row laid out out of sight, to measure against the room. -->
+  <div class="group measure" aria-hidden="true" inert bind:clientWidth={full}>
+    {@render flatRow(true)}
+  </div>
+
+  <div class="group" role="radiogroup" aria-label="Markup tools">
+    {#if layout === "flat"}
+      {@render flatRow(false)}
+    {:else}
+      {#each groups as g (g.group.id)}
+        {#if g.tools.length === 1}
+          {@render toolButton(g.tools[0], false)}
+        {:else}
+          {@const face = faceOf(g.group.id, g.tools)}
+          {@const on = g.tools.some((t) => t.id === p.tool)}
+          <PopChoice
+            label={g.group.label}
+            options={g.tools.map((t) => ({ key: t.id, name: `${t.label} (${keyLabel(t)})` }))}
+            value={on ? p.tool : null}
+            out="down"
+            sample={flySample}
+            onChange={(id) => p.onTool(id)}
+          >
+            {#snippet trigger({ toggle, open })}
+              <span class="split" class:on class:open>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  aria-label="{face.label} ({g.group.label} tools)"
+                  class="icon-btn main"
+                  disabled={p.disabled}
+                  title={tip(face)}
+                  onpointerdown={(e) => holdStart(e, toggle)}
+                  onpointerup={holdEnd}
+                  onpointerleave={holdEnd}
+                  onclick={() => pressGroup(face)}
+                >
+                  {@render icon(face)}
+                </button>
+                <button
+                  type="button"
+                  class="caret"
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  aria-label="More {g.group.label.toLowerCase()} tools"
+                  title="More {g.group.label.toLowerCase()} tools"
+                  disabled={p.disabled}
+                  onclick={toggle}
+                >
+                  <svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true"><path d="M1 1l2.5 2.5L6 1" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </button>
+              </span>
+            {/snippet}
+          </PopChoice>
+        {/if}
+      {/each}
+    {/if}
+  </div>
 </div>
 
+{#snippet flySample(id: string | null, _w: number)}
+  {@const t = groups.flatMap((g) => g.tools).find((x) => x.id === id)}
+  {#if t}<span class="fly-icon">{@render icon(t)}</span>{/if}
+{/snippet}
+
 <style>
+  .palette {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+  }
   .group {
     display: flex;
     align-items: center;
@@ -65,8 +169,60 @@
     border: 1px solid var(--bd-ctl);
     border-radius: 8px;
   }
-  .icon-btn.on {
+  .measure {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: max-content;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .divider {
+    width: 1px;
+    height: 18px;
+    margin: 0 3px;
+    background: var(--bd-ctl);
+    flex-shrink: 0;
+  }
+  .icon-btn.on,
+  .split.on .main {
     background: var(--accent-soft);
     color: var(--accent-text);
+  }
+  .split {
+    display: flex;
+    align-items: center;
+    border-radius: 6px;
+  }
+  .split .main {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .caret {
+    width: 13px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 0 6px 6px 0;
+    background: transparent;
+    color: var(--tx3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .caret:hover:not(:disabled),
+  .split.open .caret {
+    background: var(--hover);
+    color: var(--tx);
+  }
+  .split.on .caret {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  .fly-icon {
+    width: 22px;
+    display: flex;
+    justify-content: center;
+    color: var(--tx2);
   }
 </style>

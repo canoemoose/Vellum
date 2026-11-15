@@ -1,7 +1,9 @@
 // Every binding, for Help > Keyboard shortcuts. Navigation bindings mirror README.md's
 // "Using it" table and src/lib/engine/input.ts; shell bindings are handled in App.svelte.
 // Key notation: "+" joins keys and gestures that are pressed together ("Ctrl+wheel",
-// "Space+drag", "Shift+click").
+// "Space+drag", "Shift+click"). The markup tools' letters come from the tool registry.
+
+import { TOOLS, keyLabel } from "../markup/tools";
 
 export interface Shortcut {
   keys: string;
@@ -71,6 +73,20 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: "Ctrl+A", action: "Select all the text on the page" },
       { keys: "Esc", action: "Clear the selection" },
       { keys: "Click a link", action: "Follow it (web links open in the browser)" },
+    ],
+  },
+  {
+    title: "Markup",
+    items: [
+      ...TOOLS.map((t) => ({ keys: keyLabel(t), action: t.id === "select" ? "Select tool" : `${t.label} tool` })),
+      { keys: "Esc", action: "Abandon a shape being clicked out, else back to the Select tool, else clear the markup selection" },
+      { keys: "Shift while drawing", action: "Square, circle, or 15° steps for lines and points" },
+      { keys: "Double-click / Enter", action: "Finish a polyline, polygon or revision cloud" },
+      { keys: "Delete / Backspace", action: "Delete the selected markups" },
+      { keys: "Arrow keys / Shift+arrow keys", action: "Nudge the selected markups" },
+      { keys: "Ctrl+Z / Ctrl+Y", action: "Undo / redo" },
+      { keys: "Ctrl+C / Ctrl+V", action: "Copy / paste markups" },
+      { keys: "Ctrl+S / Ctrl+Shift+S", action: "Save / Save a copy" },
     ],
   },
   {

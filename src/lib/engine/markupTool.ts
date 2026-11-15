@@ -12,10 +12,12 @@ import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insid
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
 import type { DrawContext, KindDef, Shape } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
+import { toolById, withPreset } from "../markup/tools";
 
 export { fitText, refitText } from "../markup/kinds/text";
 
-export type Tool = "select" | MarkupKind;
+/** "select", or a drawing tool's id (markup/tools.ts). */
+export type Tool = string;
 
 /** A markup that holds typed text in a box (a text box; later, a callout). */
 export type TypedMarkup = Extract<Markup, { rect: Rect; text: string; textStyle: TextStyle }>;
@@ -28,7 +30,7 @@ export interface Mods {
 
 export interface MarkupToolOptions {
   /** The style a tool draws with (each tool remembers its last). */
-  styleFor(kind: MarkupKind): Style;
+  styleFor(kind: MarkupKind, tool: Tool): Style;
   textStyle(): TextStyle;
   /** Written into each markup (agreed: the account's display name). */
   author(): string;
@@ -442,7 +444,8 @@ export class MarkupTool {
 
   /** The kind the current tool draws, or null for Select. */
   private get def(): KindDef | null {
-    return this.tool === "select" ? null : (kindOf(this.tool) as unknown as KindDef);
+    const kind = toolById(this.tool)?.kind;
+    return kind ? (kindOf(kind) as unknown as KindDef) : null;
   }
 
   private get drawContext(): DrawContext {
@@ -451,7 +454,10 @@ export class MarkupTool {
 
   private newMarkup(def: KindDef, page: number, shape: Shape<Markup>): Markup {
     const now = new Date().toISOString();
-    const base = { id: newId(), page, style: this.opts.styleFor(def.kind), meta: { author: this.opts.author(), created: now, modified: now } };
+    // The tool's remembered style, with its preset (a Line has no ends) over it.
+    const tool = toolById(this.tool);
+    const style = tool?.kind === def.kind ? withPreset(tool, this.opts.styleFor(def.kind, tool.id)) : this.opts.styleFor(def.kind, def.kind);
+    const base = { id: newId(), page, style, meta: { author: this.opts.author(), created: now, modified: now } };
     return { ...base, kind: def.kind, ...shape } as Markup;
   }
 
