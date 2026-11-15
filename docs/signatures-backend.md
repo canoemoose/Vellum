@@ -1,7 +1,9 @@
 # Signatures: the back end (phase 5, first part)
 
-Status: **built and tested (14 November 2026), waiting for Matt's look at the pad.** Branch
-`claude/signatures-834cd1`, cut from `editing` at 78c59d5, not pushed or merged. Built as a side
+Status: **built and tested (14 November 2026); Matt found the standalone pad fine
+(15 November). Next: build it into the main window, which is where it can be tested properly.**
+Built on `claude/signatures-834cd1`, cut from `editing` at 78c59d5 and since merged into
+`editing` (the branch is deleted). Built as a side
 session while phases 2 and 3 of [editing-scope.md](editing-scope.md) were being built on
 `editing`.
 

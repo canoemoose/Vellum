@@ -1,7 +1,8 @@
 # OCR search on pages without text: scope
 
-Status: **spike done, second round of improvements measured, waiting for Matt's review**
-(14 November 2026). Listed under "Later phases"
+Status: **spike done, second round of improvements measured (14 November 2026); Matt found
+it fine standalone (15 November). Next: build it into the app's search, which is where it can
+be tested properly.** Merged into `editing`. Listed under "Later phases"
 in [editing-scope.md](editing-scope.md) as "Windows' built-in OCR; search only, nothing written
 back". Worked autonomously (Matt's call); assumptions are listed for correction in one pass.
 Spike: [spikes/ocr/](../spikes/ocr/README.md). Nothing is wired into the app.
