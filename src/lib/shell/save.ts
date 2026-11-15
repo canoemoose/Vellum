@@ -80,3 +80,5 @@ export function copyName(path: string): string {
   const dot = name.toLowerCase().endsWith(".pdf") ? name.length - 4 : name.length;
   return `${name.slice(0, dot)} (marked up).pdf`;
 }
+
+// Stamps

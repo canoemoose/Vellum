@@ -17,6 +17,9 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
   for (const op of ops) {
     ctx.save();
     ctx.setTransform(...m);
+    // Stamps
+
+    // Text markups
     if (op.t === "path") {
       if (op.decoration && hideText) {
         ctx.restore();

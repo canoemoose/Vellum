@@ -85,6 +85,9 @@ export function toContent(f: Frame, ops: Op[]): Content {
   };
   for (const op of ops) {
     out.push("q");
+    // Stamps
+
+    // Text markups
     if (op.t === "path") {
       // One /GS0 serves every path: a markup's paths share its style.
       const so = !!op.stroke && op.strokeOpacity < 1, fo = !!op.fill && op.fillOpacity < 1;

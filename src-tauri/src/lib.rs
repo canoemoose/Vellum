@@ -497,6 +497,11 @@ pub fn run() {
             signature::signature_get,
             signature::signature_strokes,
             // End signatures
+            // Measuring
+
+            // Stamps
+
+            // Text markups
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

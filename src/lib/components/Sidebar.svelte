@@ -25,6 +25,7 @@
     onWidth: (w: number, done: boolean) => void;
     onGoto: (page: number) => void;
     onGotoPoint: (page: number, y: number | null) => void;
+    // Text markups
   }
   let p: Props = $props();
 
@@ -46,6 +47,7 @@
   <div class="tabs" role="tablist" aria-label="Sidebar">
     <button type="button" role="tab" aria-selected={p.tab === "pages"} class:on={p.tab === "pages"} onclick={() => p.onTab("pages")}>Pages</button>
     <button type="button" role="tab" aria-selected={p.tab === "outline"} class:on={p.tab === "outline"} onclick={() => p.onTab("outline")}>Bookmarks</button>
+    <!-- Text markups -->
   </div>
 
   {#if p.docId === null}

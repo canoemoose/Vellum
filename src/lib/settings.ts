@@ -11,6 +11,7 @@ import type { Bounds } from "./shell/windowPlacement";
 
 const KEY = "vellum.settings.v1";
 
+// Text markups: the Markups tab joins SidebarTab (and its check in sanitiseSettings).
 export type SidebarTab = "pages" | "outline";
 
 export interface WindowState extends Bounds {
@@ -37,6 +38,11 @@ export interface Settings {
   updateCheck: boolean;
   /** Tool styles, confirmed saves, author (markup/prefs.ts). */
   markup: MarkupPrefs;
+  // Measuring
+
+  // Stamps
+
+  // Text markups
 }
 
 export const SIDEBAR_MIN = 160;
@@ -57,6 +63,11 @@ export const DEFAULTS: Settings = {
   window: null,
   updateCheck: true,
   markup: defaultPrefs(),
+  // Measuring
+
+  // Stamps
+
+  // Text markups
 };
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -86,6 +97,11 @@ export function sanitiseSettings(raw: unknown): Settings {
         : null,
     updateCheck: s.updateCheck !== false,
     markup: sanitisePrefs(s.markup),
+    // Measuring
+
+    // Stamps
+
+    // Text markups
   };
 }
 

@@ -90,3 +90,5 @@ export function rememberScale(
   for (let i = 0; i < keys.length - cap; i++) delete out[keys[i]];
   return out;
 }
+
+// Measuring

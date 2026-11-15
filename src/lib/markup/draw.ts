@@ -24,6 +24,7 @@ export interface PathOp {
   fillOpacity: number;
   /** Underline or strikethrough: square ends, and hidden with the text while it's typed. */
   decoration?: boolean;
+  // Text markups
 }
 
 export interface TextOp {
@@ -44,6 +45,8 @@ export interface TextOp {
 }
 
 export type Op = PathOp | TextOp;
+
+// Stamps
 
 export const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
 export const sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]];

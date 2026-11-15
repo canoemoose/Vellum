@@ -24,6 +24,9 @@ pub struct Appearance {
     /// Standard fonts the operators use: resource name (/TiBo) to /BaseFont (Times-Bold).
     #[serde(default)]
     pub fonts: std::collections::BTreeMap<String, String>,
+    // Stamps
+
+    // Text markups
 }
 
 #[derive(Deserialize, Clone, Debug, Default, PartialEq)]

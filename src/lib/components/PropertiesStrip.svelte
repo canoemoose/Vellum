@@ -27,6 +27,11 @@
     label: string;
     /** Hide the line-end choices (a tool whose ends are fixed, such as Line). */
     noEnds?: boolean;
+    // Measuring
+
+    // Stamps
+
+    // Text markups
     dock: Dock;
     /** The drawing area's size, CSS px. */
     areaW: number;

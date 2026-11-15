@@ -27,6 +27,7 @@ export interface TextToolOptions {
   selectionFill?: string;
   /** Text layers kept per document (least recently used dropped). */
   maxPages?: number;
+  // Text markups
 }
 
 /** Pixels the pointer must move with the button down before a press becomes a drag. */
@@ -381,3 +382,5 @@ export class TextTool {
     return joinPages(parts);
   }
 }
+
+// Text markups

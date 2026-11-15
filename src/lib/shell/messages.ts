@@ -52,6 +52,7 @@ const MESSAGES: Record<string, string> = {
   read_failed: "Couldn't {verb}: the file couldn't be read. It may be open in another program.",
   explorer_failed: "Couldn't open Explorer.",
   cancelled: "Cancelled.",
+  // Stamps
 };
 
 /** Text written for people, as opposed to an internal or operating-system message. */
@@ -78,3 +79,5 @@ export function userMessage(e: unknown, verb: string): string {
   }
   return readable(detail) ? sentence(detail) : `Couldn't ${verb}.`;
 }
+
+// Stamps

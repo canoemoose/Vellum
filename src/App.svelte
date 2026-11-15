@@ -38,6 +38,11 @@
   import StatusBar from "./lib/components/StatusBar.svelte";
   import DebugOverlay from "./lib/components/DebugOverlay.svelte";
   import MarqueeOverlay from "./lib/components/MarqueeOverlay.svelte";
+  // Measuring
+
+  // Stamps
+
+  // Text markups
   import PasswordDialog from "./lib/components/dialogs/PasswordDialog.svelte";
   import ScaleDialog from "./lib/components/dialogs/ScaleDialog.svelte";
   import PropertiesDialog from "./lib/components/dialogs/PropertiesDialog.svelte";
@@ -308,6 +313,13 @@
       rotation: ui.rotation, scale: v.view.scale, textStyle: m.textStyle, pad: TEXT_PAD + m.style.width, text: m.text,
     };
   });
+
+  // Later markup phases add their state and handlers inside their own block:
+  // Measuring
+
+  // Stamps
+
+  // Text markups
 
   // ---------------------------------------------------------------- saving
 
@@ -1653,6 +1665,9 @@
           />
         {/key}
       {/if}
+      <!-- Measuring -->
+      <!-- Stamps -->
+      <!-- Text markups -->
       {#if marquee}
         <MarqueeOverlay pageAt={(x, y) => viewer?.pagePointAt(x, y) ?? null} {pointOn} onDone={marquee} />
       {/if}

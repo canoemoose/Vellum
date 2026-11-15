@@ -181,3 +181,5 @@ fn display_name() -> Option<String> {
 fn display_name() -> Option<String> {
     None
 }
+
+// Stamps

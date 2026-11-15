@@ -10,6 +10,7 @@
     candidates: ScaleCandidate[] | null;
     onApply: (ratio: number | null) => void;
     onClose: () => void;
+    // Measuring
   }
   let { fileName, current, candidates, onApply, onClose }: Props = $props();
 

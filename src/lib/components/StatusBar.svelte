@@ -9,6 +9,7 @@
     cursor: string;
     pageSize: string;
     onScale: () => void;
+    // Measuring
   }
   let { scaleText, hint, notice = null, cursor, pageSize, onScale }: Props = $props();
 </script>
@@ -27,6 +28,7 @@
   {/if}
   <span class="cursor num">{cursor}</span>
   <span class="size">{pageSize}</span>
+  <!-- Measuring -->
 </footer>
 
 <style>
