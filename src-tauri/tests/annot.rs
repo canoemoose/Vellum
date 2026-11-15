@@ -23,6 +23,7 @@ fn square(page: usize, nm: &str, r: [f64; 4]) -> AnnotSpec {
             opacity: None,
             fill_opacity: None,
             font: false,
+            fonts: Default::default(),
         },
         author: Some("Test".into()),
         modified: Some("D:20261114120000Z".into()),
@@ -187,4 +188,28 @@ fn recovery_keys_are_kept_to_safe_names() {
     for bad in ["", "../x", "a b", "a/b", "a.json", &"k".repeat(121)] {
         assert!(commands::recovery_file(d, bad).is_err(), "{bad:?}");
     }
+}
+
+#[test]
+fn appearances_name_the_standard_fonts_they_use() {
+    let mut spec = square(0, "t", [10.0, 10.0, 160.0, 40.0]);
+    spec.appearance.ops = "BT 0 0 0 rg /TiBo 12 Tf 1 0 0 1 20 20 Tm (Hello) Tj ET".into();
+    spec.appearance.fonts.insert("TiBo".into(), "Times-Bold".into());
+    let out = annot::apply(blank(), "", &[Change::Add { spec }]).unwrap();
+    let doc = lopdf::Document::load_mem(&out).unwrap();
+    let page = *doc.get_pages().get(&1).unwrap();
+    let annots = doc.get_dictionary(page).unwrap().get(b"Annots").unwrap();
+    let annots = match annots {
+        lopdf::Object::Reference(id) => doc.get_object(*id).unwrap().as_array().unwrap().clone(),
+        o => o.as_array().unwrap().clone(),
+    };
+    let annot = doc.get_dictionary(annots[0].as_reference().unwrap()).unwrap();
+    let ap = annot.get(b"AP").unwrap().as_dict().unwrap();
+    let stream = doc.get_object(ap.get(b"N").unwrap().as_reference().unwrap()).unwrap().as_stream().unwrap();
+    let res = stream.dict.get(b"Resources").unwrap().as_dict().unwrap();
+    let font = res.get(b"Font").unwrap().as_dict().unwrap().get(b"TiBo").unwrap().as_dict().unwrap();
+    assert_eq!(font.get(b"BaseFont").unwrap().as_name().unwrap(), b"Times-Bold");
+    assert_eq!(font.get(b"Encoding").unwrap().as_name().unwrap(), b"WinAnsiEncoding");
+    // PDFium draws it.
+    assert!(ink_with_annots(out).is_some());
 }

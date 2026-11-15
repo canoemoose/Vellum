@@ -362,13 +362,20 @@ impl Writer {
             let fill = a.fill_opacity.or(a.opacity).unwrap_or(1.0);
             res.set("ExtGState", dictionary! { "GS0" => dictionary! { "Type" => "ExtGState", "CA" => real(line), "ca" => real(fill) } });
         }
+        // Standard fonts, so nothing is embedded; WinAnsi, as the operators' strings are.
+        let mut fonts = a.fonts.clone();
         if a.font {
-            res.set(
-                "Font",
-                dictionary! { "Helv" => dictionary! {
-                    "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding",
-                } },
-            );
+            fonts.entry("Helv".into()).or_insert_with(|| "Helvetica".into());
+        }
+        if !fonts.is_empty() {
+            let mut fd = Dictionary::new();
+            for (name, base) in &fonts {
+                fd.set(
+                    name.as_bytes().to_vec(),
+                    dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => Object::Name(base.as_bytes().to_vec()), "Encoding" => "WinAnsiEncoding" },
+                );
+            }
+            res.set("Font", fd);
         }
         let dict = dictionary! {
             "Type" => "XObject",

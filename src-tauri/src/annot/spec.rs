@@ -19,6 +19,9 @@ pub struct Appearance {
     /// The operators use /Helv (Helvetica, WinAnsi).
     #[serde(default)]
     pub font: bool,
+    /// Standard fonts the operators use: resource name (/TiBo) to /BaseFont (Times-Bold).
+    #[serde(default)]
+    pub fonts: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Deserialize, Clone, Debug, PartialEq)]
