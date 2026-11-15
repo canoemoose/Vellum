@@ -1880,10 +1880,12 @@
             })),
           },
           {
-            label: "Units",
+            // Paper sizes, the read-outs, and the units measurements set to Auto are written in
+            // (tool consistency stage 10).
+            label: "Units for sizes and measurements",
             submenu: [
-              { label: "Millimetres and metres", radio: true, checked: settings.units === "metric", action: () => { settings.units = "metric"; save(); } },
-              { label: "Inches and feet", radio: true, checked: settings.units === "imperial", action: () => { settings.units = "imperial"; save(); } },
+              { label: "Metric: millimetres and metres", radio: true, checked: settings.units === "metric", action: () => { settings.units = "metric"; save(); } },
+              { label: "Imperial: feet and inches", radio: true, checked: settings.units === "imperial", action: () => { settings.units = "imperial"; save(); } },
             ],
           },
           { separator: true },
