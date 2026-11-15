@@ -52,6 +52,14 @@ pub struct LaunchArgs {
     /// Wall-clock time (ms since epoch) when `run` started; lets the front end
     /// split cold start into process/Rust init and WebView startup.
     pub process_start_epoch_ms: f64,
+    /// Stage 8: the stamp tools' old pickers (panels over the drawing) in place of the context
+    /// bar's, while Matt chooses. From `VELLUM_STAMP_POPOUTS=1`.
+    pub stamp_popouts: bool,
+}
+
+/// Whether the environment variable `VELLUM_STAMP_POPOUTS` turns the old stamp pickers on: "1" only.
+pub fn stamp_popouts(v: Option<&str>) -> bool {
+    v.is_some_and(|v| v.trim() == "1")
 }
 
 pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
@@ -398,6 +406,7 @@ fn exit_app(app: tauri::AppHandle, code: i32) {
 pub fn run() {
     let mut args = parse_args(std::env::args());
     args.process_start_epoch_ms = epoch_ms();
+    args.stamp_popouts = stamp_popouts(std::env::var("VELLUM_STAMP_POPOUTS").ok().as_deref());
     let bench = args.bench;
     let bench_size = args.bench_size.unwrap_or((1600.0, 1000.0));
     let pdfium_threads = args.pdfium_threads;
@@ -433,6 +442,7 @@ pub fn run() {
             launch_args,
             clipboard::clipboard_put_markups,
             clipboard::clipboard_take,
+            clipboard::picture_open,
             read_file,
             append_perf_log,
             write_text_file,

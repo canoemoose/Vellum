@@ -57,3 +57,33 @@ fn a_large_picture_is_scaled_down_to_the_limit() {
     let (_, w, h) = picture_png(&bmp_from_dib(&dib24()).unwrap()).unwrap();
     assert_eq!((w, h), (2, 1));
 }
+
+// Stage 8: the Image tool's picture file goes through the same limit as a pasted picture.
+
+#[test]
+fn a_picture_file_is_scaled_to_the_limit_and_junk_is_refused() {
+    use vellum_lib::clipboard::picture_file;
+    let dir = std::env::temp_dir().join(format!("vellum-picture-file-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A tall JPEG over the limit: 2000 on its long side, aspect kept.
+    let img = image::RgbImage::from_pixel(900, 2700, image::Rgb([200, 30, 30]));
+    let jpg = dir.join("tall.jpg");
+    image::DynamicImage::ImageRgb8(img).save(&jpg).unwrap();
+    let (png, w, h) = picture_file(&jpg).unwrap();
+    assert_eq!((w, h), (667, 2000));
+    assert_eq!(&png[1..4], b"PNG");
+    // A small PNG with transparency comes through as it is.
+    let small = image::RgbaImage::from_pixel(40, 20, image::Rgba([0, 0, 0, 0]));
+    let p = dir.join("clear.png");
+    image::DynamicImage::ImageRgba8(small).save(&p).unwrap();
+    let (png, w, h) = picture_file(&p).unwrap();
+    assert_eq!((w, h), (40, 20));
+    let back = image::load_from_memory(&png).unwrap().to_rgba8();
+    assert_eq!(back.get_pixel(3, 3).0[3], 0, "transparency kept");
+    // Not a picture, and not there.
+    let junk = dir.join("junk.png");
+    std::fs::write(&junk, b"not a picture").unwrap();
+    assert!(picture_file(&junk).unwrap_err().starts_with("[picture_unreadable]"));
+    assert!(picture_file(&dir.join("missing.png")).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
