@@ -34,8 +34,21 @@ kinds. Built in parallel on that layout they would collide in every one of those
 
 ### 2. Grouped tool palette
 
-A flat row can't hold twenty tools. Groups, each a button showing its last-used tool, with a
-flyout for the rest (press and hold, or a small caret):
+**Flat when there's room, grouped when there isn't** (Matt, 15 November 2026). When the
+toolbar is wide enough to hold every tool, show them all in one row, with a thin divider
+between groups and no flyouts. Only when they don't all fit does the palette collapse to
+groups, each a button showing its last-used tool with a flyout for the rest (press and hold,
+or a small caret).
+
+- Which layout applies is decided by the space available, measured against the full row's
+  width (a hidden copy, as the properties bar does), never by which tool is active, so it
+  doesn't jump while you work. Re-decided when the window or the toolbar's other contents
+  change size.
+- All or nothing: either every group is flat or every group is collapsed. No half-collapsed
+  states to design or test.
+- The groups still matter when flat: they set the order, the dividers and the shortcuts.
+
+The groups:
 
 | Group | Tools (this session builds those in bold) |
 |---|---|
@@ -84,7 +97,8 @@ phase (`// Measuring`, `// Stamps`, `// Text markups`) so each adds inside its o
 ## Assumed (Matt to correct)
 
 1. Tool groups and their membership as in the table.
-2. A group button shows the last tool used in that group, remembered between runs.
+2. When collapsed, a group button shows the last tool used in that group, remembered
+   between runs. The collapse is all or nothing.
 3. Shortcuts: V select, A arrow, L line, R rectangle, E ellipse, P polygon, C cloud, T text,
    D pen (draw), M measure, S stamp. Checked against existing shortcuts before adopting.
 4. Line is a preset of arrow, so an arrow whose ends are both set to "none" and a line are
@@ -112,11 +126,12 @@ New: `src/lib/markup/kinds/*`, `src/lib/markup/tools.ts`. Changed: `markup/types
 ## Testing
 
 - Vitest: each new kind's drawing operations, spec, hit test, handles and resize; the tool
-  registry (every tool has a group, a unique shortcut, a kind that exists); the gestures
-  against the stub viewer.
+  registry (every tool has a group, a unique shortcut, a kind that exists); the rule that
+  picks flat or grouped from the widths; the gestures against the stub viewer.
 - Cargo: an annotation written with the private entry reads back with it; PDFium still
   draws the file.
-- Not automatable: how the grouped palette and flyouts look and feel. Matt checks that.
+- Not automatable: how the flat row, the grouped palette and its flyouts look and feel, and
+  the switch between them as the window narrows. Matt checks that.
 
 ## Done when
 
