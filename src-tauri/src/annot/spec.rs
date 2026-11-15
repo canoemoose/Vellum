@@ -88,6 +88,12 @@ pub struct AnnotSpec {
     #[serde(default)]
     pub vellum: Option<String>,
     // Measuring
+    /// A dimension's /Measure dictionary (annot/measure.rs).
+    #[serde(default)]
+    pub measure: Option<super::measure::MeasureSpec>,
+    /// /Cap true and /CP /Top: a Line dimension shows its value as a caption above it.
+    #[serde(default)]
+    pub caption: Option<bool>,
 
     // Stamps
 

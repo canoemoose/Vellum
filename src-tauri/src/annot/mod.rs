@@ -6,6 +6,7 @@
 //! objects with `lopdf` and appends them (phase 0 of docs/editing-scope.md chose `lopdf`).
 
 pub mod commands;
+pub mod measure; // Measuring
 pub mod spec;
 pub mod writer;
 

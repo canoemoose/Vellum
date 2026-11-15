@@ -498,6 +498,7 @@ pub fn run() {
             signature::signature_strokes,
             // End signatures
             // Measuring
+            annot::measure::measure_user_units,
 
             // Stamps
 
