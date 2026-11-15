@@ -98,6 +98,14 @@ pub struct AnnotSpec {
     /// /Cap true and /CP /Top: a Line dimension shows its value as a caption above it.
     #[serde(default)]
     pub caption: Option<bool>,
+    // Dimensions (stage 5)
+    /// A Line dimension pulled off its points: [/LL, /LLE, /LLO] (leader line length, its
+    /// extension past the dimension line, and the gap left at the points), user space units.
+    #[serde(default)]
+    pub leader: Option<[f64; 3]>,
+    /// /CO: a Line's caption moved from its normal place, [along the line, square to it].
+    #[serde(default)]
+    pub caption_offset: Option<[f64; 2]>,
 
     // Stamps
     /// /Name of a Stamp annotation ("Approved", "Signature").

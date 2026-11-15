@@ -70,6 +70,11 @@ pub struct FileAnnot {
     pub vellum: Option<String>,
     /// It has a /Measure dictionary.
     pub measured: bool,
+    // Dimensions (stage 5)
+    /// A Line's /LL, /LLE, /LLO (0 where absent), when it has /LL.
+    pub leader: Option<[f64; 3]>,
+    /// A Line's /CO.
+    pub caption_offset: Option<[f64; 2]>,
 }
 
 /// A page's annotations and the frame to map them with.
@@ -280,6 +285,11 @@ impl<'a> Reader<'a> {
             ),
             _ => None,
         };
+        // Dimensions (stage 5)
+        if let Some(ll) = self.number(d, b"LL") {
+            a.leader = Some([ll, self.number(d, b"LLE").unwrap_or(0.0), self.number(d, b"LLO").unwrap_or(0.0)]);
+        }
+        a.caption_offset = self.nums(d, b"CO").filter(|v| v.len() == 2).map(|v| [v[0], v[1]]);
         if let Some(Object::Array(strokes)) = self.get(d, b"InkList") {
             a.ink = Some(
                 strokes
