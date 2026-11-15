@@ -204,6 +204,8 @@
     </div>
   </div>
 
+  <!-- Text markups: no weight or pattern for markups without a line (kind.ts, lineless) -->
+  {#if !kinds.every((k) => kindOf(k).lineless)}
   <span class="sep" aria-hidden="true"></span>
   <div class="prop">
     <label class="k" for="{idp}-weight">Weight</label>
@@ -212,6 +214,7 @@
       <PopChoice label="Line pattern" options={PATTERNS} value={dashOption(p.style.dash)?.name ?? null} compact={narrow} {out} sample={dashSample} onChange={(k) => p.onStyle({ dash: DASHES.find((o) => o.name === k)?.dash ?? null })} />
     </div>
   </div>
+  {/if}
 
   {#if !p.noEnds && kinds.some((k) => kindOf(k).controls.ends)}
     {@const ends = arrowEnds(p.style)}

@@ -1,0 +1,253 @@
+// Phase 7a's kinds (docs/editing-phase7-scope.md): the highlighter, the callout, text markups
+// and notes. Drawing operations, annotation spec, hit-testing, grips and moving.
+
+import { afterEach, describe, expect, it } from "vitest";
+import { type MarkupKind, type MarkupOf, defaultStyle } from "../types";
+import { type PathOp, opsFor } from "../ops";
+import { toSpec } from "../spec";
+import { toContent } from "../pdf";
+import type { Frame } from "../pdf";
+import { dragHandle, handles, hits, moveBy, shapeBounds } from "../geometry";
+import { pinScale, pinView } from "../pin";
+import { attachPoint, leader } from "./callout";
+import { fitText } from "./text";
+import { type MarkQuad, type TextMarkVariant, textMarkStyle } from "./textmark";
+import { kindOf, labelOf } from ".";
+
+const A4: Frame = { quarterTurns: 0, bbox: [0, 0, 595, 842] };
+const meta = { author: "Tester", created: "2026-11-15T10:00:00Z", modified: "2026-11-15T10:00:00Z" };
+
+export function mk<K extends MarkupKind>(kind: K, shape: Record<string, unknown>, style: Record<string, unknown> = {}): MarkupOf<K> {
+  return { id: `t-${kind}`, page: 0, kind, style: { ...defaultStyle(kind), ...style }, meta, ...shape } as unknown as MarkupOf<K>;
+}
+
+const paths = (ops: ReturnType<typeof opsFor>) => ops.filter((o): o is PathOp => o.t === "path");
+
+describe("highlighter", () => {
+  const hl = () => mk("highlighter", { strokes: [[[100, 100], [150, 110], [200, 100]]] });
+
+  it("starts yellow, 12 pt, 40% see-through", () => {
+    const s = defaultStyle("highlighter");
+    expect(s.width).toBe(12);
+    expect(s.opacity).toBeCloseTo(0.4);
+    expect(s.stroke[0]).toBeGreaterThan(0.9);
+    expect(s.stroke[2]).toBeLessThan(0.1);
+  });
+
+  it("draws one multiplied stroke", () => {
+    const ops = paths(opsFor(hl()));
+    expect(ops).toHaveLength(1);
+    expect(ops[0].blend).toBe("multiply");
+    expect(ops[0].width).toBe(12);
+  });
+
+  it("saves as Ink with the multiply blend mode in its graphics state", () => {
+    const spec = toSpec(hl(), A4);
+    expect(spec.subtype).toBe("Ink");
+    expect(spec.blend).toBe("Multiply");
+    expect(spec.ink?.[0]).toHaveLength(6);
+    expect(spec.appearance.ops).toContain("/GS0 gs");
+    expect(spec.appearance.opacity).toBeCloseTo(0.4);
+    expect(spec.interior).toBeUndefined();
+  });
+
+  it("names /GS0 for a blended path even when it isn't see-through", () => {
+    const op: PathOp = { t: "path", segs: [["M", 0, 0], ["L", 10, 0]], stroke: [1, 1, 0], fill: null, width: 2, dash: null, strokeOpacity: 1, fillOpacity: 1, blend: "multiply" };
+    const c = toContent(A4, [op]);
+    expect(c.ops.match(/\/GS0 gs/g)).toHaveLength(1);
+    expect(c.opacity).toBe(1);
+    expect(c.fillOpacity).toBe(1);
+    // Without a blend, an opaque path names nothing.
+    expect(toContent(A4, [{ ...op, blend: undefined }]).opacity).toBeNull();
+  });
+});
+
+describe("callout", () => {
+  const co = (shape: Record<string, unknown> = {}) =>
+    mk("callout", { tip: [50, 50], elbow: null, rect: [150, 90, 270, 110], text: "Check", textStyle: { size: 10, colour: [0, 0, 0] }, ...shape });
+
+  it("meets the box at the middle of the side facing the leader", () => {
+    expect(attachPoint([100, 100, 200, 140], [50, 120])).toEqual([100, 120]);
+    expect(attachPoint([100, 100, 200, 140], [260, 90])).toEqual([200, 120]);
+    expect(attachPoint([100, 100, 200, 140], [150, 20])).toEqual([150, 100]);
+    expect(attachPoint([100, 100, 200, 140], [150, 300])).toEqual([150, 140]);
+    expect(attachPoint([100, 100, 200, 140], [150, 120])).toBeNull();
+    expect(leader(co())).toEqual([[50, 50], [150, 100]]);
+    expect(leader(co({ elbow: [100, 100] }))).toEqual([[50, 50], [100, 100], [150, 100]]);
+  });
+
+  it("draws the leader with its head at the tip, then the box over it", () => {
+    const ops = opsFor(co());
+    const p = paths(ops);
+    // The open head's wings meet at the tip.
+    expect(p[0].segs.some((s) => s[0] === "L" && Math.abs(s[1] - 50) < 1e-6 && Math.abs(s[2] - 50) < 1e-6)).toBe(true);
+    expect(ops[ops.length - 1].t).toBe("text");
+  });
+
+  it("saves as a FreeText callout: /IT, /CL from tip to box, one /LE, and /RD for the box", () => {
+    const spec = toSpec(co({ elbow: [100, 100] }), A4);
+    expect(spec.subtype).toBe("FreeText");
+    expect(spec.intent).toBe("FreeTextCallout");
+    expect(spec.contents).toBe("Check");
+    // User space, y up: the tip at (50, 842 - 50).
+    expect(spec.callout).toEqual([50, 792, 100, 742, 150, 742]);
+    expect(spec.lineEnds).toEqual(["OpenArrow"]);
+    // The box sits at the top right of /Rect, which reaches down and left to the tip.
+    const [l, b, r, t] = spec.inset!;
+    expect(spec.rect[0] + l).toBeCloseTo(150, 0);
+    expect(spec.rect[2] - r).toBeCloseTo(270, 0);
+    expect(spec.rect[3] - t).toBeCloseTo(842 - 90, 0);
+    expect(spec.rect[1] + b).toBeCloseTo(842 - 110, 0);
+    expect(spec.defaultAppearance).toContain("Tf");
+  });
+
+  it("follows the page's rotation into user space", () => {
+    const f: Frame = { quarterTurns: 1, bbox: [0, 0, 595, 842] };
+    const spec = toSpec(co(), f);
+    // toUser for a quarter turn: (x, y) -> (y, x).
+    expect(spec.callout!.slice(0, 2)).toEqual([50, 50]);
+    expect(spec.rotate).toBe(90);
+  });
+
+  it("moves its box and elbow, never its tip", () => {
+    const m = moveBy(co({ elbow: [100, 100] }), 10, 5) as MarkupOf<"callout">;
+    expect(m.tip).toEqual([50, 50]);
+    expect(m.elbow).toEqual([110, 105]);
+    expect(m.rect).toEqual([160, 95, 280, 115]);
+  });
+
+  it("has grips for the box, the tip and the elbow; the middle grip makes an elbow", () => {
+    const m = co();
+    const hs = handles(m);
+    expect(hs.find((h) => h.id === "from")?.at).toEqual([50, 50]);
+    expect(hs.find((h) => h.id === "to")?.at).toEqual([100, 75]);
+    const bent = dragHandle(m, "to", [60, 120], false) as MarkupOf<"callout">;
+    expect(bent.elbow).toEqual([60, 120]);
+    const moved = dragHandle(m, "from", [20, 20], false) as MarkupOf<"callout">;
+    expect(moved.tip).toEqual([20, 20]);
+    expect(moved.rect).toEqual(m.rect);
+    const wider = dragHandle(m, "e", [300, 100], false) as MarkupOf<"callout">;
+    expect(wider.rect[2]).toBeCloseTo(300);
+    expect(wider.tip).toEqual([50, 50]);
+  });
+
+  it("is picked on its box and its leader", () => {
+    const m = co();
+    expect(hits(m, [200, 100], 1)).toBe(true);
+    expect(hits(m, [100, 75], 1)).toBe(true);
+    expect(hits(m, [100, 40], 1)).toBe(false);
+  });
+
+  it("grows to fit its text, as a text box does", () => {
+    const m = fitText(co({ text: "A much longer note that wraps over several lines in a box this narrow" }));
+    expect(m.rect[3] - m.rect[1]).toBeGreaterThan(30);
+  });
+});
+
+describe("text markups", () => {
+  const q1: MarkQuad = [[100, 100], [200, 100], [100, 114], [200, 114]];
+  const q2: MarkQuad = [[100, 120], [160, 120], [100, 134], [160, 134]];
+  const tm = (variant: TextMarkVariant, quads = [q1, q2]) => mk("textmark", { variant, quads, text: "Some text" }, { ...textMarkStyle(variant) });
+
+  it("highlights by filling each line's quad, multiplied", () => {
+    const ops = paths(opsFor(tm("highlight")));
+    expect(ops).toHaveLength(1);
+    expect(ops[0].blend).toBe("multiply");
+    expect(ops[0].stroke).toBeNull();
+    expect(ops[0].fill).toEqual(textMarkStyle("highlight").stroke);
+    expect(ops[0].segs.filter((s) => s[0] === "Z")).toHaveLength(2);
+  });
+
+  it("underlines and strikes through each line, across the quad and as thick as a fourteenth of it", () => {
+    const u = paths(opsFor(tm("underline")));
+    expect(u).toHaveLength(2);
+    expect(u[0].segs[0]).toEqual(["M", 100, 100 + 14 * 0.88]);
+    expect(u[0].width).toBeCloseTo(1);
+    expect(u[0].blend).toBeUndefined();
+    const s = paths(opsFor(tm("strike")));
+    expect(s[1].segs[1]).toEqual(["L", 160, 120 + 14 * 0.58]);
+  });
+
+  it("follows the quad's direction: a line reading down the page is struck down the page", () => {
+    // Glyph tops facing right: top left at x 60, bottom left at x 50.
+    const down: MarkQuad = [[60, 100], [60, 124], [50, 100], [50, 124]];
+    const s = paths(opsFor(tm("strike", [down])))[0];
+    expect(s.segs[0][1]).toBeCloseTo(60 - 10 * 0.58);
+    expect(s.segs[0][2]).toBeCloseTo(100);
+    expect(s.segs[1][2]).toBeCloseTo(124);
+  });
+
+  it("saves as Highlight, Underline or StrikeOut with /QuadPoints in user space", () => {
+    const h = toSpec(tm("highlight"), A4);
+    expect(h.subtype).toBe("Highlight");
+    expect(h.blend).toBe("Multiply");
+    expect(h.quadPoints).toEqual([100, 742, 200, 742, 100, 728, 200, 728, 100, 722, 160, 722, 100, 708, 160, 708]);
+    expect(h.borderWidth).toBeUndefined();
+    expect(toSpec(tm("underline"), A4).subtype).toBe("Underline");
+    const s = toSpec(tm("strike"), A4);
+    expect(s.subtype).toBe("StrikeOut");
+    expect(s.blend).toBeUndefined();
+    // On a page turned a quarter, the points turn with it (toUser: (x, y) -> (y, x)).
+    expect(toSpec(tm("highlight"), { quarterTurns: 1, bbox: [0, 0, 595, 842] }).quadPoints!.slice(0, 4)).toEqual([100, 100, 100, 200]);
+  });
+
+  it("is picked inside its quads, has no grips and doesn't move", () => {
+    const m = tm("highlight");
+    expect(hits(m, [150, 107], 1)).toBe(true);
+    expect(hits(m, [150, 140], 1)).toBe(false);
+    expect(handles(m)).toEqual([]);
+    expect(moveBy(m, 10, 10)).toBe(m);
+    expect(labelOf(m)).toBe("Highlight");
+    expect(labelOf(tm("strike"))).toBe("Strike through");
+  });
+});
+
+describe("note", () => {
+  const nt = (shape: Record<string, unknown> = {}) => mk("note", { at: [100, 100], text: "Check the fixing", ...shape });
+  afterEach(() => {
+    pinView.ptPerPx = 1;
+  });
+
+  it("draws its icon pinned at its corner, in its colour with a darker outline", () => {
+    const ops = paths(opsFor(nt()));
+    expect(ops.every((o) => o.pin && o.pin[0] === 100 && o.pin[1] === 100)).toBe(true);
+    expect(ops[0].fill).toEqual(defaultStyle("note").stroke);
+    expect(ops[0].stroke![0]).toBeLessThan(ops[0].fill![0]);
+  });
+
+  it("saves as a Text annotation: its wording, the Note icon, 20 points square, NoZoom", () => {
+    const spec = toSpec(nt(), A4);
+    expect(spec.subtype).toBe("Text");
+    expect(spec.contents).toBe("Check the fixing");
+    expect(spec.icon).toBe("Note");
+    expect(spec.flags).toBe(12);
+    expect(spec.rect[2] - spec.rect[0]).toBeGreaterThanOrEqual(20);
+    expect(spec.rect[2] - spec.rect[0]).toBeLessThan(24);
+    expect(spec.borderWidth).toBeUndefined();
+  });
+
+  it("is picked over its icon at the size it was last drawn on screen", () => {
+    const m = nt();
+    expect(hits(m, [115, 115], 0)).toBe(true);
+    expect(hits(m, [130, 115], 0)).toBe(false);
+    // Zoomed out to a quarter: the icon covers four times the page.
+    pinView.ptPerPx = 4;
+    expect(hits(m, [160, 160], 0)).toBe(true);
+    expect(shapeBounds(m)).toEqual([100, 100, 180, 180]);
+  });
+
+  it("records the pin scale from the canvas transform", () => {
+    // Two device pixels per point at a device pixel ratio of 1: half a point per CSS pixel.
+    expect(pinScale([2, 0, 0, 2, 0, 0], 1)).toBe(0.5);
+    expect(pinView.ptPerPx).toBe(0.5);
+    // Rotated a quarter, the same scale.
+    expect(pinScale([0, 2, -2, 0, 0, 0], 2)).toBe(1);
+  });
+
+  it("moves, has no grips, and has no line weight to set", () => {
+    const m = moveBy(nt(), 5, -5) as MarkupOf<"note">;
+    expect(m.at).toEqual([105, 95]);
+    expect(handles(m)).toEqual([]);
+    expect(kindOf("note").lineless).toBe(true);
+  });
+});

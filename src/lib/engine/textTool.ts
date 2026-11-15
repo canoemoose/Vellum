@@ -10,6 +10,7 @@ import { type TextLayer, type TextLink, textOf } from "../text/layer";
 import { CharIndex, LineIndex, fitHighlight, lineRange, rangeRects, wordRange } from "../text/hit";
 import { type Caret, type Selection, isEmpty, joinPages, ordered, rangeOnPage, selectedPages } from "../text/selection";
 import { followableUrl, linkAt } from "../text/links";
+import { type Quad, lineQuads } from "../text/quads"; // Text markups
 
 interface Entry {
   layer: TextLayer;
@@ -384,3 +385,49 @@ export class TextTool {
 }
 
 // Text markups
+
+/** One page's part of a text selection, as text markups take it (markup/kinds/textmark.ts). */
+export interface SelectionLines {
+  page: number;
+  /** One per selected line, along the text (text/quads.ts). */
+  quads: Quad[];
+  text: string;
+}
+
+/**
+ * The selection's lines, page by page, for marking up: each page's quads and text. Pages whose
+ * text can't be read are left out. Empty with no selection.
+ */
+export async function selectionLines(tool: TextTool): Promise<SelectionLines[]> {
+  const s = tool.selection;
+  if (!s || isEmpty(s)) return [];
+  const [a, b] = ordered(s);
+  const out: SelectionLines[] = [];
+  for (let page = a.page; page <= b.page; page++) {
+    const e = await tool.load(page);
+    if (!e) continue;
+    const r = rangeOnPage(s, page, e.layer.n);
+    if (!r) continue;
+    const quads = lineQuads(e.layer, r[0], r[1]);
+    if (quads.length) out.push({ page, quads, text: textOf(e.layer, r[0], r[1]).trim() });
+  }
+  return out;
+}
+
+/**
+ * Where the selection ends on the page, for placing the bar beside it: the last selected
+ * line's quad on the last page whose text is loaded (fetching it if need be). Null with none.
+ */
+export async function selectionEnd(tool: TextTool): Promise<{ page: number; quad: Quad } | null> {
+  const s = tool.selection;
+  if (!s || isEmpty(s)) return null;
+  const [a, b] = ordered(s);
+  for (let page = b.page; page >= a.page; page--) {
+    const e = await tool.load(page);
+    if (!e) continue;
+    const r = rangeOnPage(s, page, e.layer.n);
+    const quads = r ? lineQuads(e.layer, r[0], r[1]) : [];
+    if (quads.length) return { page, quad: quads[quads.length - 1] };
+  }
+  return null;
+}

@@ -35,7 +35,7 @@ export type Draw<M extends Markup> =
    * way makes nothing), "line" two points (under 4 px makes nothing). `max`: it finishes by
    * itself on that many points (an angle's three).
    */
-  | { gesture: "points"; make(pts: Pt[]): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" }
+  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" }
   /** Freehand: the pointer's path while pressed, simplified when let go. */
   | { gesture: "freehand"; make(strokes: Pt[][]): Shape<M> }
   /**
@@ -83,6 +83,15 @@ export interface KindDef<M extends Markup = Markup> {
   restyled?(before: M, after: M): M;
   /** It holds text typed on the canvas: typing starts once it's drawn, and a double-click edits it. */
   typed?: boolean;
+  // Text markups
+  /**
+   * It marks up the page's own text (a highlight): made from a text selection rather than drawn
+   * with a tool (so it has no tool), never moved or resized, and a press on it selects it and
+   * leaves the press to text selection.
+   */
+  ofText?: boolean;
+  /** It has no line to weigh or pattern (a text highlight, a note): the properties bar leaves those out. */
+  lineless?: boolean;
   /**
    * What Vellum's private copy in the saved annotation keeps of it (../reedit.ts), when not
    * the whole markup: an image is referred to by its hash, never carried a second time.

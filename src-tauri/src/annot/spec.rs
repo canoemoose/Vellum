@@ -92,6 +92,15 @@ pub struct AnnotSpec {
     // Stamps
 
     // Text markups
+    /// /BM for the appearance's /GS0 graphics state ("Multiply" for highlights).
+    #[serde(default)]
+    pub blend: Option<String>,
+    /// /QuadPoints for Highlight, Underline and StrikeOut: eight numbers per quad, in user space.
+    #[serde(default)]
+    pub quad_points: Option<Vec<f64>>,
+    /// /Name for a Text annotation (a note): its icon.
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 /// One change to save.

@@ -362,9 +362,20 @@ impl Writer {
         // Stamps
 
         // Text markups
+        if let Some(q) = &s.quad_points {
+            d.set("QuadPoints", reals(q));
+        }
+        if let Some(n) = &s.icon {
+            d.set("Name", Object::Name(n.as_bytes().to_vec()));
+        }
 
         let ap = self.appearance_stream(&s.appearance)?;
         d.set("AP", dictionary! { "N" => Object::Reference(ap) });
+        // Text markups: the blend mode goes into the appearance's /GS0 (made here if the
+        // appearance had no opacity to give it).
+        if let Some(bm) = &s.blend {
+            self.set_blend(ap, bm)?;
+        }
         Ok(d)
     }
 
@@ -400,6 +411,26 @@ impl Writer {
         let mut st = Stream::new(dict, a.ops.clone().into_bytes());
         st.compress().map_err(|e| e.to_string())?;
         Ok(self.inc.new_document.add_object(st))
+    }
+
+    // Text markups
+    /// Give appearance stream `ap`'s /GS0 the blend mode `bm` (/BM), making /GS0 if need be.
+    fn set_blend(&mut self, ap: ObjectId, bm: &str) -> Result<(), String> {
+        let st = self.inc.new_document.get_object_mut(ap).and_then(|o| o.as_stream_mut()).map_err(|e| e.to_string())?;
+        let res = match st.dict.get_mut(b"Resources") {
+            Ok(Object::Dictionary(r)) => r,
+            _ => return Err("appearance has no resources".into()),
+        };
+        if !matches!(res.get(b"ExtGState"), Ok(Object::Dictionary(_))) {
+            res.set("ExtGState", Dictionary::new());
+        }
+        let Ok(Object::Dictionary(gs)) = res.get_mut(b"ExtGState") else { unreachable!() };
+        if !matches!(gs.get(b"GS0"), Ok(Object::Dictionary(_))) {
+            gs.set("GS0", dictionary! { "Type" => "ExtGState" });
+        }
+        let Ok(Object::Dictionary(g0)) = gs.get_mut(b"GS0") else { unreachable!() };
+        g0.set("BM", Object::Name(bm.as_bytes().to_vec()));
+        Ok(())
     }
 
     /// Add a new annotation. Returns its object number.

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { GROUPS, TOOLS, groupFace, keyLabel, paletteGroups, paletteLayout, toolById, toolDefaults, toolForKey, toolForMarkup, toolTip } from "./tools";
-import { KINDS } from "./kinds";
+import { KINDS, kindOf } from "./kinds";
 import { type Markup, defaultStyle } from "./types";
 import { defaultPrefs, sanitisePrefs, styleFor } from "./prefs";
 import { SHORTCUTS } from "../shell/shortcuts";
@@ -24,7 +24,8 @@ describe("the tool registry", () => {
 
   it("draws only kinds that exist, and every kind has a tool", () => {
     for (const t of TOOLS) if (t.kind) expect(Object.keys(KINDS)).toContain(t.kind);
-    for (const k of Object.keys(KINDS)) expect(TOOLS.some((t) => t.kind === k), k).toBe(true);
+    // Text markups are made from a text selection, not with a tool (kind.ts, ofText).
+    for (const k of Object.keys(KINDS)) if (!kindOf(k as keyof typeof KINDS).ofText) expect(TOOLS.some((t) => t.kind === k), k).toBe(true);
     expect(toolById("select")?.kind).toBeUndefined();
   });
 

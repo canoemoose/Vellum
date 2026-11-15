@@ -70,6 +70,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: "Drag over text", action: "Select text" },
       { keys: "Double-click / triple-click", action: "Select a word / a line" },
       { keys: "Ctrl+C", action: "Copy the selected text" },
+      { keys: "Ctrl+H / Ctrl+U / Ctrl+Shift+X", action: "Highlight / underline / strike through the selected text" },
       { keys: "Ctrl+A", action: "Select all the text on the page" },
       { keys: "Esc", action: "Clear the selection" },
       { keys: "Click a link", action: "Follow it (web links open in the browser)" },

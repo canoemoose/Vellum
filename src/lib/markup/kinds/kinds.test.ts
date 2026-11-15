@@ -28,6 +28,13 @@ const SAMPLES: { [K in MarkupKind]: () => MarkupOf<K> } = {
   ellipse: () => mk("ellipse", { rect: [100, 100, 200, 150] }),
   polyline: () => mk("polyline", { vertices: [[100, 100], [150, 150], [200, 100]] }),
   polygon: () => mk("polygon", { vertices: [[100, 100], [200, 100], [150, 150]] }),
+  // Text markups
+  highlighter: () => mk("highlighter", { strokes: [[[100, 100], [150, 130], [200, 150]]] }),
+  // A callout's tip stays put when it moves, so it points below and right of its box here,
+  // where the box's corner (which moves) is the bounds' top left.
+  callout: () => mk("callout", { tip: [250, 180], elbow: null, rect: [100, 100, 220, 130], text: "Note", textStyle: { size: 10, colour: [0, 0, 0] } }),
+  textmark: () => mk("textmark", { variant: "highlight", quads: [[[100, 100], [200, 100], [100, 110], [200, 110]]], text: "Hello" }),
+  note: () => mk("note", { at: [100, 100], text: "Check this" }),
 };
 
 const paths = (m: Markup) => opsFor(m).filter((o): o is PathOp => o.t === "path");
@@ -54,11 +61,15 @@ describe("the kind registry", () => {
       expect(spec.subtype.length).toBeGreaterThan(0);
       const b = shapeBounds(m);
       expect(b[2]).toBeGreaterThan(b[0]);
-      expect(handles(m).length, k).toBeGreaterThan(0);
+      // Text markups belong to the text: no grips, and they don't move (kind.ts, ofText).
+      if (kindOf(k).ofText) continue;
       const moved = moveBy(m, 10, 5);
       const mb = shapeBounds(moved);
       expect(mb[0]).toBeCloseTo(b[0] + 10);
       expect(mb[1]).toBeCloseTo(b[1] + 5);
+      // A note has no grips (it isn't resized; selected, it shows its box): every other kind has.
+      if (k === "note") continue;
+      expect(handles(m).length, k).toBeGreaterThan(0);
       // The first grip, dragged a little, keeps the kind.
       const h = handles(m)[0];
       expect(dragHandle(m, h.id, [h.at[0] - 5, h.at[1] - 5], false).kind).toBe(k);

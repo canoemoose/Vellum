@@ -72,7 +72,8 @@ export const text = defineKind<TextMarkup>({
   typed: true,
 });
 
-function textOps(r: Rect, text: string, ts: TextStyle, s: Style): Op[] {
+/** A text box's drawing: its border and background, the text, and any underline or strikethrough. */
+export function textOps(r: Rect, text: string, ts: TextStyle, s: Style): Op[] {
   const t = fullText(ts);
   const size = t.size, colour: Rgb = t.colour;
   const [x0, y0, x1, y1] = normRect(r);
@@ -142,9 +143,12 @@ function textNeed(m: TextMarkup): number {
   return textHeight(textLines(m.text, r, m.textStyle, m.style.width).length, m.textStyle, m.style.width);
 }
 
-/** Grow (never shrink) a text box so its text fits its width. Anything else passes through. */
+/**
+ * Grow (never shrink) a text box, or any markup holding text in a box (a callout), so its
+ * text fits its width. Anything else passes through.
+ */
 export function fitText<M extends MarkupBase & { kind: string }>(m: M): M {
-  if (m.kind !== "text") return m;
+  if (!("rect" in m && "text" in m && "textStyle" in m)) return m;
   const t = m as unknown as TextMarkup;
   const r = normRect(t.rect);
   const need = textNeed(t);

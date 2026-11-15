@@ -8,7 +8,7 @@ import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor } from "../markup/ops";
 import { fitText } from "../markup/kinds/text";
-import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, rectPts, simplify, snapAngle, squareFrom } from "../markup/geometry";
+import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, rectPts, shapeBounds, simplify, snapAngle, squareFrom } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
 import type { DrawContext, KindDef, Shape } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
@@ -143,6 +143,27 @@ export class MarkupTool {
       this.doc.selection.clear();
       this.redraw();
     }
+  }
+
+  // Text markups: markups made outside a gesture (text markups from a selection, a note's text).
+
+  /** Add markups as one undo step and select them. */
+  addMarkups(ms: Markup[]): void {
+    if (!this.doc || !ms.length) return;
+    this.commit([...this.markups, ...ms]);
+    this.select(ms.map((m) => m.id));
+  }
+
+  /** Change one markup (by id) as one undo step, stamping its modification time. */
+  updateMarkup(next: Markup): void {
+    if (!this.doc?.byId(next.id)) return;
+    this.commit(this.markups.map((m) => (m.id === next.id ? touch(next) : m)));
+  }
+
+  /** Remove one markup (by id) as one undo step. */
+  removeMarkup(id: string): void {
+    if (!this.doc?.byId(id)) return;
+    this.commit(this.markups.filter((m) => m.id !== id));
   }
 
   undo(): void {
@@ -311,6 +332,14 @@ export class MarkupTool {
       if (!mods.shift) this.clearSelection();
       return false; // the text tool, then the marquee, get it
     }
+    // Text markups: a press on a text markup selects it and goes on to text selection, so the
+    // text under a highlight can still be selected and copied.
+    if (defOf(hit).ofText) {
+      if (mods.shift && this.doc.selection.has(hit.id)) this.doc.selection.delete(hit.id);
+      else this.select([hit.id], mods.shift);
+      this.redraw();
+      return false;
+    }
     if (clicks === 2 && defOf(hit).typed) {
       this.select([hit.id]);
       this.startText(hit.id, false);
@@ -415,7 +444,11 @@ export class MarkupTool {
         let h: HandleId | null = null;
         for (const m of this.selected()) if (!h && m.page === at.page) h = handleAt(m, at.p, this.tolPt(HANDLE_PX));
         if (h) c = handleCursor(h, this.viewer.rotation);
-        else if (this.topAt(at.page, at.p)) c = "move";
+        else {
+          // Text markups don't move: over one, the text tool's cursor shows.
+          const top = this.topAt(at.page, at.p);
+          if (top && !defOf(top).ofText) c = "move";
+        }
       }
     }
     const c0 = this.clicking;
@@ -508,10 +541,13 @@ export class MarkupTool {
         break;
       case "points":
         // Pressed and dragged: a rectangle of points, or a straight line, in one go.
-        if (d.drag === "box") make(d.make(rectPts(normRect([a[0], a[1], p[0], p[1]]))));
-        else make(d.make([a, mods.shift ? snapAngle(a, p) : p]));
+        if (d.drag === "box") make(d.make(rectPts(normRect([a[0], a[1], p[0], p[1]])), this.drawContext));
+        else make(d.make([a, mods.shift ? snapAngle(a, p) : p], this.drawContext));
         break;
       case "freehand": {
+        // Text markups: Shift draws a straight stroke from the press (the highlighter's rule,
+        // and the pen's too, since the gesture is shared).
+        if (mods.shift) g.points = [a, p];
         const last = g.points[g.points.length - 1];
         if (Math.hypot(p[0] - last[0], p[1] - last[1]) * this.viewer.view.scale >= 1.5) g.points.push(p);
         make(d.make([g.points.slice()]));
@@ -577,10 +613,13 @@ export class MarkupTool {
     // A double-click adds its point twice: drop repeats.
     const pts = c.points.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 1e-6);
     if (keep && pts.length >= c.def.draw.min) {
-      let m = this.newMarkup(c.def, c.page, c.def.draw.make(pts));
+      let m = this.newMarkup(c.def, c.page, c.def.draw.make(pts, this.drawContext));
       if (c.def.finish) m = c.def.finish(m);
-      this.commit([...this.markups, m]);
+      const before = this.markups;
+      this.commit([...before, m]);
       this.select([m.id]);
+      // Text markups: a callout is clicked out, then typed into.
+      if (c.def.typed) this.startText(m.id, true, before);
     }
     this.viewer.requestFrame();
   }
@@ -680,6 +719,17 @@ export class MarkupTool {
       if (x.id === editing) continue;
       ctx.strokeStyle = accent;
       ctx.lineWidth = 1;
+      // Text markups: a markup with no grips (a text highlight, a note) shows its box instead.
+      if (!handles(x).length) {
+        const b = shapeBounds(x);
+        const pts = ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] as Pt[]).map(dev);
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       for (const h of handles(x)) {
         const [hx, hy] = dev(h.at);
         ctx.fillStyle = "#ffffff";

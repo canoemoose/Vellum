@@ -6,6 +6,7 @@
 import type { Op } from "../markup/ops";
 import { cssFont } from "../markup/fonts";
 import type { Rgb } from "../markup/types";
+import { pinScale } from "../markup/pin"; // Text markups
 
 const css = (c: Rgb, a = 1) => `rgba(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)}, ${a})`;
 
@@ -20,6 +21,13 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
     // Stamps
 
     // Text markups
+    if (op.t === "path" && op.blend) ctx.globalCompositeOperation = op.blend;
+    if (op.t === "path" && op.pin) {
+      const k = pinScale(m);
+      ctx.translate(op.pin[0], op.pin[1]);
+      ctx.scale(k, k);
+      ctx.translate(-op.pin[0], -op.pin[1]);
+    }
     if (op.t === "path") {
       if (op.decoration && hideText) {
         ctx.restore();
