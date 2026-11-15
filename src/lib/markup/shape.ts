@@ -99,6 +99,11 @@ export function snapAngle(a: Pt, b: Pt): Pt {
   return [a[0] + len * Math.cos(ang), a[1] + len * Math.sin(ang)];
 }
 
+/** `b` moved onto the horizontal or vertical through `a`, whichever is nearer (ortho on the page). */
+export function orthoFrom(a: Pt, b: Pt): Pt {
+  return Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? [b[0], a[1]] : [a[0], b[1]];
+}
+
 /** Make the box from fixed corner `a` to `b` square (Shift). */
 export function squareFrom(a: Pt, b: Pt): Pt {
   const dx = b[0] - a[0], dy = b[1] - a[1];

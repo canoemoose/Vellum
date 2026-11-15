@@ -1,4 +1,4 @@
-// Arrow: drag from tail to head (Shift: 15 degree steps), with a style for each end. Saved as a
+// Arrow: drag from tail to head, or click each (Shift: 15 degree steps), with a style for each end. Saved as a
 // Line annotation. The Line tool is this kind with both ends "none" (a preset in ../tools.ts).
 
 import { type MarkupBase, type Pt, DEFAULT_ENDS, LINE_STYLE, arrowEnds, normRect } from "../base";
@@ -27,7 +27,7 @@ export const arrow = defineKind<ArrowMarkup>({
   labelOf: (m) => (arrowEnds(m.style).every((e) => e === "none") ? "Line" : "Arrow"),
   defaultStyle: () => ({ ...LINE_STYLE, ends: [...DEFAULT_ENDS] }),
   controls: { fill: false, ends: true, text: false },
-  draw: { gesture: "line", make: (from, to) => ({ from, to }) },
+  draw: { gesture: "points", make: (pts) => ({ from: pts[0], to: pts[pts.length - 1] }), closed: false, min: 2, max: 2, drag: "line" },
   ops: (m) => endedLine([m.from, m.to], arrowEnds(m.style), m.style),
   spec(m, f, spec) {
     const s = m.style;

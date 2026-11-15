@@ -18,31 +18,45 @@ export interface DrawContext {
   textStyle: TextStyle;
 }
 
-/** The gesture that draws a kind, and how its result becomes the kind's geometry. */
+/**
+ * The gesture that draws a kind, and how its result becomes the kind's geometry. Rule 1 (docs/
+ * editing-tool-consistency-brief.md): tools that share a gesture behave identically in it, so
+ * a kind picks a gesture and its options here; it never adjusts how the gesture behaves.
+ *
+ * Every dragged box is under MIN_BOX_PX either way makes nothing (or, with `click`, the clicked
+ * one). Shift toggles the lock (rule 2): 15 degree steps for a line or a clicked point, square
+ * for a box being drawn; a kind with `lock: "ortho"` starts locked to horizontal and vertical on
+ * the page and Shift frees it.
+ */
 export type Draw<M extends Markup> =
-  /** Press at one end, let go at the other. Shift snaps to 15 degrees. Under 4 px makes nothing. */
-  | { gesture: "line"; make(a: Pt, b: Pt): Shape<M> }
   /**
-   * Drag a box; Shift makes it square. Under 4 px both ways makes nothing, unless `click` is
-   * given: then a click, or a drag under 8 px both ways, makes one at the point.
+   * Drag a box corner to corner; Shift makes it square. Under the minimum either way makes
+   * nothing, unless `click` is given: then a click, or a drag under the minimum, makes one at
+   * the point.
    */
   | { gesture: "box"; make(r: Rect, ctx: DrawContext): Shape<M>; click?(a: Pt, ctx: DrawContext): Shape<M> }
   /**
-   * Click points; double-click or Enter finishes, Esc abandons. Shift snaps each point to 15
-   * degrees from the last. `closed`: a shape (the rubber band shows the closing edge, and a
-   * click on the first point also finishes). `min`: the fewest points it takes. Pressing and
-   * dragging instead makes one in a go: `drag` "box" a rectangle of points (under 4 px either
-   * way makes nothing), "line" two points (under 4 px makes nothing). `max`: it finishes by
-   * itself on that many points (an angle's three).
+   * Click points; double-click or Enter finishes, Esc abandons, Backspace (or Ctrl+Z) takes back
+   * the last point, and a right-click offers all three. Shift toggles the lock on each point from
+   * the last. `closed`: a shape (the rubber band shows the closing edge, and a click on the first
+   * point also finishes). `min`: the fewest points it takes. Pressing and dragging instead makes
+   * one in a go: `drag` "box" a rectangle of points (Shift squares it), "line" two points.
+   * `max`: it finishes by itself on that many points (a line's two, an angle's three).
+   * `say`: how its points read in the tooltip, where `max` gives them meanings ("click the
+   * corner, then each arm's end").
    */
-  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line" }
-  /** Freehand: the pointer's path while pressed, simplified when let go. */
+  | { gesture: "points"; make(pts: Pt[], ctx: DrawContext): Shape<M>; closed: boolean; min: number; max?: number; drag: "box" | "line"; lock?: "ortho"; say?: string }
+  /** Freehand: the pointer's path while pressed, simplified when let go. Shift draws it straight. */
   | { gesture: "freehand"; make(strokes: Pt[][]): Shape<M> }
   /**
    * Place at a click, centred on the pointer, with a preview following the pointer before the
-   * click; or drag to size it (`box`; without it, a drag places at the press).
+   * click; or drag to size it (`box`; without it, a drag places at the press). A box under the
+   * minimum either way places at the press.
    */
   | { gesture: "place"; make(at: Pt, ctx: DrawContext): Shape<M>; box?(r: Rect, ctx: DrawContext): Shape<M> };
+
+/** CSS px: a dragged box under this either way makes nothing (rule 1: one minimum for all). */
+export const MIN_BOX_PX = 4;
 
 export type Gesture = Draw<Markup>["gesture"];
 
@@ -83,6 +97,14 @@ export interface KindDef<M extends Markup = Markup> {
   restyled?(before: M, after: M): M;
   /** It holds text typed on the canvas: typing starts once it's drawn, and a double-click edits it. */
   typed?: boolean;
+  /** Typing follows drawing it (a text box, a callout, a note): its tooltip says so. */
+  typesAfter?: boolean;
+  /**
+   * Typing ended with no text: whether it stays (rule 3). A callout and a note stay, to be
+   * filled in later; a text box only if something would show it's there. Without this, an
+   * empty one is dropped.
+   */
+  keepEmpty?(m: M): boolean;
   // Text markups
   /**
    * It marks up the page's own text (a highlight): made from a text selection rather than drawn

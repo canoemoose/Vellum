@@ -77,6 +77,7 @@ export const callout = defineKind<CalloutMarkup>({
     min: 2,
     max: 3,
     drag: "line",
+    say: "click what it points at, then an elbow if you want one, then where the box goes (double-click there to leave out the elbow)",
     make(pts, ctx) {
       const tip = pts[0];
       const elbow = pts.length >= 3 ? pts[1] : null;
@@ -128,4 +129,7 @@ export const callout = defineKind<CalloutMarkup>({
   settle: (m) => fitText(m),
   restyled: (before, after) => refitText(before, after),
   typed: true,
+  typesAfter: true,
+  // Empty, it stays, to be filled in later (rule 3).
+  keepEmpty: () => true,
 });

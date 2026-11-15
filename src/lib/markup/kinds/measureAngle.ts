@@ -38,7 +38,7 @@ export const measureAngle = defineKind<MeasureAngleMarkup>({
   label: "Angle",
   defaultStyle: () => ({ ...MEASURE_STYLE }),
   controls: { fill: false, ends: false, text: false },
-  draw: { gesture: "points", make: (vertices) => ({ vertices, ...newMeasure() }), closed: false, min: 3, max: 3, drag: "line" },
+  draw: { gesture: "points", make: (vertices) => ({ vertices, ...newMeasure() }), closed: false, min: 3, max: 3, drag: "line", say: "click one arm's end, the corner, then the other arm's end" },
   ops(m) {
     const v = m.vertices;
     const arms: Seg[] = v.map((p, i) => [i ? "L" : "M", p[0], p[1]] as Seg);

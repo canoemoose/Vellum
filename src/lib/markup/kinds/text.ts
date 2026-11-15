@@ -45,5 +45,8 @@ export const text = defineKind<TextMarkup>({
   settle: (m) => fitText(m),
   restyled: (before, after) => refitText(before, after),
   typed: true,
+  typesAfter: true,
+  // Empty, it stays only if a border or a background shows it's there (rule 3).
+  keepEmpty: (m) => (m.style.width > 0 && m.style.opacity > 0) || m.style.fill !== null,
 });
 

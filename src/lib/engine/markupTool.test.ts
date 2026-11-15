@@ -113,7 +113,7 @@ describe("drawing", () => {
     expect(ink.strokes[0].length).toBeLessThan(5);
   });
 
-  it("makes a text box on a click, edits it, grows it, and drops it if left empty", async () => {
+  it("makes a text box on a click, edits it, grows it, and keeps it empty while its border shows", async () => {
     const { v, doc, t } = await setup();
     t.setTool("text");
     click(t, v, [100, 100]);
@@ -128,10 +128,10 @@ describe("drawing", () => {
     // One undo removes the box and its text together.
     t.undo();
     expect(doc.markups.length).toBe(0);
-    // A new box left empty disappears.
+    // A new box left empty stays: its border and background show it's there (rule 3).
     click(t, v, [100, 300]);
     t.finishText();
-    expect(doc.markups.length).toBe(0);
+    expect(doc.markups.length).toBe(1);
   });
 });
 

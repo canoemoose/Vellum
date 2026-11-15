@@ -8,9 +8,9 @@ import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor } from "../markup/ops";
 import { fitText } from "../markup/textbox";
-import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, rectPts, shapeBounds, simplify, snapAngle, squareFrom } from "../markup/geometry";
+import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, orthoFrom, rectPts, shapeBounds, simplify, snapAngle, squareFrom } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
-import type { DrawContext, KindDef, Shape } from "../markup/kinds/kind";
+import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
 import { toolById, withPreset } from "../markup/tools";
 
@@ -63,6 +63,11 @@ export class MarkupTool {
   doc: MarkupDoc | null = null;
   /** The text box being typed into, if any. */
   editing: { id: string; isNew: boolean; before: Markup[] } | null = null;
+  /**
+   * Typing going on in an editor of the shell's own (a note's), with how to end it. A press on
+   * the drawing ends it and does nothing else (rule 3), as it does for a text box.
+   */
+  typingElsewhere: (() => void) | null = null;
   private gesture: Gesture | null = null;
   /** A shape being clicked out, point by point (the "points" gesture). */
   private clicking: { def: KindDef; page: number; points: Pt[]; hover: Pt | null } | null = null;
@@ -331,9 +336,16 @@ export class MarkupTool {
   /** Left button down. True if the markup tool takes the gesture. */
   down(sx: number, sy: number, clicks: number, mods: Mods): boolean {
     if (!this.doc) return false;
+    // Rule 3: a click away from text being typed ends the typing and does nothing else.
     if (this.editing) {
       this.finishText();
-      if (this.def?.typed) return true; // the click ends typing; the next one draws
+      return true;
+    }
+    if (this.typingElsewhere) {
+      const end = this.typingElsewhere;
+      this.typingElsewhere = null;
+      end();
+      return true;
     }
     if (this.tool !== "select") return this.drawDown(sx, sy, clicks, mods);
     const at = this.pointOn(sx, sy);
@@ -482,7 +494,7 @@ export class MarkupTool {
     if (c0) {
       const at = this.pointOn(sx, sy, c0.page);
       const last = c0.points[c0.points.length - 1];
-      c0.hover = at ? (mods.shift ? snapAngle(last, at.p) : at.p) : null;
+      c0.hover = at ? lockTo(c0.def.draw, last, at.p, mods.shift) : null;
       this.viewer.requestFrame();
     } else if (this.def?.draw.gesture === "place") {
       const at = this.pointOn(sx, sy);
@@ -531,7 +543,7 @@ export class MarkupTool {
       // Clicking out a shape: a double-click (or Enter) finishes it; so does a click on the
       // first point of a closed one.
       const last = c.points[c.points.length - 1];
-      const p = mods.shift ? snapAngle(last, at.p) : at.p;
+      const p = lockTo(def.draw, last, at.p, mods.shift);
       const first = c.points[0];
       const onFirst = def.draw.closed && c.points.length >= def.draw.min && Math.hypot(p[0] - first[0], p[1] - first[1]) <= this.tolPt(HANDLE_PX);
       if (clicks >= 2 || onFirst) this.finishPoints(true);
@@ -560,16 +572,14 @@ export class MarkupTool {
       return normRect([a[0], a[1], b[0], b[1]]);
     };
     switch (d.gesture) {
-      case "line":
-        make(d.make(a, mods.shift ? snapAngle(a, p) : p));
-        break;
       case "box":
         make(d.make(box(), this.drawContext));
         break;
       case "points":
-        // Pressed and dragged: a rectangle of points, or a straight line, in one go.
-        if (d.drag === "box") make(d.make(rectPts(normRect([a[0], a[1], p[0], p[1]])), this.drawContext));
-        else make(d.make([a, mods.shift ? snapAngle(a, p) : p], this.drawContext));
+        // Pressed and dragged: a rectangle of points (Shift squares it, as for any box), or a
+        // straight line, in one go.
+        if (d.drag === "box") make(d.make(rectPts(box()), this.drawContext));
+        else make(d.make([a, lockTo(d, a, p, mods.shift)], this.drawContext));
         break;
       case "freehand": {
         // Text markups: Shift draws a straight stroke from the press (the highlighter's rule,
@@ -601,30 +611,32 @@ export class MarkupTool {
       const min = this.tolPt(px);
       return either ? w < min || h < min : w < min && h < min;
     };
+    // Rule 1: one minimum for every dragged box, and for a dragged line its length.
+    const tooSmall = (x: Markup | null, box: boolean) => !x || (box ? small(x, MIN_BOX_PX, true) : Math.hypot(...size(x)) < this.tolPt(MIN_BOX_PX));
     switch (d.gesture) {
-      case "line":
-        if (!m || Math.hypot(...size(m)) < this.tolPt(4)) return;
-        break;
       case "box":
-        if (d.click && (!m || small(m, 8))) m = this.newMarkup(def, g.page, d.click(g.a, this.drawContext));
-        else if (!m || small(m, 4)) return;
+        if (tooSmall(m, true)) {
+          // A click (or a drag too small to be a box): one at the point, if the kind has one.
+          if (!d.click) return;
+          m = this.newMarkup(def, g.page, d.click(g.a, this.drawContext));
+        }
         break;
       case "points":
-        if (!m) {
-          // A click: start clicking out the shape.
+        if (tooSmall(m, d.drag === "box")) {
+          // A click (or a drag too small to count): start clicking out the shape.
           this.clicking = { def, page: g.page, points: [g.a], hover: null };
           return;
         }
-        if (d.drag === "box" ? small(m, 4, true) : Math.hypot(...size(m)) < this.tolPt(4)) return;
         break;
       case "freehand":
         if (!m) return;
         m = this.newMarkup(def, g.page, d.make([simplify(g.points, this.tolPt(0.6))]));
         break;
       case "place":
-        m ??= this.newMarkup(def, g.page, d.make(g.a, this.drawContext));
+        if (tooSmall(m, true)) m = this.newMarkup(def, g.page, d.make(g.a, this.drawContext));
         break;
     }
+    if (!m) return;
     if (def.finish) m = def.finish(m);
     if (this.keep && !this.keep(m)) return this.redraw(); // Measuring
     const before = this.markups;
@@ -651,6 +663,23 @@ export class MarkupTool {
       if (c.def.typed) this.startText(m.id, true, before);
     }
     this.viewer.requestFrame();
+  }
+
+  /** Take back the last point clicked (Backspace, Ctrl+Z, the right-click menu); none left abandons the shape. */
+  removeLastPoint(): boolean {
+    const c = this.clicking;
+    if (!c) return false;
+    c.points.pop();
+    if (!c.points.length) this.clicking = null;
+    this.viewer.requestFrame();
+    this.opts.onChange();
+    return true;
+  }
+
+  /** Whether the shape being clicked out has points enough to finish. */
+  get canFinishPoints(): boolean {
+    const c = this.clicking;
+    return !!c && c.def.draw.gesture === "points" && c.points.length >= c.def.draw.min;
   }
 
   /** True while a shape is being clicked out (Enter finishes it, Esc abandons it). */
@@ -720,7 +749,9 @@ export class MarkupTool {
     const m = this.doc.byId(e.id);
     const final = this.markups;
     this.doc.history.replace(e.before);
-    if (m && defOf(m).typed && !(m as TypedMarkup).text.trim()) {
+    // Rule 3: an empty one stays if its kind keeps it (a callout; a text box something shows).
+    const fm = final.find((x) => x.id === e.id);
+    if (m && fm && defOf(m).typed && !(fm as TypedMarkup).text.trim() && !defOf(fm).keepEmpty?.(fm)) {
       if (!e.isNew) this.commit(final.filter((x) => x.id !== e.id));
       else this.redraw();
       return;
@@ -803,6 +834,15 @@ export class MarkupTool {
       ctx.setLineDash([]);
     }
   }
+}
+
+/**
+ * A point placed from `from` with the gesture's lock (rule 2): Shift snaps to 15 degree steps;
+ * a kind that starts ortho-locked (dimensions) is held horizontal or vertical, and Shift frees it.
+ */
+export function lockTo(d: Draw<Markup>, from: Pt, p: Pt, shift: boolean): Pt {
+  if (d.gesture === "points" && d.lock === "ortho") return shift ? p : orthoFrom(from, p);
+  return shift ? snapAngle(from, p) : p;
 }
 
 /** Stamp the modification time. */

@@ -80,4 +80,6 @@ export const note = defineKind<NoteMarkup>({
   dragHandle: (m) => m,
   moveBy: (m, dx, dy) => ({ ...m, at: [m.at[0] + dx, m.at[1] + dy] }),
   lineless: true,
+  typesAfter: true,
+  keepEmpty: () => true,
 });

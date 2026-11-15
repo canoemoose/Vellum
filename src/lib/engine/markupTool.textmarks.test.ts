@@ -111,12 +111,12 @@ describe("callout", () => {
     expect(second.rect[2]).toBeCloseTo(250, 0);
   });
 
-  it("disappears if nothing is typed", async () => {
+  it("stays if nothing is typed, to be filled in later", async () => {
     const { v, doc, t } = await setup();
     t.setTool("callout");
     drag(t, v, [[100, 100], [200, 150]]);
     t.finishText();
-    expect(doc.markups).toHaveLength(0);
+    expect(doc.markups).toHaveLength(1);
   });
 
   it("keeps its tip when the box is dragged", async () => {

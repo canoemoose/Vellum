@@ -1,7 +1,9 @@
 <script lang="ts">
   // Notes on the canvas (markup/kinds/note.ts): the small editor beside a note's icon (opened
   // when a note is placed, and on a double-click), and its text shown when the pointer rests on
-  // it. Esc, Ctrl+Enter or a click elsewhere finishes editing; the change is one undo step.
+  // it. Esc, Ctrl+Enter or a click elsewhere finishes editing; the change is one undo step. A
+  // click on the drawing that ends the typing does nothing else (rule 3: it doesn't place
+  // another note), and an empty note stays, to be written in later.
   import { onMount, tick } from "svelte";
   import type { Viewer } from "../engine/viewer";
   import type { MarkupTool } from "../engine/markupTool";
@@ -52,6 +54,8 @@
     hover = null;
     editing = id;
     draft = n.text;
+    // A press on the drawing ends the typing (and only that): markupTool.ts, down().
+    p.markupTool.typingElsewhere = () => area?.blur();
     await tick();
     area?.focus();
     area?.setSelectionRange(draft.length, draft.length);
@@ -60,6 +64,7 @@
   function done() {
     const n = noteById(editing);
     editing = null;
+    p.markupTool.typingElsewhere = null;
     if (n && draft !== n.text) p.markupTool.updateMarkup({ ...n, text: draft });
   }
 
@@ -75,7 +80,10 @@
   // The note being edited went away (undone, deleted, another tab): close without saving.
   $effect(() => {
     void p.version;
-    if (editing && !noteById(editing)) editing = null;
+    if (editing && !noteById(editing)) {
+      editing = null;
+      p.markupTool.typingElsewhere = null;
+    }
   });
 
   /** Always present, so its parent (the stage, which holds the canvas) is known. */
