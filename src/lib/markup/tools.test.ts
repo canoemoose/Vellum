@@ -2,7 +2,7 @@
 // Line preset; which tool a markup belongs to; the flat-or-grouped rule.
 
 import { describe, expect, it } from "vitest";
-import { GROUPS, TOOLS, groupFace, keyLabel, paletteGroups, paletteLayout, toolById, toolDefaults, toolForKey, toolForMarkup, toolTip } from "./tools";
+import { GROUPS, TOOLS, groupFace, keyLabel, letterShortcuts, paletteGroups, paletteLayout, toolById, toolDefaults, toolForKey, toolForMarkup, toolTip } from "./tools";
 import { KINDS, kindOf } from "./kinds";
 import { type Markup, defaultStyle } from "./types";
 import { defaultPrefs, sanitisePrefs, styleFor } from "./prefs";
@@ -16,7 +16,7 @@ describe("the tool registry", () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const t of TOOLS) {
       expect(GROUPS.map((g) => g.id)).toContain(t.group);
-      expect(t.key).toMatch(/^[a-z]$/);
+      expect(t.key).toMatch(/^[a-z]?$/);
       expect(t.icon).toContain("<");
       expect(t.label.length).toBeGreaterThan(0);
     }
@@ -30,14 +30,14 @@ describe("the tool registry", () => {
     expect(toolById("select")?.kind).toBeUndefined();
   });
 
-  it("never shares a letter across groups, nor takes the view's own letters", () => {
+  it("never shares a letter across groups, nor takes the view's own keys", () => {
     const groupOf = new Map<string, string>();
-    for (const t of TOOLS) {
+    for (const t of TOOLS.filter((x) => x.key)) {
       expect(groupOf.get(t.key) ?? t.group, t.id).toBe(t.group);
       groupOf.set(t.key, t.group);
     }
-    // N switches navigation and R rotates the view (App.svelte).
-    expect(TOOLS.some((t) => t.key === "n" || t.key === "r")).toBe(false);
+    // N switches navigation; [ and ] rotate the view (App.svelte); M is left unused.
+    expect(TOOLS.some((t) => ["n", "m", "[", "]"].includes(t.key))).toBe(false);
   });
 
   it("orders tools by group and shows only groups that have tools", () => {
@@ -54,28 +54,62 @@ describe("the tool registry", () => {
   });
 });
 
-describe("letters", () => {
-  it("pick a tool, and pressed again step through the tools sharing the letter", () => {
+describe("letters (rule 8)", () => {
+  it("are the agreed table", () => {
+    const table: Record<string, string[]> = {
+      v: ["select"], a: ["arrow"], l: ["line", "polyline"], r: ["rect"], e: ["ellipse"], c: ["cloud"], g: ["polygon"],
+      t: ["text", "callout", "note"], p: ["ink"], h: ["highlighter"], d: ["measureLength", "measurePath", "measureArea", "measureAngle"],
+      s: ["stamp", "signature"],
+    };
+    const got: Record<string, string[]> = {};
+    for (const t of TOOLS) if (t.key) (got[t.key] ??= []).push(t.id);
+    // Stage 8 adds the Image tool on I.
+    delete got.i;
+    expect(got).toEqual(table);
+    // Calibrate has no letter.
+    expect(toolById("measureCalibrate")!.key).toBe("");
+  });
+
+  it("pick the tool last used of those sharing the letter, else the first", () => {
     expect(toolForKey("v", "rect")).toBe("select");
-    expect(toolForKey("B", "select")).toBe("rect");
+    expect(toolForKey("R", "select")).toBe("rect");
     expect(toolForKey("l", "select")).toBe("line");
-    expect(toolForKey("l", "line")).toBe("polyline");
-    expect(toolForKey("l", "polyline")).toBe("line");
-    expect(toolForKey("l", "arrow")).toBe("line");
+    expect(toolForKey("l", "select", { l: "polyline" })).toBe("polyline");
+    expect(toolForKey("d", "arrow", { d: "measureArea" })).toBe("measureArea");
+    // A remembered tool that isn't the letter's is ignored.
+    expect(toolForKey("l", "select", { l: "arrow" })).toBe("line");
     expect(toolForKey("e", "ellipse")).toBe("ellipse"); // alone on its letter: stays
-    expect(toolForKey("r", "select")).toBeNull();
+    expect(toolForKey("m", "select")).toBeNull();
     expect(toolForKey("n", "select")).toBeNull();
   });
 
-  it("read as the letter, then 'twice' for the second tool sharing it", () => {
-    expect(keyLabel(toolById("line")!)).toBe("L");
-    expect(keyLabel(toolById("polyline")!)).toBe("L twice");
-    expect(toolTip(toolById("rect")!)).toMatch(/^Rectangle \(B\): /);
+  it("pressed again step on, and with Shift step back, round the end", () => {
+    expect(toolForKey("l", "line")).toBe("polyline");
+    expect(toolForKey("l", "polyline")).toBe("line");
+    expect(toolForKey("d", "measureLength", {}, true)).toBe("measureAngle");
+    expect(toolForKey("d", "measureAngle")).toBe("measureLength");
+    expect(toolForKey("t", "callout", {}, true)).toBe("text");
+    // Arrow isn't in the L family.
+    expect(toolForKey("l", "arrow")).toBe("line");
   });
 
-  it("are all in the shortcuts dialog", () => {
+  it("read as the letter, the same for every tool sharing it", () => {
+    expect(keyLabel(toolById("line")!)).toBe("L");
+    expect(keyLabel(toolById("polyline")!)).toBe("L");
+    expect(toolTip(toolById("rect")!)).toMatch(/^Rectangle \(R\): /);
+    expect(toolTip(toolById("measureCalibrate")!)).toMatch(/^Calibrate: /);
+  });
+
+  it("are all in the shortcuts dialog, from the one table", () => {
     const markup = SHORTCUTS.find((g) => g.title === "Markup")!;
-    for (const t of TOOLS) expect(markup.items.some((i) => i.keys === keyLabel(t))).toBe(true);
+    for (const t of TOOLS.filter((x) => x.key)) {
+      const row = markup.items.find((i) => i.keys === keyLabel(t));
+      expect(row?.action, t.id).toContain(t.id === "select" ? "Select" : t.label);
+    }
+    expect(letterShortcuts().length).toBe(new Set(TOOLS.map((t) => t.key).filter(Boolean)).size);
+    // The view's rotation moved to [ and ].
+    const view = SHORTCUTS.find((g) => g.title === "View")!;
+    expect(view.items.some((i) => i.keys === "] / [")).toBe(true);
   });
 });
 
@@ -96,6 +130,12 @@ describe("presets and styles", () => {
     expect(toolForMarkup(arrow(["none", "none"]))?.id).toBe("line");
     expect(toolForMarkup(arrow(["none", "open"]))?.id).toBe("arrow");
     expect(toolForMarkup({ id: "r", page: 0, kind: "rect", rect: [0, 0, 1, 1], style: defaultStyle("rect"), meta } as Markup)?.id).toBe("rect");
+  });
+
+  it("remembers each letter's last tool, only if it has that letter", () => {
+    const p = sanitisePrefs({ lastForKey: { l: "polyline", d: "arrow", z: "rect" } });
+    expect(p.lastForKey).toEqual({ l: "polyline" });
+    expect(defaultPrefs().lastForKey).toEqual({});
   });
 
   it("remembers each group's last tool, only if it's in that group", () => {

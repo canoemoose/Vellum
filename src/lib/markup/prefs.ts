@@ -20,12 +20,14 @@ export interface MarkupPrefs {
   dock: Dock;
   /** Each tool group's last tool (what a collapsed palette shows for it). */
   lastInGroup: Partial<Record<string, string>>;
+  /** By letter, the last tool used of those sharing it (what the letter picks, rule 8). */
+  lastForKey: Partial<Record<string, string>>;
 }
 
 const MAX_CONFIRMED = 500;
 
 export function defaultPrefs(): MarkupPrefs {
-  return { styles: {}, text: { ...DEFAULT_TEXT }, confirmed: [], author: null, dock: { ...DEFAULT_DOCK }, lastInGroup: {} };
+  return { styles: {}, text: { ...DEFAULT_TEXT }, confirmed: [], author: null, dock: { ...DEFAULT_DOCK }, lastInGroup: {}, lastForKey: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
@@ -68,6 +70,9 @@ export function sanitisePrefs(raw: unknown): MarkupPrefs {
     const id = lg[g.id];
     if (typeof id === "string" && toolById(id)?.group === g.id) lastInGroup[g.id] = id;
   }
+  const lastForKey: Partial<Record<string, string>> = {};
+  const lk = (p.lastForKey && typeof p.lastForKey === "object" ? p.lastForKey : {}) as Record<string, unknown>;
+  for (const [k, id] of Object.entries(lk)) if (typeof id === "string" && k && toolById(id)?.key === k) lastForKey[k] = id;
   const t = (p.text && typeof p.text === "object" ? p.text : {}) as Record<string, unknown>;
   return {
     styles,
@@ -76,6 +81,7 @@ export function sanitisePrefs(raw: unknown): MarkupPrefs {
     author: typeof p.author === "string" && p.author.trim() ? p.author.trim().slice(0, 100) : null,
     dock: sanitiseDock(p.dock),
     lastInGroup,
+    lastForKey,
   };
 }
 

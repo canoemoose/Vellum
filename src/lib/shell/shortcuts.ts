@@ -3,7 +3,7 @@
 // Key notation: "+" joins keys and gestures that are pressed together ("Ctrl+wheel",
 // "Space+drag", "Shift+click"). The markup tools' letters come from the tool registry.
 
-import { TOOLS, keyLabel } from "../markup/tools";
+import { letterShortcuts } from "../markup/tools";
 
 export interface Shortcut {
   keys: string;
@@ -54,7 +54,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: "Ctrl+Shift+1 / 2 / 3", action: "Single page / Continuous / Columns" },
       { keys: "Page Up / Page Down", action: "Previous / next page" },
       { keys: "Home / End", action: "First / last page" },
-      { keys: "R / Shift+R", action: "Rotate view clockwise / anticlockwise" },
+      { keys: "] / [", action: "Rotate view clockwise / anticlockwise" },
       { keys: "Ctrl+B", action: "Show or hide the sidebar" },
       { keys: "Double-click the sidebar's edge", action: "Default sidebar width" },
       { keys: "F12 / Ctrl+Shift+D", action: "Performance overlay" },
@@ -79,7 +79,8 @@ export const SHORTCUTS: ShortcutGroup[] = [
   {
     title: "Markup",
     items: [
-      ...TOOLS.map((t) => ({ keys: keyLabel(t), action: t.id === "select" ? "Select tool" : `${t.label} tool` })),
+      ...letterShortcuts(),
+      { keys: "H (with text selected)", action: "Highlight the selected text" },
       { keys: "Esc", action: "Abandon a shape being clicked out, else back to the Select tool, else clear the markup selection" },
       { keys: "Shift while drawing", action: "Square, circle, or 15° steps for lines and points" },
       { keys: "Double-click / Enter", action: "Finish a shape being clicked out (polyline, polygon, cloud, polyline length, area)" },

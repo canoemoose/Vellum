@@ -103,7 +103,7 @@
           {@const on = g.tools.some((t) => t.id === p.tool)}
           <PopChoice
             label={g.group.label}
-            options={g.tools.map((t) => ({ key: t.id, name: `${t.label} (${keyLabel(t)})` }))}
+            options={g.tools.map((t) => ({ key: t.id, name: t.key ? `${t.label} (${keyLabel(t)})` : t.label }))}
             value={on ? p.tool : null}
             out="down"
             sample={flySample}

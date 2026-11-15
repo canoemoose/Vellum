@@ -268,8 +268,14 @@
     stampToolPicked(t); // Stamps: the Signature and Stamp tools open their pickers
     // A collapsed palette shows each group's last tool, remembered between runs.
     const g = toolById(t)?.group;
-    if (g && settings.markup.lastInGroup[g] !== t) {
-      settings.markup = { ...settings.markup, lastInGroup: { ...settings.markup.lastInGroup, [g]: t } };
+    // And each letter its last tool (rule 8: a shared letter picks the one last used).
+    const key = toolById(t)?.key;
+    if ((g && settings.markup.lastInGroup[g] !== t) || (key && settings.markup.lastForKey[key] !== t)) {
+      settings.markup = {
+        ...settings.markup,
+        lastInGroup: g ? { ...settings.markup.lastInGroup, [g]: t } : settings.markup.lastInGroup,
+        lastForKey: key ? { ...settings.markup.lastForKey, [key]: t } : settings.markup.lastForKey,
+      };
       save();
     }
   }
@@ -1591,8 +1597,8 @@
       {
         label: "Document",
         items: [
-          docItem("Rotate view clockwise", () => v?.rotate(1), "R"),
-          docItem("Rotate view anticlockwise", () => v?.rotate(-1), "Shift+R"),
+          docItem("Rotate view clockwise", () => v?.rotate(1), "]"),
+          docItem("Rotate view anticlockwise", () => v?.rotate(-1), "["),
           { separator: true },
           docItem("Drawing scale…", openScale),
         ],
@@ -1725,9 +1731,13 @@
       if (markupTool.drawingPoints) markupTool.finishPoints(false);
       else if (markupTool.tool !== "select") markupTool.setTool("select");
       else markupTool.clearSelection();
-    } else if (!ctrl && !e.altKey && !e.shiftKey && !isTyping(e) && markupTool && toolForKey(k, markupTool.tool) !== null) {
-      // A tool's letter; again for the next tool sharing it (markup/tools.ts).
-      if (pdfDoc) setTool(toolForKey(k, markupTool.tool)!);
+    } else if (!ctrl && !e.altKey && !e.shiftKey && k === "h" && !isTyping(e) && textUi.hasSelection && pdfDoc) {
+      // H with text selected highlights it, rather than picking the Highlighter.
+      void markText("highlight");
+    } else if (!ctrl && !e.altKey && !isTyping(e) && markupTool && toolForKey(k, markupTool.tool) !== null) {
+      // A tool's letter: its last used, again for the next sharing it, Shift for the one before
+      // (rule 8, markup/tools.ts).
+      if (pdfDoc) setTool(toolForKey(k, markupTool.tool, settings.markup.lastForKey, e.shiftKey)!);
     } else if (ctrl && !e.shiftKey && k === "a" && !isTyping(e)) {
       // Never the WebView's select-all, which would highlight the whole shell.
       if (textDoc) textTool?.selectPage(ui.page);
@@ -1740,8 +1750,9 @@
       if (hasDoc) setLayout(e.code === "Digit1" ? "single" : e.code === "Digit2" ? "continuous" : "columns");
     } else if (!ctrl && !e.altKey && !e.shiftKey && k === "n") {
       if (hasDoc) setNav(ui.navMode === "cad" ? "document" : "cad");
-    } else if (!ctrl && !e.altKey && k === "r") {
-      if (hasDoc) viewer?.rotate(e.shiftKey ? -1 : 1);
+    } else if (!ctrl && !e.altKey && (e.key === "[" || e.key === "]")) {
+      // Rotating the view (was R, which is now the Rectangle's).
+      if (hasDoc) viewer?.rotate(e.key === "]" ? 1 : -1);
     } else {
       handled = false;
     }

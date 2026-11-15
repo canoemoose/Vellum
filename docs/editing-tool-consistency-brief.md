@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stage 1.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 and 2.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -116,7 +116,7 @@ Built (as done):
   callout and the angle carry `say`, the wording of what their clicks mean.
 - The Edit menu's Undo also takes back a point while a shape is being clicked out.
 
-## Stage 2: shortcut letters
+## Stage 2: shortcut letters ✓
 
 Rule 8 [O2]. Where: `markup/tools.ts` (`key`, `toolForKey`, `toolTip`), the key handler
 in `App.svelte`, the F1 list, `tools.test.ts` (its "view's own letters" test changes).
@@ -144,6 +144,11 @@ in `App.svelte`, the F1 list, `tools.test.ts` (its "view's own letters" test cha
 - Pen on P, Polygon on G, and Ellipse and Cloud staying on E and C were shown to Matt
   without objection; his to change.
 - Tooltips and the F1 shortcuts list are generated from the table, so they can't drift.
+
+Built (as done): the last tool used per letter is remembered between runs
+(`settings.markup.lastForKey`). The F1 list has one line per letter ("Line or Polyline
+tool: the one last used; L again for the next, Shift+L for the one before"), so a tool no
+longer reads "L twice". The palette's flyout shows Calibrate without a letter.
 
 ## Stage 3: the context bar and what tools remember
 

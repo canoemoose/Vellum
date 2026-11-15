@@ -45,8 +45,9 @@ export interface ToolDef {
   /** The icon: SVG elements for a 16 x 16 view box, drawn in currentColor. */
   icon: string;
   /**
-   * Its letter (lower case). Tools in one group may share a letter: pressing it again steps
-   * to the next of them. Never shared across groups.
+   * Its letter (lower case), or "" for none (Calibrate). Rule 8: variants of one thing share a
+   * letter, which picks the one last used, steps on when pressed again and back with Shift.
+   * Never shared across groups.
    */
   key: string;
   /** The kind it draws (none for Select). */
@@ -62,23 +63,23 @@ export const TOOLS: ToolDef[] = [
   { id: "arrow", group: "lines", label: "Arrow", key: "a", kind: "arrow", icon: `<path d="M3 13L12.5 3.5M7.5 3.5h5v5" ${STROKE} />` },
   { id: "line", group: "lines", label: "Line", key: "l", kind: "arrow", preset: { ends: ["none", "none"] }, icon: `<path d="M3 13L13 3" ${STROKE} />` },
   { id: "polyline", group: "lines", label: "Polyline", key: "l", kind: "polyline", icon: `<path d="M2.5 12.5l4-7 4 5 3-7" ${STROKE} />` },
-  { id: "rect", group: "shapes", label: "Rectangle", key: "b", kind: "rect", icon: `<rect x="2.75" y="3.75" width="10.5" height="8.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
+  { id: "rect", group: "shapes", label: "Rectangle", key: "r", kind: "rect", icon: `<rect x="2.75" y="3.75" width="10.5" height="8.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
   { id: "ellipse", group: "shapes", label: "Ellipse", key: "e", kind: "ellipse", icon: `<ellipse cx="8" cy="8" rx="5.75" ry="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
-  { id: "polygon", group: "shapes", label: "Polygon", key: "p", kind: "polygon", icon: `<path d="M8 2.5l5.5 4-2 6.5h-7l-2-6.5z" ${STROKE} />` },
+  { id: "polygon", group: "shapes", label: "Polygon", key: "g", kind: "polygon", icon: `<path d="M8 2.5l5.5 4-2 6.5h-7l-2-6.5z" ${STROKE} />` },
   { id: "cloud", group: "shapes", label: "Revision cloud", key: "c", kind: "cloud", icon: `<path d="M4.2 12.2a2 2 0 0 1-1.6-3.1 2 2 0 0 1 1.4-3.2 2.3 2.3 0 0 1 3.9-1.6 2.3 2.3 0 0 1 4 .9 2 2 0 0 1 1.6 3 2 2 0 0 1-1.7 3.2 2.2 2.2 0 0 1-3.8 1 2.2 2.2 0 0 1-3.8-.2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
   { id: "text", group: "text", label: "Text box", key: "t", kind: "text", icon: `<rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M5 5.5h6M8 5.5v5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />` },
   // Text markups (beside their groups, which set the palette order): callout and note
   { id: "callout", group: "text", label: "Callout", key: "t", kind: "callout", icon: `<rect x="7.25" y="2.75" width="7" height="5.5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M2.5 13.5L5.5 8.5h1.75" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /><path d="M2.5 13.5l.4-2M2.5 13.5l1.9-.7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />` },
   { id: "note", group: "text", label: "Note", key: "t", kind: "note", after: "double-click a note to edit it, rest the pointer on it to read it", icon: `<path d="M3 2.75h7.25l2.75 2.75v7.75H3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" /><path d="M10.25 2.75V5.5H13M5.5 8h5M5.5 10.5h3.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
-  { id: "ink", group: "pen", label: "Pen", key: "d", kind: "ink", icon: `<path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" ${STROKE} />` },
+  { id: "ink", group: "pen", label: "Pen", key: "p", kind: "ink", icon: `<path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" ${STROKE} />` },
   // Text markups: highlighter
   { id: "highlighter", group: "pen", label: "Highlighter", key: "h", kind: "highlighter", icon: `<path d="M3 13.5h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /><path d="M4.5 11.5l1.8-3.6 6-5.4 1.8 1.8-5.4 6-3.6 1.8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
   // Measuring
-  { id: "measureLength", group: "measure", label: "Length", key: "m", kind: "measureLength", icon: `<path d="M2.5 11.5l11-7M1.6 10.1l1.8 2.8M12.6 3.1l1.8 2.8" ${STROKE} />` },
-  { id: "measurePath", group: "measure", label: "Polyline length", key: "m", kind: "measurePath", icon: `<path d="M2.5 12.5l4-6 3.5 3 3.5-6.5M1.5 11.5l2 2" ${STROKE} />` },
-  { id: "measureArea", group: "measure", label: "Area", key: "m", kind: "measureArea", icon: `<path d="M2.5 3.5h11v9h-11z" ${STROKE} /><path d="M5.5 9.5l5-4M7.5 10.5l3-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />` },
-  { id: "measureAngle", group: "measure", label: "Angle", key: "m", kind: "measureAngle", icon: `<path d="M13.5 3.5L3 13h10.5" ${STROKE} /><path d="M8.5 13a5.5 5.5 0 0 0-1.6-3.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />` },
-  { id: "measureCalibrate", group: "measure", label: "Calibrate", key: "m", kind: "measureCalibrate", after: "then type its real length to set the scale", icon: `<path d="M1.5 10.5h13v3h-13z" ${STROKE} /><path d="M4.5 10.5v1.5M7.5 10.5v2M10.5 10.5v1.5M8 2.5v5M6 5.5l2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
+  { id: "measureLength", group: "measure", label: "Length", key: "d", kind: "measureLength", icon: `<path d="M2.5 11.5l11-7M1.6 10.1l1.8 2.8M12.6 3.1l1.8 2.8" ${STROKE} />` },
+  { id: "measurePath", group: "measure", label: "Polyline length", key: "d", kind: "measurePath", icon: `<path d="M2.5 12.5l4-6 3.5 3 3.5-6.5M1.5 11.5l2 2" ${STROKE} />` },
+  { id: "measureArea", group: "measure", label: "Area", key: "d", kind: "measureArea", icon: `<path d="M2.5 3.5h11v9h-11z" ${STROKE} /><path d="M5.5 9.5l5-4M7.5 10.5l3-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />` },
+  { id: "measureAngle", group: "measure", label: "Angle", key: "d", kind: "measureAngle", icon: `<path d="M13.5 3.5L3 13h10.5" ${STROKE} /><path d="M8.5 13a5.5 5.5 0 0 0-1.6-3.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />` },
+  { id: "measureCalibrate", group: "measure", label: "Calibrate", key: "", kind: "measureCalibrate", after: "then type its real length to set the scale", icon: `<path d="M1.5 10.5h13v3h-13z" ${STROKE} /><path d="M4.5 10.5v1.5M7.5 10.5v2M10.5 10.5v1.5M8 2.5v5M6 5.5l2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
 
   // Stamps
   { id: "stamp", group: "stamp", label: "Stamp", key: "s", kind: "stamp", before: "pick a stamp", icon: `<rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M4.5 8h7" ${STROKE} />` },
@@ -118,16 +119,21 @@ export function toolForMarkup(m: Markup): ToolDef | undefined {
   return of.find((t) => t.preset && matches(t)) ?? of.find((t) => !t.preset) ?? of[0];
 }
 
+/** The tools a letter picks between, in palette order. */
+export const toolsForKey = (key: string): ToolDef[] => (key ? TOOLS.filter((t) => t.key === key.toLowerCase()) : []);
+
 /**
- * The tool a letter picks: the first tool with that letter, or, when the current tool has it,
- * the next tool with it (round to the first). Null when no tool has it.
+ * The tool a letter picks (rule 8): the one of its tools last used (`last`, by letter), else
+ * the first; or, when the current tool has the letter, the next (with `back`, Shift, the one
+ * before), round the end. Null when no tool has it.
  */
-export function toolForKey(key: string, current: string): string | null {
-  const k = key.toLowerCase();
-  const with_ = TOOLS.filter((t) => t.key === k);
+export function toolForKey(key: string, current: string, last: Partial<Record<string, string>> = {}, back = false): string | null {
+  const with_ = toolsForKey(key);
   if (!with_.length) return null;
   const i = with_.findIndex((t) => t.id === current);
-  return with_[(i + 1) % with_.length].id;
+  if (i < 0) return (with_.find((t) => t.id === last[key.toLowerCase()]) ?? with_[0]).id;
+  const n = with_.length;
+  return with_[(i + (back ? n - 1 : 1)) % n].id;
 }
 
 /**
@@ -171,16 +177,30 @@ export function toolHowTo(t: ToolDef): string {
   return [t.before ? `${t.before}, then ${g}` : g, t.after].filter(Boolean).join("; ");
 }
 
-/** The tooltip: "Line (L): click each end, or drag; ...", with "L twice" for a shared letter. */
+/** The tooltip: "Line (L): click each end, or drag; ...", or "Calibrate: ..." with no letter. */
 export function toolTip(t: ToolDef): string {
-  return `${t.label} (${keyLabel(t)}): ${toolHowTo(t)}`;
+  return `${t.label}${t.key ? ` (${keyLabel(t)})` : ""}: ${toolHowTo(t)}`;
 }
 
-/** How a tool's shortcut reads: "L", or "L twice" for the second tool sharing L ("M 3 times"...). */
+/** How a tool's shortcut reads: "L" (shared or not), or "" for a tool with no letter. */
 export function keyLabel(t: ToolDef): string {
-  const n = TOOLS.filter((x) => x.key === t.key).indexOf(t);
-  const K = t.key.toUpperCase();
-  return n <= 0 ? K : n === 1 ? `${K} twice` : `${K} ${n + 1} times`;
+  return t.key.toUpperCase();
+}
+
+/**
+ * The letters for the F1 list, one line per letter (rule 8), generated from the registry so
+ * they can't drift: "L", "Line or Polyline tool: the one last used; L again for the next...".
+ */
+export function letterShortcuts(): { keys: string; action: string }[] {
+  const keys = [...new Set(TOOLS.map((t) => t.key).filter(Boolean))];
+  return keys.map((k) => {
+    const ts = toolsForKey(k);
+    const K = k.toUpperCase();
+    if (ts.length === 1) return { keys: K, action: ts[0].id === "select" ? "Select tool" : `${ts[0].label} tool` };
+    const names = ts.map((t) => t.label);
+    const list = `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+    return { keys: K, action: `${list} tool: the one last used; ${K} again for the next, Shift+${K} for the one before` };
+  });
 }
 
 /**
