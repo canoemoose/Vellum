@@ -1,6 +1,6 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 4, 6, 7 and 9, and stage 5's Imperial.
+Status: **agreed with Matt on 15 November 2026; being built on `editing`.** Done: stages 1 to 7 and 9.
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -215,7 +215,7 @@ out, as a hole wound the other way. Tested by area in `markup/arrowhead.test.ts`
 thing to look for by eye: a faint seam where the line meets the head, from anti-aliasing
 two shapes edge to edge.
 
-## Stage 5: dimensions
+## Stage 5: dimensions ✓
 
 Where: `markup/kinds/measure*.ts`, `markup/measure.ts`, `markup/dimension.ts`,
 `markup/measurements.ts`, the Rust writer and reader for the saved keys.
@@ -252,6 +252,27 @@ Where: `markup/kinds/measure*.ts`, `markup/measure.ts`, `markup/dimension.ts`,
     system.
 - **A measurement pasted onto a page with another scale** takes that page's scale at once
   [A14]. `revalue` exists; make sure paste goes through it.
+
+Built (as done), dimensions: each clicked point has its own lock (`Draw.lock` takes a list
+of per-point locks, each optionally from a named earlier point; `lockTo` is still the one
+place it's applied), and the tooltip names the locked click. Length, Polyline length, Area
+and Calibrate start level or upright (Polyline length and Area chosen too: runs and rooms on
+plans are mostly square); the angle's first arm does and its second is free (Shift snaps it
+from the corner). Dragging a Length's end grip is ortho-locked as well. Length takes three
+clicks: the third sets the offset; on the points (within a grip's reach), a double-click on
+the second point, or a drag leaves it in line. While clicking, the measuring tools show the
+shape itself (`preview`), not a rubber band. The value sits above the line, or right of an
+exactly vertical one (a near-vertical line keeps it above), reading from the bottom or the
+right of the page as rotated by /Rotate. Length, Polyline length and Area have a value grip
+(double-click puts it back, `KindDef.resetHandle`); Length also has a grip that pulls the
+dimension line out. Ends (bars, 45° ticks at double weight, filled arrows) and the value
+font (Helvetica, Courier, Courier Bold) are per measurement, in a "Dimension" section of the
+bar, remembered in `settings.measure.look`. Saved: /LE, /LL, /LLE, /LLO (gap 2 pt, overrun
+3 pt) and /CO, written for every Length so other apps put the caption where Vellum's value
+is; the /LL sign follows poppler (LL on the anticlockwise normal of /L), which differs from
+a literal reading of the spec: check in Acrobat. A file's Line with /IT /LineDimension now
+reads in as a Length. Angles are clicked corner first but stored in the old order. Paste
+already goes through `revalue` (tested). Measurements from before draw exactly as they did.
 
 Built (as done), Imperial [A9]: `markup/imperial.ts` writes and reads feet and inches. With
 a fractional unit the decimals control becomes Precision, 1/2" to 1/64" (default 1/16");
