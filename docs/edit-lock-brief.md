@@ -1,7 +1,8 @@
 # The edit lock, the Markups list and measurement numbers: modification brief
 
-Status: **agreed with Matt on 16 November 2026. Step 1 is built and uncommitted (awaiting
-Matt's look); the rest is not built.** Nothing in it is open. For the 0.2.0 markup release, after `0.2.0-rc1`.
+Status: **agreed with Matt on 16 November 2026; all eight steps built on `editing`, 16 November
+(one session, autonomous). Awaiting Matt's look: see "For Matt to check" at the end.** Nothing
+in it is open. For the 0.2.0 markup release, after `0.2.0-rc1`.
 Parent: [editing-scope.md](editing-scope.md), "The edit lock". Came out of the backlog item
 "The markup toolbar: move the padlock, and go through the tools' order".
 
@@ -25,7 +26,7 @@ The navigation mode toggle stays prominent in the toolbar's right zone: the mode
 by itself from file to file, so it has to be visible at a glance (Matt). It is not a
 candidate for the status bar or a preferences panel.
 
-### 1. The switch: its own block, on the left (built, uncommitted)
+### 1. The switch: its own block, on the left ✓
 
 - The padlock leaves the markup tools. Beside them it read as switching the tools on,
   which is the one danger to avoid: drawing a new markup never needs the lock.
@@ -38,11 +39,11 @@ candidate for the status bar or a preferences panel.
 - This is the only control that locks again.
 
 Built in `components/EditLock.svelte`, `components/Toolbar.svelte` (a `lock` snippet after
-page layout), `App.svelte`, `components/MarkupsList.svelte`. Type check and Vitest pass.
-Matt has not yet said it looks right: level with and the same height as the groups beside
-it; whether the label earns its width on a narrow window; whether the off state shows.
+page layout), `App.svelte`, `components/MarkupsList.svelte`. Committed as built. Matt has not
+yet said it looks right: level with and the same height as the groups beside it; whether the
+label earns its width on a narrow window; whether the off state shows.
 
-### 2. Unlock where you hit it
+### 2. Unlock where you hit it ✓
 
 A markup that came with the file can be selected while the file is locked, and shows a
 padlock on its selection in place of grips. Clicking the padlock, or trying to drag the
@@ -64,7 +65,20 @@ markup stays selected, ready to change.
 - For Matt to judge once built: whether the padlock on the selection is obvious enough, or
   a first-time user just thinks the markup is stuck.
 
-### 3. Indicators, status only
+Built: `MarkupTool.select` no longer filters by the lock and `topAt` picks anything; every
+change path skips what the lock keeps instead (`selectedChangeable`: restyle and its live
+preview, delete, cut, nudge, sides, turning, the measuring and dimension controls, stamp
+changes), so a mixed selection changes only its free markups. A restyle that changes nothing
+records no undo step. The padlock is drawn just out from the top-right corner of the
+selection's box as shown, on an accent disc with a darker rim, the box dashed. What asks:
+clicking the padlock, starting a drag on the markup, and (added) double-clicking a locked text
+box or note to type into it. A plain click asks nothing. The context bar shows only a label,
+"Rectangle, in the file: locked" ("3 markups, in the file: locked" for several), with no
+controls. Locking again keeps the selection (it shows the padlock) rather than dropping it, as
+it did before. The Markups list's locked rows pick in the same way (they go through the same
+`select`).
+
+### 3. Indicators, status only ✓
 
 - **Status bar:** an open padlock and "File unlocked" while the active file is unlocked.
 - **Tab:** a small open padlock on the tab of any unlocked file, so it shows across several
@@ -75,11 +89,16 @@ markup stays selected, ready to change.
 Where: `components/StatusBar.svelte`, the tab strip component, fed from each tab's
 `marks.unlocked` in `App.svelte`.
 
-### 4. The menu
+Built: the status bar's "File unlocked" sits before the cursor position, in the accent text
+colour, with a tooltip saying what it means and that Edit file locks it. The tab's padlock (12
+px, accent text colour) sits after the title, before the unsaved-markups dot. The tab strip is
+`components/TitleBar.svelte`.
 
-Edit > "Unlock file…" / "Lock file" stays.
+### 4. The menu ✓
 
-### 5. The sidebar and the Markups list
+Edit > "Unlock file…" / "Lock file" stays. (The wording went in with step 1.)
+
+### 5. The sidebar and the Markups list ✓
 
 Matt: the sidebar's tab strip is cramped, and so are dimensions inside the Markups list.
 
@@ -112,7 +131,15 @@ a "Delete" item on the row's right-click menu. Locked rows offer neither.
 
 A panel of its own for Markups stays in the backlog.
 
-### 6. How a measurement's number is written
+Built: 240 px default, 220 minimum. `listing.ts` gives each row a `value`, the second line
+(`text`) and a tooltip (`tip`); `LIST_TEXT` returns `{ value, text, tip }`, and
+`measurements.ts` has `measurementParts` for it. A measurement with no scale reads its paper
+value with "on paper, no scale set" under it; an area that crosses itself says so on the
+second line. The value is semibold, beside the kind. Author and date share the third line,
+"Matt James · 14:05". The row's right-click menu holds Delete only (its markup is picked
+first); a locked row has no menu. `contain-intrinsic-size` is now 58 px (three lines).
+
+### 6. How a measurement's number is written ✓
 
 Found by Matt: on a file at 1:1, a 2.4 mm length read "2 mm" at scale and "2.4 mm" on
 paper. Cause: real-world millimetres are always written whole (`formatLength` in
@@ -151,7 +178,14 @@ kinds' labels, `components/PropertiesStrip.svelte` (`UNIT_OPTS`, `DECIMAL_OPTS`)
 `markup/measurements.ts` (the status bar line). Tests: the table above as cases, the
 metre boundary, explicit mm with decimals, and one value at 1:1.
 
-### 7. A value that doesn't fit between the points
+Built as written. Also: the saved `/Measure` number format follows the same rule (an explicit
+unit's decimals; Auto two decimals in metres and three figures of the typical value in
+millimetres), so other apps' readouts agree. Below a millimetre Auto keeps three figures
+(0.300 mm); zero reads 0.00 mm. With an explicit mm or m, the units list's sample shows the
+current decimals (1240.00 mm). Auto's tooltip reads "Auto: millimetres to three figures below
+a metre, metres to two decimals from a metre up". "At 1:1, one value" is exactly a ratio of 1.
+
+### 7. A value that doesn't fit between the points ✓
 
 Matt: when a dimension's number doesn't fit between its points, move it to one side and
 extend the dimension line automatically.
@@ -177,7 +211,16 @@ Where: `markup/kinds/measureLength.ts` (the label's place and the line's extent)
 `markup/dimension.ts`. Pure geometry, so tested: fits, just fits, doesn't fit, each
 orientation, a hand-moved value left alone. How it looks is Matt's to judge.
 
-### 8. The context bar
+Built: the room is the dimension line's length less each end's reach along it (an arrow's
+length; a tick's lean, half the tick times sin 45°; a bar none), and the value needs its width
+plus 2 pt either side (`valueFits`, `VALUE_CLEAR`). Out of room it sits past the second point
+by that end's reach plus 2 pt, above the line as usual, decided at draw time (`autoSlide` in
+`lengthValueAt`), so it follows every change by itself and /CO is written from where it's
+drawn. Turned-out arrows are drawn as heads with their tips on the points, a plain line
+between, and a run past the first point twice a head's length to carry its arrow. Only
+measurements made since stage 5 (with an offset) move out: older ones draw as they did.
+
+### 8. The context bar ✓
 
 Four things Matt found (`components/PropertiesStrip.svelte`, `components/WeightControl.svelte`,
 `markup/palette.ts`, the bar's label in `App.svelte`).
@@ -220,6 +263,24 @@ vanished when its Weight slider was dragged (release build, not reproduced).
 moment one is drawn and selected, so the word comes and goes while working with one tool.
 The label is the kind's name either way; several selected reads "3 markups".
 
+Built: fills are `FILL_COLOURS` in `markup/palette.ts` (Pale orange is new, [1, 0.9, 0.78]; the
+others keep their colours, so saved fills still match). Ring room: the bar's padding is 8 px
+top and bottom (was 5), the thin column's 8 px at the sides (was 6), and swatches sit 7 px
+apart in every layout (was 5 in a row), so the ring stands 3 to 4 px clear; the stamp dialog's
+swatches match. The weight box is now a text field with "pt" inside it; focusing or clicking
+it drops the slider out; Enter sets (and leaves the field selected), Esc puts it back and
+leaves the field, leaving it (a click elsewhere) also sets what was typed. The label uses the
+tool's own name ("Arrow"), which is the kind's name.
+
+The vanishing dimension: no path was found by which the slider, the typed field or the wheel
+hands a dimension zero or not a number. The slider's stops are all finite and at least
+0.25 pt; typing and the wheel clamp. Two weak spots, both now closed: `clampWeight` passed
+NaN straight through `Math.max` (so a markup arriving with no weight, stepped by the wheel,
+would get NaN and draw nothing); and a slider drag that ended without its `change` event (the
+pop-out closing or the bar redrawing under the drag) left the previewed weight showing, never
+set. Not reproduced, so not proven to be the cause. If it happens again, the console's first
+error is what's wanted.
+
 ## Not doing
 
 - A lock control in the context bar (it isn't Select's option), in the Markups panel, or a
@@ -227,6 +288,9 @@ The label is the kind's name either way; several selected reads "3 markups".
 - Restyling dialogs and tooltips, and the rest of the backlog.
 
 ## How this gets built
+
+(As done: built on the `editing` branch, one commit or two per step, not on `main`, as the
+session that started this one asked. `main` still sits at `0.2.0-rc1`.)
 
 - One Opus session, autonomous, on `main` (the editing worktree is level with `main` at
   `09a3cdc` and has the built target directory; work there and fast-forward `main`, or
@@ -245,3 +309,28 @@ The label is the kind's name either way; several selected reads "3 markups".
   later, where it lives and why) and take the item off [backlog.md](backlog.md).
 - Hand over: what changed, what's tested and what isn't in plain terms, and what Matt
   should look at.
+
+## For Matt to check
+
+By eye, in the app (`npm run tauri dev`, or the release exe):
+
+1. **The Edit file switch** (step 1): level with and the same height as the page layout
+   buttons; whether "Edit file" earns its width on a narrow window; whether the off state reads.
+2. **A locked markup's selection** (step 2): open a file with someone else's annotations, click
+   one. Is the padlock (top-right of the dashed box) obvious, or does the markup just look
+   stuck? Click it, then try dragging: both should ask, with "This markup came with the file".
+3. **The indicators** (step 3): the status bar's "File unlocked" and the tab's padlock, with two
+   files open and one unlocked.
+4. **The sidebar** (step 5): 240 px wide. Are the tabs comfortable? A width remembered below
+   220 opens at 220.
+5. **Markups list rows** (step 5): a length, an area, an angle, a text box with long words, a
+   note. Line breaks and ellipses; the value's weight; right-click Delete.
+6. **Measurement numbers** (step 6): Auto on a small detail at 1:1 (2.40 mm); explicit mm with
+   one decimal; the Auto sample pair in the Units list; the decimals control gone under Auto.
+7. **A tight dimension** (step 7): a short Length with bars, ticks, then arrows. Where the value
+   lands past the second point, the run carrying it, the arrows turned out. Then save and open
+   in Acrobat: is the caption where Vellum draws it?
+8. **The context bar** (step 8): the fill row under the line row (stacked layout) with None
+   seventh (or None first, every fill one along: your call); the ring's clearance in the row,
+   stacked and thin column layouts; the weight field (type, Enter, Esc, wheel, slider); the
+   label with a tool out and with one drawn.

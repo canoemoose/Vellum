@@ -11,8 +11,8 @@ that work's brief or scope file and comes off this list.
   back. (Pasting markups between windows waits on this to be checked.)
 - **A better home page** (what shows with no document open), perhaps with thumbnails of recent
   documents.
-- **The markups list**: its header is cramped. Perhaps give Markups a column (panel) of its own
-  rather than sharing the sidebar.
+- **A panel of its own for Markups**, rather than sharing the sidebar. (The sidebar was widened
+  and the list's rows laid out as lines in [edit-lock-brief.md](edit-lock-brief.md).)
 - **Perhaps no menu bar**: would everything fit in one drop-down menu off the Vellum title?
   Needs a look at what the menus hold first.
 
@@ -20,8 +20,6 @@ that work's brief or scope file and comes off this list.
 
 - **The vertical toolbar**: a right-click menu on its drag handle to force stacked mode by hand.
 - **The columns layout**: the number of columns in a spinner beside the column layout button.
-- **The markup toolbar**: move the padlock (the edit lock for the file's own annotations), and
-  go through the tools' order so it's a sensible one.
 - **Movable toolbars**: consider toolbars the user can move and resize.
 
 ## Navigation
