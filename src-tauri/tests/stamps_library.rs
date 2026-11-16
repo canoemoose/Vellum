@@ -78,3 +78,21 @@ fn names_come_from_the_file() {
     assert_eq!(name_from_path(Path::new("C:/x/ .png")), "Stamp");
     assert_eq!(name_from_path(Path::new(&format!("C:/x/{}.png", "n".repeat(200)))).chars().count(), 80);
 }
+
+#[test]
+fn renames_a_stamp_keeping_its_picture_and_place() {
+    let lib = StampLibrary::new(dir("rename"));
+    let a = lib.add("First", &png(40, 20, 255)).unwrap();
+    let b = lib.add("Second", &png(20, 20, 255)).unwrap();
+    let before = lib.get(&a.meta.id).unwrap();
+    let r = lib.rename(&a.meta.id, "  Site   copy ").unwrap();
+    assert_eq!(r.meta.name, "Site copy");
+    assert_eq!(r.meta.created_ms, a.meta.created_ms);
+    // Listed in the same order under its new name, its picture untouched.
+    let l = lib.list().unwrap();
+    assert_eq!(l.iter().map(|i| i.meta.name.as_str()).collect::<Vec<_>>(), vec!["Site copy", "Second"]);
+    assert_eq!(lib.get(&a.meta.id).unwrap(), before);
+    assert!(lib.rename(&b.meta.id, "   ").unwrap_err().starts_with("[stamp_name_empty]"));
+    assert!(lib.rename("missing0000", "x").is_err());
+    assert!(lib.rename("../x", "x").is_err());
+}

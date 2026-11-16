@@ -159,6 +159,26 @@ impl StampLibrary {
         })
     }
 
+    /// Give a stamp another name (trimmed; an empty one is refused). Only its metadata changes.
+    pub fn rename(&self, id: &str, name: &str) -> Result<StampItem, String> {
+        if !valid_id(id) {
+            return Err(bad_id(id));
+        }
+        let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect();
+        if name.is_empty() {
+            return Err(errcode::coded("stamp_name_empty", "a stamp needs a name".to_string()));
+        }
+        let path = self.file(id, "json");
+        let bytes = std::fs::read(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound { errcode::coded("stamp_not_found", format!("stamp {id}")) } else { errcode::io(&e, format!("stamp {id}: {e}")) }
+        })?;
+        let meta: StampMeta = serde_json::from_slice(&bytes).map_err(|e| format!("stamp {id}: {e}"))?;
+        let meta = StampMeta { id: id.to_string(), name, ..meta };
+        write_atomic(&path, serde_json::to_string(&meta).map_err(|e| e.to_string())?.as_bytes())?;
+        let thumb = std::fs::read(self.file(id, "thumb.png")).map_err(|e| errcode::io(&e, format!("stamp {id}: {e}")))?;
+        Ok(StampItem { meta, thumb })
+    }
+
     /// Remove a stamp (twice is fine).
     pub fn delete(&self, id: &str) -> Result<(), String> {
         if !valid_id(id) {
@@ -216,6 +236,12 @@ pub async fn stamp_add(app: tauri::AppHandle, path: String) -> Result<StampItem,
 pub async fn stamp_get(app: tauri::AppHandle, id: String) -> Result<tauri::ipc::Response, String> {
     let lib = library(&app)?;
     blocking(move || lib.get(&id)).await.map(tauri::ipc::Response::new)
+}
+
+#[tauri::command]
+pub async fn stamp_rename(app: tauri::AppHandle, id: String, name: String) -> Result<StampItem, String> {
+    let lib = library(&app)?;
+    blocking(move || lib.rename(&id, &name)).await
 }
 
 #[tauri::command]

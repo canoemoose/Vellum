@@ -521,6 +521,7 @@ pub fn run() {
             stamps::stamp_add,
             stamps::stamp_get,
             stamps::stamp_delete,
+            stamps::stamp_rename,
 
             // Text markups
         ])

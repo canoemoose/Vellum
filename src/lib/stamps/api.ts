@@ -22,6 +22,7 @@ export const STAMP_EXTENSIONS = ["png", "jpg", "jpeg"];
 export const listStamps = () => invoke<StampItem[]>("stamp_list");
 export const addStamp = (path: string) => invoke<StampItem>("stamp_add", { path });
 export const deleteStamp = (id: string) => invoke<void>("stamp_delete", { id });
+export const renameStamp = (id: string, name: string) => invoke<StampItem>("stamp_rename", { id, name });
 
 export async function getStamp(id: string): Promise<Uint8Array> {
   return new Uint8Array(await invoke<ArrayBuffer>("stamp_get", { id }));
