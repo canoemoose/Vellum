@@ -324,7 +324,7 @@
       if (!bar) return null;
       const own = styleFor(settings.markup, tool.id);
       const style = armed?.content.type === "text" ? { ...own, stroke: armed.content.colour } : own;
-      return { bar, kinds: [tool.kind], tool: tool.id, style, text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool`, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
+      return { bar, kinds: [tool.kind], tool: tool.id, style, text: bar.text ? textFor(settings.markup, tool.id) : null, label: tool.label, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
     }
     const sel = mt.selected();
     // Several kinds: only the controls they all have; none (a stamp, an annotation Vellum can't redraw), no bar.
@@ -332,7 +332,7 @@
     if (!bar) return null;
     const kinds = [...new Set(sel.map((m) => m.kind))];
     const t = sel.find((m) => "textStyle" in m) as Extract<Markup, { textStyle: TextStyle }> | undefined;
-    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected`, sides: bar.sides ? mt.selectedSides() : null };
+    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups`, sides: bar.sides ? mt.selectedSides() : null };
   });
 
   /**
