@@ -49,3 +49,34 @@ describe("line weight slider", () => {
     expect(s[nearestStep(s, 7.2)]).toBe(7);
   });
 });
+
+// docs/edit-lock-brief.md, 8: a dimension vanished when its Weight slider was dragged. However a
+// weight comes to the bar, what it hands back is a number within range, never zero below the
+// least allowed, and never not a number.
+describe("a weight never reaches a markup as zero or not a number", () => {
+  it("turns a missing or broken weight into the least allowed", async () => {
+    const { clampWeight, stepWeight } = await import("./weight");
+    expect(clampWeight(NaN, 0.25)).toBe(0.25);
+    expect(clampWeight(undefined as unknown as number, 0.25)).toBe(0.25);
+    expect(clampWeight(Infinity, 0.25)).toBe(0.25);
+    expect(stepWeight(NaN, 1, 0.25)).toBe(0.25);
+    expect(stepWeight(undefined as unknown as number, -1, 0.25)).toBe(0.25);
+  });
+
+  it("gives every slider stop as a usable weight, at or above the least", async () => {
+    const { weightSteps } = await import("./weight");
+    for (const min of [0, 0.25]) {
+      for (const w of weightSteps(min)) {
+        expect(Number.isFinite(w)).toBe(true);
+        expect(w).toBeGreaterThanOrEqual(min);
+      }
+    }
+    expect(weightSteps(0.25)).not.toContain(0);
+  });
+
+  it("reads nothing typed that isn't a weight", async () => {
+    const { parseWeight } = await import("./weight");
+    for (const s of ["", " ", "abc", "-1", "NaN", "1e3"]) expect(parseWeight(s, 0.25)).toBeNull();
+    expect(parseWeight("0", 0.25)).toBe(0.25);
+  });
+});

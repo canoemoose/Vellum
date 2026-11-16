@@ -24,7 +24,13 @@ export function stepWeight(w: number, dir: 1 | -1, min: number): number {
   return clampWeight(next, min);
 }
 
+/**
+ * A weight kept within [min, MAX_WEIGHT] on the hundredth. Not a number (a missing width, say)
+ * is the least allowed: Math.max passes NaN through, and a NaN weight draws nothing
+ * (docs/edit-lock-brief.md, 8: a dimension vanished when its weight slider was dragged).
+ */
 export function clampWeight(w: number, min: number): number {
+  if (!Number.isFinite(w)) return Number.isFinite(min) ? min : 0;
   return round(Math.min(MAX_WEIGHT, Math.max(min, w)));
 }
 
