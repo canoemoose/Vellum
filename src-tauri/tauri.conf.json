@@ -22,7 +22,8 @@
         "backgroundColor": "#141517",
         "dragDropEnabled": true,
         "zoomHotkeysEnabled": true,
-        "decorations": false
+        "decorations": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --enable-benchmarking"
       }
     ],
     "security": {

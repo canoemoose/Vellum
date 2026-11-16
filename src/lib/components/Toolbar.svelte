@@ -2,6 +2,7 @@
   // Toolbar (48 px, wraps when narrow), agreed layout (docs/mockups/toolbar-options.html, a
   // variant of B): sidebar toggle, pages and page layout on the left; the centre is kept for
   // the markup tools; navigation mode, zoom and (later) search on the right.
+  import type { Snippet } from "svelte";
   import { ZOOM_PRESETS } from "../view/viewMath";
   import { formatZoom, parseZoom } from "../shell/format";
 
@@ -28,6 +29,10 @@
     /** Columns in the columns layout, for its tooltip. */
     columns: number;
     onLayout: (m: "continuous" | "single" | "columns") => void;
+    /** The search box, at the right-hand end. */
+    searchBox?: Snippet;
+    /** The markup tools, in the centre. */
+    centre?: Snippet;
   }
   let p: Props = $props();
 
@@ -147,7 +152,7 @@
       </button>
     {/each}
   </div>
-  <div class="centre"></div>
+  <div class="centre">{@render p.centre?.()}</div>
   <!-- Automatic, or a fixed choice. While automatic, the mode it picked has a hairline round
        it; clicking that fixes the choice, and Auto goes back. -->
   <div class="group seg" role="radiogroup" aria-label="Navigation">
@@ -245,8 +250,7 @@
     <button type="button" class="icon-btn" aria-label="Zoom in" title="Zoom in (+)" disabled={!p.hasDoc} onclick={() => p.onZoomStep(1)}>
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
     </button>
-  </div>
-  <div class="group">
+    <span class="vsep" aria-hidden="true"></span>
     <button type="button" class="icon-btn" aria-label="Fit page" title="Fit page (Ctrl+0)" disabled={!p.hasDoc} onclick={() => p.onFit("page")}>
       <!-- a page inside corner brackets -->
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
@@ -261,6 +265,7 @@
       </svg>
     </button>
   </div>
+  {@render p.searchBox?.()}
 </div>
 
 <style>
@@ -288,6 +293,8 @@
   .centre {
     flex: 1 1 0;
     min-width: 0;
+    display: flex;
+    justify-content: center;
   }
   /* Segments take the shared selected look (app.css .seg); icon buttons keep their own size. */
   .seg .mode {
@@ -310,6 +317,14 @@
     background: var(--ctl);
     border: 1px solid var(--bd-ctl);
     border-radius: 8px;
+  }
+  /* Between zoom and the fits, inside one group. */
+  .vsep {
+    width: 1px;
+    height: 20px;
+    margin: 0 4px;
+    background: var(--bd-strong);
+    flex-shrink: 0;
   }
   .sr {
     position: absolute;

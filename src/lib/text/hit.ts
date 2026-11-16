@@ -1,0 +1,256 @@
+// Finding characters under the pointer, words and lines, and turning a run of characters into
+// highlight rectangles. Pure, over a TextLayer.
+
+import { type Box, type TextLayer, boxOf, charAt, hasBox, isGenerated, isWordChar } from "./layer";
+
+const CELL = 24; // grid cell, points
+
+/**
+ * A uniform grid over the characters' boxes, so the pointer's character is found without
+ * scanning a page of 300,000 characters on every move. Built once per layer.
+ */
+export class CharIndex {
+  private cells = new Map<number, number[]>();
+
+  constructor(readonly layer: TextLayer) {
+    for (let i = 0; i < layer.n; i++) {
+      if (!hasBox(layer, i)) continue;
+      const [x0, y0, x1, y1] = boxOf(layer, i);
+      const [i0, j0, i1, j1] = [cell(x0), cell(y0), cell(x1), cell(y1)];
+      if ((i1 - i0 + 1) * (j1 - j0 + 1) > 64) continue; // a huge glyph box: skip, not worth a hundred cells
+      for (let cj = j0; cj <= j1; cj++)
+        for (let ci = i0; ci <= i1; ci++) {
+          const k = key(ci, cj);
+          let list = this.cells.get(k);
+          if (!list) this.cells.set(k, (list = []));
+          list.push(i);
+        }
+    }
+  }
+
+  /**
+   * The character nearest (x, y) within `tol` points (0 = inside its box), or null. Ties go to
+   * the smaller box, so a small character on a big one is reachable.
+   */
+  nearest(x: number, y: number, tol: number): number | null {
+    let best: number | null = null;
+    let bestD = Infinity;
+    let bestA = Infinity;
+    const r = Math.max(0, tol);
+    for (let cj = cell(y - r); cj <= cell(y + r); cj++)
+      for (let ci = cell(x - r); ci <= cell(x + r); ci++) {
+        for (const i of this.cells.get(key(ci, cj)) ?? []) {
+          const b = boxOf(this.layer, i);
+          const d = distToBox(x, y, b);
+          if (d > r) continue;
+          const a = (b[2] - b[0]) * (b[3] - b[1]);
+          if (d < bestD - 1e-9 || (Math.abs(d - bestD) <= 1e-9 && a < bestA)) {
+            best = i;
+            bestD = d;
+            bestA = a;
+          }
+        }
+      }
+    return best;
+  }
+
+  /**
+   * The caret position (0..n) for a selection end at (x, y): before or after the nearest
+   * character, by which half of it the point is in along its line. Searches outwards until a
+   * character turns up, up to `maxTol` points; null if none is that close.
+   */
+  caret(x: number, y: number, maxTol = 400): number | null {
+    for (let tol = 2; tol <= maxTol; tol *= 2) {
+      const i = this.nearest(x, y, tol);
+      if (i !== null) return afterHalf(this.layer, i, x, y) ? i + 1 : i;
+    }
+    return null;
+  }
+}
+
+const cell = (v: number) => Math.floor(v / CELL);
+const key = (i: number, j: number) => i * 100003 + j;
+
+export function distToBox(x: number, y: number, b: Box): number {
+  const dx = Math.max(b[0] - x, 0, x - b[2]);
+  const dy = Math.max(b[1] - y, 0, y - b[3]);
+  return Math.hypot(dx, dy);
+}
+
+/**
+ * Whether the point is past the middle of character i along its line. The line's direction
+ * comes from the neighbouring characters (CAD drawings have vertical text).
+ */
+function afterHalf(l: TextLayer, i: number, x: number, y: number): boolean {
+  const b = boxOf(l, i);
+  const cx = (b[0] + b[2]) / 2;
+  const cy = (b[1] + b[3]) / 2;
+  const [dx, dy] = lineDirection(l, i);
+  return (x - cx) * dx + (y - cy) * dy > 0;
+}
+
+/** Unit direction of reading at character i, from its neighbours on the same line. */
+export function lineDirection(l: TextLayer, i: number): [number, number] {
+  const b = boxOf(l, i);
+  for (const j of [i + 1, i - 1]) {
+    if (j < 0 || j >= l.n || !hasBox(l, j) || isGenerated(l, j)) continue;
+    const c = boxOf(l, j);
+    if (!sameLine(b, c)) continue;
+    let dx = (c[0] + c[2]) / 2 - (b[0] + b[2]) / 2;
+    let dy = (c[1] + c[3]) / 2 - (b[1] + b[3]) / 2;
+    if (j < i) {
+      dx = -dx;
+      dy = -dy;
+    }
+    const len = Math.hypot(dx, dy);
+    if (len > 1e-6) return [dx / len, dy / len];
+  }
+  // A lone character: tall and narrow boxes on a vertical line are rare; assume left to right.
+  return [1, 0];
+}
+
+/** Two character boxes sit on one line: they overlap across the line and are close along it. */
+export function sameLine(a: Box, b: Box): boolean {
+  const ha = a[3] - a[1], hb = b[3] - b[1];
+  const wa = a[2] - a[0], wb = b[2] - b[0];
+  const vOverlap = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+  const hOverlap = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
+  const hGap = Math.max(a[0], b[0]) - Math.min(a[2], b[2]);
+  const vGap = Math.max(a[1], b[1]) - Math.min(a[3], b[3]);
+  const horizontal = vOverlap >= 0.5 * Math.min(ha, hb) && hGap <= 1.5 * Math.max(ha, hb);
+  const vertical = hOverlap >= 0.5 * Math.min(wa, wb) && vGap <= 1.5 * Math.max(wa, wb) && ha > 0 && hb > 0 && Math.max(ha, hb) < 3 * Math.max(wa, wb);
+  return horizontal || vertical;
+}
+
+/** The word around character i, as [start, end). A non-word character is a word of one. */
+export function wordRange(l: TextLayer, i: number): [number, number] {
+  if (i < 0 || i >= l.n) return [i, i];
+  if (!isWordChar(charAt(l, i))) return [i, i + 1];
+  let a = i;
+  let b = i + 1;
+  while (a > 0 && isWordChar(charAt(l, a - 1))) a--;
+  while (b < l.n && isWordChar(charAt(l, b))) b++;
+  return [a, b];
+}
+
+const isBreak = (l: TextLayer, i: number) => {
+  const c = l.codes[i];
+  return c === 10 || c === 13;
+};
+
+/** The line around character i (between the line breaks PDFium inferred), as [start, end). */
+export function lineRange(l: TextLayer, i: number): [number, number] {
+  if (i < 0 || i >= l.n) return [i, i];
+  let a = i;
+  let b = i;
+  while (a > 0 && !isBreak(l, a - 1)) a--;
+  while (b < l.n && !isBreak(l, b)) b++;
+  return [a, b];
+}
+
+/** How far a band grows across its line toward a neighbouring line: half the gap, up to this share of its height. */
+const MAX_TO_NEIGHBOUR = 0.5;
+/** How far it grows on a side with no line that close, as a share of its height. */
+const LONE_ACROSS = 0.25;
+/** How far a band runs past the ends of its text, as a share of its height. */
+const ALONG = 0.1;
+/** Fixed margin for highlights whose neighbouring lines aren't known (search hits). */
+const PLAIN_ACROSS = 0.08;
+
+const isHorizontal = (b: Box) => b[2] - b[0] >= b[3] - b[1];
+
+/** A highlight grown by a fixed small margin: for when the page's lines aren't to hand. */
+export function padHighlight(b: Box): Box {
+  const line = Math.min(b[2] - b[0], b[3] - b[1]);
+  return grow(b, line * PLAIN_ACROSS, line * PLAIN_ACROSS, line * ALONG);
+}
+
+/** Grow a band `before` / `after` across its line (above / below, or left / right) and `along` at both ends. */
+function grow(b: Box, before: number, after: number, along: number): Box {
+  return isHorizontal(b)
+    ? [b[0] - along, b[1] - before, b[2] + along, b[3] + after]
+    : [b[0] - before, b[1] - along, b[2] + after, b[3] + along];
+}
+
+/**
+ * The page's text lines (every run of characters on one line), in a grid so a band's
+ * neighbours are found quickly. Built once per layer.
+ */
+export class LineIndex {
+  readonly lines: Box[];
+  private cells = new Map<number, number[]>();
+
+  constructor(layer: TextLayer) {
+    this.lines = rangeRects(layer, 0, layer.n);
+    this.lines.forEach((b, i) => {
+      const [i0, j0, i1, j1] = [cell(b[0]), cell(b[1]), cell(b[2]), cell(b[3])];
+      if ((i1 - i0 + 1) * (j1 - j0 + 1) > 4096) return;
+      for (let cj = j0; cj <= j1; cj++)
+        for (let ci = i0; ci <= i1; ci++) {
+          const k = key(ci, cj);
+          let list = this.cells.get(k);
+          if (!list) this.cells.set(k, (list = []));
+          list.push(i);
+        }
+    });
+  }
+
+  /** Lines whose boxes come within `r` of b. */
+  near(b: Box, r: number): Box[] {
+    const seen = new Set<number>();
+    for (let cj = cell(b[1] - r); cj <= cell(b[3] + r); cj++)
+      for (let ci = cell(b[0] - r); ci <= cell(b[2] + r); ci++)
+        for (const i of this.cells.get(key(ci, cj)) ?? []) seen.add(i);
+    return [...seen].map((i) => this.lines[i]);
+  }
+}
+
+/**
+ * A highlight band for one line of selected text, grown across its line to the midpoint of
+ * the gap to the neighbouring line on each side (so a band never reaches the next line's
+ * ascenders, and selected lines meet without overlapping) up to half its height; by a quarter
+ * of its height on a side with no line within a line's height; and a little past its ends.
+ */
+export function fitHighlight(b: Box, lines: LineIndex): Box {
+  const horiz = isHorizontal(b);
+  const h = horiz ? b[3] - b[1] : b[2] - b[0];
+  const reach = 2 * h * MAX_TO_NEIGHBOUR; // a neighbour further than this gets the lone margin
+  // Across the line: y for horizontal text, x for vertical.
+  const [lo, hi] = horiz ? [b[1], b[3]] : [b[0], b[2]];
+  let before = Infinity;
+  let after = Infinity;
+  for (const l of lines.near(b, reach)) {
+    // Side by side along the line: only lines that overlap this one along it are neighbours.
+    const overlap = horiz ? Math.min(l[2], b[2]) - Math.max(l[0], b[0]) : Math.min(l[3], b[3]) - Math.max(l[1], b[1]);
+    if (overlap <= 0) continue;
+    const [llo, lhi] = horiz ? [l[1], l[3]] : [l[0], l[2]];
+    if (lhi <= lo + 1e-6 && lo - lhi <= reach) before = Math.min(before, Math.max(0, (lo - lhi) / 2));
+    else if (llo >= hi - 1e-6 && llo - hi <= reach) after = Math.min(after, Math.max(0, (llo - hi) / 2));
+  }
+  const side = (v: number) => (v === Infinity ? h * LONE_ACROSS : v);
+  return grow(b, side(before), side(after), h * ALONG);
+}
+
+/**
+ * Highlight rectangles for characters [a, b): consecutive boxes on one line merge into one
+ * rectangle; generated characters (spaces and breaks PDFium inferred) and characters without a
+ * box are skipped.
+ */
+export function rangeRects(l: TextLayer, a: number, b: number): Box[] {
+  const out: Box[] = [];
+  let cur: Box | null = null;
+  let last: Box | null = null;
+  for (let i = Math.max(0, a); i < Math.min(l.n, b); i++) {
+    if (!hasBox(l, i)) continue;
+    const bx = boxOf(l, i);
+    if (cur && last && sameLine(last, bx)) {
+      cur = [Math.min(cur[0], bx[0]), Math.min(cur[1], bx[1]), Math.max(cur[2], bx[2]), Math.max(cur[3], bx[3])];
+    } else {
+      if (cur) out.push(cur);
+      cur = bx;
+    }
+    last = bx;
+  }
+  if (cur) out.push(cur);
+  return out;
+}

@@ -1,5 +1,10 @@
 // Drawing scale: which detected candidate to trust, the status bar text, parsing what the
-// user types in the Drawing scale dialog.
+// user types in the Drawing scale dialog. Imperial (stage 5 [A9]): architectural and
+// engineering scales are read and, in an imperial view, written that way; the scale is still
+// held as a ratio.
+
+import { imperialScaleText, parseLengthScale } from "../markup/imperial";
+import type { Units } from "./paper";
 
 export type ScaleSource = "detected" | "manual";
 
@@ -21,15 +26,17 @@ export const SCALE_PRESETS = [1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 5
 export const MIN_RATIO = 1;
 export const MAX_RATIO = 100000;
 
-/** "1:200", "1:2.5". */
-export function formatRatio(ratio: number): string {
+/** "1:200", "1:2.5"; in an imperial view 1/4" = 1'-0" or 1" = 20' where the ratio is one. */
+export function formatRatio(ratio: number, units: Units = "metric"): string {
+  const imperial = units === "imperial" ? imperialScaleText(ratio) : null;
+  if (imperial) return imperial;
   const r = Math.round(ratio * 100) / 100;
   return `1:${r}`;
 }
 
-export function scaleStatusText(s: DocScale | null): string {
+export function scaleStatusText(s: DocScale | null, units: Units = "metric"): string {
   if (!s) return "Scale not set";
-  return s.source === "detected" ? `Scale ${formatRatio(s.ratio)} (from title block)` : `Scale ${formatRatio(s.ratio)}`;
+  return s.source === "detected" ? `Scale ${formatRatio(s.ratio, units)} (from title block)` : `Scale ${formatRatio(s.ratio, units)}`;
 }
 
 /**
@@ -66,12 +73,15 @@ export function pickDetectedScale(cands: CandidateLike[], pageW: number, pageH: 
   return null;
 }
 
-/** Parse "1:200", "1 : 200", "1/200" or "200". Returns null when it isn't a usable ratio. */
+/**
+ * Parse "1:200", "1 : 200", "1/200" or "200", or a scale written as lengths: 1/4" = 1'-0"
+ * (1:48), 1" = 20' (1:240). Returns null when it isn't a usable ratio.
+ */
 export function parseScaleInput(s: string): number | null {
   const t = s.trim().replace(/\s+/g, "");
   const m = /^(?:1[:/∶])?(\d+(?:[.,]\d+)?)$/.exec(t);
-  if (!m) return null;
-  const n = Number(m[1].replace(",", "."));
+  const n = m ? Number(m[1].replace(",", ".")) : s.includes("=") ? parseLengthScale(s) : null;
+  if (n === null) return null;
   if (!Number.isFinite(n) || n < MIN_RATIO || n > MAX_RATIO) return null;
   return n;
 }
@@ -90,3 +100,5 @@ export function rememberScale(
   for (let i = 0; i < keys.length - cap; i++) delete out[keys[i]];
   return out;
 }
+
+// Measuring

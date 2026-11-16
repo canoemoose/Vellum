@@ -2,15 +2,25 @@
 // %LOCALAPPDATA%\io.github.canoemoose.vellum (the app identifier), so it survives restarts. Print presets and last
 // print settings are WP-Print's, under their own vellum.print.* keys.
 
+import { type MarkupPrefs, defaultPrefs, sanitisePrefs } from "./markup/prefs";
 import { type LayoutMode, MAX_COLUMNS, MIN_COLUMNS } from "./view/layout";
 import { type DocMemory, sanitiseDocs } from "./shell/docMemory";
 import type { Units } from "./shell/paper";
 import type { ThemePref } from "./shell/theme";
 import type { Bounds } from "./shell/windowPlacement";
+import type { Style } from "./markup/base";
+import { type TextMarkVariant, sanitiseTextMarks } from "./markup/kinds/textmark"; // Text markups
+// Measuring
+import { type MeasureFormat, DEFAULT_FORMAT, DEFAULT_LABEL_SIZE, sanitiseFormat } from "./markup/measure";
+import { type RememberedPages, sanitiseRememberedPages } from "./shell/pageScale";
+import { type DimensionLook, DEFAULT_LOOK, sanitiseLook } from "./markup/dimension"; // Dimensions (stage 5)
+// Stamps
+import { type StampPrefs, DEFAULT_LINE, sanitiseStampPrefs } from "./markup/stamps";
 
 const KEY = "vellum.settings.v1";
 
-export type SidebarTab = "pages" | "outline";
+// Text markups: the Markups tab joins SidebarTab (and its check in sanitiseSettings).
+export type SidebarTab = "pages" | "outline" | "markups";
 
 export interface WindowState extends Bounds {
   maximised: boolean;
@@ -34,6 +44,25 @@ export interface Settings {
   window: WindowState | null;
   /** Look for a new version on start, at most once a day (shell/update.ts). */
   updateCheck: boolean;
+  /** Tool styles, confirmed saves, author (markup/prefs.ts). */
+  markup: MarkupPrefs;
+  // Measuring
+  /** How measurements are written and labelled, and per-page scales by file (pathKey). */
+  measure: {
+    format: MeasureFormat;
+    labelSize: number;
+    pageScales: Record<string, RememberedPages>;
+    /** Dimensions (stage 5): the ends and value font new measurements take, set in the bar. */
+    look: DimensionLook;
+  };
+
+  // Stamps
+  /** The Stamp tool's picker: second line on, colour (null: each stamp's own), last custom wording. */
+  stamps: StampPrefs;
+
+  // Text markups
+  /** Each text markup variant's colour and opacity, as last made or restyled. */
+  textMarks: Partial<Record<TextMarkVariant, Style>>;
 }
 
 export const SIDEBAR_MIN = 160;
@@ -53,6 +82,15 @@ export const DEFAULTS: Settings = {
   docs: {},
   window: null,
   updateCheck: true,
+  markup: defaultPrefs(),
+  // Measuring
+  measure: { format: { ...DEFAULT_FORMAT }, labelSize: DEFAULT_LABEL_SIZE, pageScales: {}, look: { ...DEFAULT_LOOK } },
+
+  // Stamps
+  stamps: { sub: true, line: DEFAULT_LINE, builtIn: {}, colour: null, texts: [], last: {} },
+
+  // Text markups
+  textMarks: {},
 };
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -71,7 +109,7 @@ export function sanitiseSettings(raw: unknown): Settings {
     theme: s.theme === "light" || s.theme === "system" ? s.theme : "dark",
     sidebarOpen: typeof s.sidebarOpen === "boolean" ? s.sidebarOpen : DEFAULTS.sidebarOpen,
     sidebarWidth: num(s.sidebarWidth) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, s.sidebarWidth)) : SIDEBAR_DEFAULT,
-    sidebarTab: s.sidebarTab === "outline" ? "outline" : "pages",
+    sidebarTab: s.sidebarTab === "outline" || s.sidebarTab === "markups" ? s.sidebarTab : "pages",
     units: s.units === "imperial" ? "imperial" : "metric",
     recent: Array.isArray(s.recent) ? s.recent.filter((p): p is string => typeof p === "string").slice(0, 10) : [],
     scales,
@@ -81,8 +119,25 @@ export function sanitiseSettings(raw: unknown): Settings {
         ? { x: w.x, y: w.y, w: w.w, h: w.h, maximised: w.maximised === true }
         : null,
     updateCheck: s.updateCheck !== false,
+    markup: sanitisePrefs(s.markup),
+    // Measuring
+    measure: sanitiseMeasure(s.measure),
+
+    // Stamps
+    stamps: sanitiseStampPrefs(s.stamps),
+
+    // Text markups
+    textMarks: sanitiseTextMarks(s.textMarks),
   };
 }
+
+// Measuring
+function sanitiseMeasure(raw: unknown): Settings["measure"] {
+  const m = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const size = typeof m.labelSize === "number" && Number.isFinite(m.labelSize) && m.labelSize >= 4 && m.labelSize <= 72 ? m.labelSize : DEFAULT_LABEL_SIZE;
+  return { format: sanitiseFormat(m.format), labelSize: size, pageScales: sanitiseRememberedPages(m.pageScales), look: sanitiseLook(m.look) };
+}
+// End measuring
 
 export function loadSettings(): Settings {
   try {

@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { IMAGE_EXTENSIONS } from "./render/imageRenderer";
 
 export interface LaunchArgs {
@@ -39,6 +39,8 @@ export const exitApp = (code = 0) => invoke<void>("exit_app", { code });
 export const revealInExplorer = (path: string) => invoke<void>("reveal_in_explorer", { path });
 /** Open THIRD-PARTY-NOTICES.txt (installed beside the exe) in the default text editor. */
 export const openNotices = () => invoke<void>("open_notices");
+/** Open a link from a document in the default browser (http, https and mailto only). */
+export const openUrl = (url: string) => invoke<void>("open_url", { url });
 
 /** Every extension Vellum opens (PDF plus the image types). */
 export const OPEN_EXTENSIONS = ["pdf", ...IMAGE_EXTENSIONS];
@@ -61,6 +63,12 @@ export async function pickFiles(): Promise<string[]> {
   });
   if (!r) return [];
   return Array.isArray(r) ? r : [r];
+}
+
+/** Ask where to save a PDF; null if cancelled. */
+export async function pickSavePdf(defaultPath: string, title: string): Promise<string | null> {
+  const r = await saveDialog({ defaultPath, title, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  return typeof r === "string" ? r : null;
 }
 
 export async function pickFolder(title: string): Promise<string | null> {

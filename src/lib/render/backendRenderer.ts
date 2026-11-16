@@ -8,6 +8,8 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { RegionAssembler } from "./assembler";
+import { parseTextLayer, type TextLayer } from "../text/layer";
+import type { PageHits, SearchOptions } from "../text/searchModel";
 import type {
   BandBitmap,
   DocInfo,
@@ -48,6 +50,10 @@ export abstract class BackendRenderer implements Renderer {
 
   async close(docId: number): Promise<void> {
     await invoke("doc_close", { docId });
+  }
+
+  async closeAndWait(docId: number): Promise<void> {
+    await invoke("doc_close_wait", { docId });
   }
 
   /** Abort hook: cancel the backend request (skipped if it hasn't started yet). */
@@ -190,5 +196,13 @@ export abstract class BackendRenderer implements Renderer {
 
   findScale(docId: number, page: number): Promise<ScaleCandidate[]> {
     return invoke<ScaleCandidate[]>("doc_find_scale", { docId, page });
+  }
+
+  async textLayer(docId: number, page: number): Promise<TextLayer> {
+    return parseTextLayer(await invoke<ArrayBuffer>("doc_text_layer", { docId, page }));
+  }
+
+  searchPage(docId: number, page: number, query: string, opts: SearchOptions): Promise<PageHits> {
+    return invoke<PageHits>("doc_search_page", { docId, page, query, matchCase: opts.matchCase, wholeWord: opts.wholeWord });
   }
 }

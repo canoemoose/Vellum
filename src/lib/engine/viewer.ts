@@ -39,11 +39,13 @@ import {
   type Rotation,
   normRotation,
   rotatePoint,
+  rotateRect,
   rotatedDrawTransform,
   rotatedSize,
   unrotatePoint,
   unrotateRect,
 } from "../view/rotation";
+import { revealView } from "../view/reveal";
 import {
   TILE,
   TileCache,
@@ -197,6 +199,8 @@ export interface DocView {
   readonly previews: Map<number, Preview>;
   /** A small picture of the view as it was left, for the tab's hover card (owned here). */
   readonly snapshot: ImageBitmap | null;
+  /** The password it was opened with, for reopening after a save. */
+  readonly password?: string | null;
 }
 
 export interface SharpEvent {
@@ -212,8 +216,33 @@ export interface FrameSample {
   drawMs: number;
 }
 
+/**
+ * Rectangles drawn over the page, above the tiles (search hits, the text selection). The
+ * fill is multiplied into the page, so the drawing stays readable underneath.
+ */
+export interface Highlight {
+  /** Per page, [x0, y0, x1, y1] in page points (y down, unrotated). */
+  rects: Map<number, [number, number, number, number][]>;
+  fill: string;
+  /** Optional outline, drawn normally (not multiplied), one device pixel wide. */
+  stroke?: string;
+  /** Lower draws first. */
+  order: number;
+  /** The document it belongs to: drawn only while that document is attached. */
+  docId: number;
+}
+
+/**
+ * Draws on a page above its tiles and highlights (markups). `m` maps page points (y down,
+ * unrotated) to device pixels as a canvas transform; `pxPerPt` is device pixels per point. The
+ * page is clipped; the context's transform and state are restored afterwards.
+ */
+export type PagePainter = (ctx: CanvasRenderingContext2D, page: number, m: [number, number, number, number, number, number], pxPerPt: number) => void;
+
 export class Viewer {
   readonly opts: ViewerOptions;
+  private highlights = new Map<string, Highlight>();
+  private painters = new Map<string, PagePainter>();
   readonly cache: TileCache;
   readonly thumbnails: ThumbnailQueue;
   private ctx: CanvasRenderingContext2D;
@@ -239,6 +268,8 @@ export class Viewer {
   private page = 0;
   private loading = false;
   private error: string | null = null;
+  /** The attached document's password, for reopening it after a save. */
+  password: string | null = null;
   /** Pointer position in screen (CSS) px, or null when outside the canvas. */
   private pointer: { x: number; y: number } | null = null;
 
@@ -342,6 +373,7 @@ export class Viewer {
   async open(path: string, password?: string, renderer: Renderer = rendererFor(path)): Promise<void> {
     this.resetRendering();
     this.closeDoc();
+    this.password = password ?? null;
     this.renderer = renderer;
     this.loading = true;
     this.error = null;
@@ -501,6 +533,7 @@ export class Viewer {
       columns: this.columns,
       previews: keep,
       snapshot,
+      password: this.password,
     };
     this.doc = null;
     this.clearAttached();
@@ -516,6 +549,7 @@ export class Viewer {
     this.closeDoc();
     this.renderer = state.renderer;
     this.doc = state.doc;
+    this.password = state.password ?? null;
     this.currentPath = state.path;
     this.fileName = state.fileName;
     this.error = null;
@@ -602,6 +636,22 @@ export class Viewer {
     this.queue = [];
     this.cache.clear();
     this.clearPartials();
+    this.requestFrame();
+  }
+
+  /**
+   * Re-render one page's tiles (an annotation on it was hidden or shown in PDFium). The page's
+   * preview stays, so it shows underneath until the new tiles arrive.
+   */
+  dropPageTiles(page: number): void {
+    for (const j of [...this.active]) {
+      if (j.page !== page || j.kind !== "tiles") continue;
+      j.ac?.abort();
+      this.active.delete(j);
+      this.clearPartials(j);
+    }
+    this.queue = this.queue.filter((j) => j.page !== page || j.kind !== "tiles");
+    this.cache.dropOtherScales(page, []);
     this.requestFrame();
   }
 
@@ -888,6 +938,85 @@ export class Viewer {
     this.setView({ scale: s, tx: this.vw / 2 - (r.x + X) * s, ty: this.vh / 2 - (r.y + Y) * s }, "pan");
   }
 
+  /** Set (or with null, remove) a named page painter and redraw. Painters run in name order. */
+  setPainter(name: string, p: PagePainter | null): void {
+    if (p) this.painters.set(name, p);
+    else if (!this.painters.delete(name)) return;
+    this.requestFrame();
+  }
+
+  /**
+   * Reopen the attached PDF after its file was replaced (a save), keeping the view, page,
+   * rotation, layout, tiles and previews: only annotations changed, and the ones Vellum draws
+   * itself are hidden in PDFium again by `afterOpen` before anything renders. `between` runs
+   * once the backend has let go of the file (it moves the saved file into place). If it
+   * fails, the original is reopened and the error rethrown.
+   */
+  async reopen(between: () => Promise<void>, afterOpen?: (docId: number) => Promise<void>): Promise<void> {
+    const old = this.doc;
+    if (!old) return between();
+    const r = this.renderer;
+    this.resetRendering();
+    this.thumbnails.cancelDoc(old.docId);
+    const gen = this.gen;
+    if (r.closeAndWait) await r.closeAndWait(old.docId);
+    else await r.close(old.docId);
+    let failure: unknown = null;
+    try {
+      await between();
+    } catch (e) {
+      failure = e;
+    }
+    let doc: DocInfo;
+    try {
+      doc = await r.open(this.currentPath, this.password ?? undefined);
+      if (afterOpen) await afterOpen(doc.docId);
+    } catch (e) {
+      // The file can't be reopened: show it as an error rather than a stale document.
+      this.doc = null;
+      this.error = String((e as Error)?.message ?? e);
+      this.cache.clear();
+      this.emitUi();
+      throw failure ?? e;
+    }
+    if (gen !== this.gen) {
+      r.close(doc.docId).catch(() => {});
+      return;
+    }
+    this.doc = { ...doc };
+    this.requestFrame();
+    this.emitUi();
+    this.settleNow();
+    if (failure) throw failure;
+  }
+
+  /** Set (or with null, remove) a named highlight layer and redraw. */
+  setHighlights(name: string, h: Highlight | null): void {
+    if (h) this.highlights.set(name, h);
+    else if (!this.highlights.delete(name)) return;
+    this.requestFrame();
+  }
+
+  /**
+   * Bring a rectangle on a page (page points) into view: centre it if it's off screen, and
+   * zoom in if it would be too small to read (search hits on a drawing at fit). Eases there.
+   */
+  revealRect(page: number, b: [number, number, number, number]): void {
+    if (!this.doc || page < 0 || page >= this.doc.numPages) return;
+    if (this.layoutMode === "single" && page !== this.page) {
+      this.page = page;
+      this.relayout();
+      this.setView(this.view, "jump");
+    }
+    const r = this.layout.rects[page];
+    if (!r) return;
+    const rr = rotateRect({ x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] }, this.doc.sizes[page], this.rotationDeg);
+    const v = revealView(this.view, { x: r.x + rr.x, y: r.y + rr.y, w: rr.w, h: rr.h }, this.vw, this.vh);
+    if (!v) return;
+    this.fitted = null;
+    this.animateTo(v);
+  }
+
   /** Show a page point at the top of the viewport (bookmark targets with a y). */
   gotoPagePoint(page: number, y: number | null): void {
     if (!this.doc) return;
@@ -971,6 +1100,14 @@ export class Viewer {
       return { page: p, x, y };
     }
     return null;
+  }
+
+  /** A page point on screen (CSS px in the viewport), or null if the page isn't laid out. */
+  pageToScreen(page: number, x: number, y: number): [number, number] | null {
+    const r = this.layout.rects[page];
+    if (!this.doc || !r) return null;
+    const [X, Y] = rotatePoint(x, y, this.doc.sizes[page], this.rotationDeg);
+    return [(r.x + X) * this.view.scale + this.view.tx, (r.y + Y) * this.view.scale + this.view.ty];
   }
 
   /** The viewport in a page's own points (unrotated; may extend past the page). */
@@ -1635,6 +1772,25 @@ export class Viewer {
         blit(b.bitmap, dev(b.x / b.rs, b.y / b.rs, (b.x + b.w) / b.rs, (b.y + b.h) / b.rs));
       }
       if (this.cache.scalesFor(p).includes(target)) drawTiles(target);
+      if (this.highlights.size) this.drawHighlights(p, dev);
+      if (this.painters.size) {
+        // Page points -> device pixels, unrounded: the same mapping as dev(), as a transform.
+        const at = (x: number, y: number): [number, number] => {
+          const [X, Y] = rotatePoint(x, y, size, rot);
+          return [((r.x + X) * scale + tx) * dpr, ((r.y + Y) * scale + ty) * dpr];
+        };
+        const o = at(0, 0), ax = at(1, 0), ay = at(0, 1);
+        const m: [number, number, number, number, number, number] = [ax[0] - o[0], ax[1] - o[1], ay[0] - o[0], ay[1] - o[1], o[0], o[1]];
+        for (const name of [...this.painters.keys()].sort()) {
+          ctx.save();
+          try {
+            this.painters.get(name)!(ctx, p, m, scale * dpr);
+          } catch (e) {
+            console.error("painter failed:", String(e));
+          }
+          ctx.restore();
+        }
+      }
       ctx.restore();
     }
 
@@ -1642,6 +1798,37 @@ export class Viewer {
     if (cp !== this.page && this.layoutMode !== "single") {
       this.page = cp;
       this.emitUi();
+    }
+  }
+
+  /** Highlight layers on page p, through the page's point -> device rect mapping. */
+  private drawHighlights(p: number, dev: (x0: number, y0: number, x1: number, y1: number) => [number, number, number, number]): void {
+    const ctx = this.ctx;
+    const min = 2 * this.dpr; // a hit on a drawing at fit is still a visible mark
+    const id = this.doc?.docId;
+    const layers = [...this.highlights.values()].filter((h) => h.docId === id).sort((a, b) => a.order - b.order);
+    for (const h of layers) {
+      const rects = h.rects.get(p);
+      if (!rects?.length) continue;
+      const boxes = rects.map((b) => {
+        let [x0, y0, x1, y1] = dev(b[0], b[1], b[2], b[3]);
+        if (x1 - x0 < min) [x0, x1] = [Math.round((x0 + x1 - min) / 2), Math.round((x0 + x1 + min) / 2)];
+        if (y1 - y0 < min) [y0, y1] = [Math.round((y0 + y1 - min) / 2), Math.round((y0 + y1 + min) / 2)];
+        return [x0, y0, x1, y1];
+      });
+      ctx.globalCompositeOperation = "multiply";
+      ctx.fillStyle = h.fill;
+      // One path for the layer: where padded rectangles overlap (lines of a selection), the
+      // overlap is filled once, not multiplied twice into a darker stripe.
+      ctx.beginPath();
+      for (const [x0, y0, x1, y1] of boxes) ctx.rect(x0, y0, x1 - x0, y1 - y0);
+      ctx.fill("nonzero");
+      ctx.globalCompositeOperation = "source-over";
+      if (h.stroke) {
+        ctx.strokeStyle = h.stroke;
+        ctx.lineWidth = Math.max(1, Math.round(this.dpr));
+        for (const [x0, y0, x1, y1] of boxes) ctx.strokeRect(x0 - 0.5, y0 - 0.5, x1 - x0 + 1, y1 - y0 + 1);
+      }
     }
   }
 

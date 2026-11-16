@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Sidebar (196 px by default, resizable, collapsible): Pages and Bookmarks (the PDF's
-  // outline; the setting keeps its old name, "outline"). The mockup's
-  // Markups tab is v0.2 and left out.
+  // Sidebar (196 px by default, resizable, collapsible): Pages, Bookmarks (the PDF's outline;
+  // the setting keeps its old name, "outline") and Markups (MarkupsList). Search results show
+  // in a card under the toolbar's search box instead.
   import type { OutlineNode } from "../render/types";
   import type { PageSize } from "../view/layout";
   import type { SidebarTab } from "../settings";
@@ -9,6 +9,8 @@
   import Thumbnails from "./Thumbnails.svelte";
   import OutlineTree from "./OutlineTree.svelte";
   import { userMessage } from "../shell/messages";
+  import MarkupsList from "./MarkupsList.svelte"; // Text markups
+  import type { MarkupPage } from "../markup/listing";
 
   interface Props {
     width: number;
@@ -24,6 +26,11 @@
     onWidth: (w: number, done: boolean) => void;
     onGoto: (page: number) => void;
     onGotoPoint: (page: number, y: number | null) => void;
+    // Text markups
+    /** The Markups tab: the tab's markups by page, which are selected, their colours; editable is false for images. */
+    markups?: { pages: MarkupPage[]; selected: ReadonlySet<string>; colours: ReadonlyMap<string, string>; editable: boolean };
+    onPickMarkup?: (id: string) => void;
+    onDeleteMarkup?: (id: string) => void;
   }
   let p: Props = $props();
 
@@ -45,6 +52,8 @@
   <div class="tabs" role="tablist" aria-label="Sidebar">
     <button type="button" role="tab" aria-selected={p.tab === "pages"} class:on={p.tab === "pages"} onclick={() => p.onTab("pages")}>Pages</button>
     <button type="button" role="tab" aria-selected={p.tab === "outline"} class:on={p.tab === "outline"} onclick={() => p.onTab("outline")}>Bookmarks</button>
+    <!-- Text markups -->
+    <button type="button" role="tab" aria-selected={p.tab === "markups"} class:on={p.tab === "markups"} onclick={() => p.onTab("markups")}>Markups</button>
   </div>
 
   {#if p.docId === null}
@@ -53,6 +62,15 @@
     {#key p.docId}
       <Thumbnails docId={p.docId} width={p.width} sizes={p.sizes} current={p.current} visible={p.visible} thumbnail={p.thumbnail} cancelThumbnail={p.cancelThumbnail} onGoto={p.onGoto} />
     {/key}
+  {:else if p.tab === "markups"}
+    <!-- Text markups: the Markups tab -->
+    {#if !p.markups?.editable}
+      <p class="empty">Markups can be made on PDFs only.</p>
+    {:else if p.markups.pages.length}
+      <MarkupsList pages={p.markups.pages} selected={p.markups.selected} colours={p.markups.colours} onPick={(id) => p.onPickMarkup?.(id)} onDelete={(id) => p.onDeleteMarkup?.(id)} />
+    {:else}
+      <p class="empty">No markups yet. Draw with the tools in the toolbar, or select text to highlight it.</p>
+    {/if}
   {:else}
     <div class="outline">
       {#await outlineFor(p.docId)}

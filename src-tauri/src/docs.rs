@@ -252,6 +252,40 @@ impl Docs {
             EntryRef::Image(_) => Ok(Vec::new()),
         }
     }
+
+    /// The page's characters, boxes and links (`text::encode_layer`); an empty layer for images.
+    pub fn text_layer(&self, pdf: &PdfiumState, doc_id: u64, page: usize) -> Result<Vec<u8>, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.text_layer(doc_id, page),
+            EntryRef::Image(_) => Ok(crate::text::encode_layer(&[], &[], &[], &[])),
+        }
+    }
+
+    /// A page's frame (images: their own size, no rotation).
+    pub fn page_frame(&self, pdf: &PdfiumState, doc_id: u64, page: usize) -> Result<crate::text::FrameInfo, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.page_frame(doc_id, page),
+            EntryRef::Image(_) => Err("images have no PDF page".into()),
+        }
+    }
+
+    /// Hide or show annotations by /NM or by position in /Annots (PDFs only).
+    pub fn hide_annots(&self, pdf: &PdfiumState, doc_id: u64, page: usize, nms: Vec<String>, indices: Vec<usize>, hidden: bool) -> Result<usize, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.hide_annots(doc_id, page, nms, indices, hidden),
+            EntryRef::Image(_) => Ok(0),
+        }
+    }
+
+    /// Search hits on one page (none for images).
+    pub fn search_page(
+        &self, pdf: &PdfiumState, doc_id: u64, page: usize, query: String, match_case: bool, whole_word: bool,
+    ) -> Result<crate::text::PageHits, String> {
+        match self.entry(doc_id)? {
+            EntryRef::Pdf => pdf.search_page(doc_id, page, query, match_case, whole_word),
+            EntryRef::Image(_) => Ok(crate::text::PageHits { chars: 0, hits: Vec::new(), truncated: false }),
+        }
+    }
 }
 
 /// Bytes reserved after each streamed band for the command's trailer.

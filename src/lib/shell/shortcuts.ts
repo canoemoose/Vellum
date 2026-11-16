@@ -1,7 +1,9 @@
 // Every binding, for Help > Keyboard shortcuts. Navigation bindings mirror README.md's
 // "Using it" table and src/lib/engine/input.ts; shell bindings are handled in App.svelte.
 // Key notation: "+" joins keys and gestures that are pressed together ("Ctrl+wheel",
-// "Space+drag", "Shift+click").
+// "Space+drag", "Shift+click"). The markup tools' letters come from the tool registry.
+
+import { letterShortcuts } from "../markup/tools";
 
 export interface Shortcut {
   keys: string;
@@ -52,10 +54,44 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: "Ctrl+Shift+1 / 2 / 3", action: "Single page / Continuous / Columns" },
       { keys: "Page Up / Page Down", action: "Previous / next page" },
       { keys: "Home / End", action: "First / last page" },
-      { keys: "R / Shift+R", action: "Rotate view clockwise / anticlockwise" },
+      { keys: "] / [", action: "Rotate view clockwise / anticlockwise; with a stamp, image, polygon or cloud selected, or a stamp about to be placed, turn that instead (Shift: 15 degrees)" },
       { keys: "Ctrl+B", action: "Show or hide the sidebar" },
       { keys: "Double-click the sidebar's edge", action: "Default sidebar width" },
       { keys: "F12 / Ctrl+Shift+D", action: "Performance overlay" },
+    ],
+  },
+  {
+    title: "Text and links",
+    items: [
+      { keys: "Ctrl+F", action: "Search the document" },
+      { keys: "Enter / F3", action: "Next search result" },
+      { keys: "Shift+Enter / Shift+F3", action: "Previous search result" },
+      { keys: "Esc (in the search box)", action: "Clear the search" },
+      { keys: "Drag over text", action: "Select text" },
+      { keys: "Double-click / triple-click", action: "Select a word / a line" },
+      { keys: "Ctrl+C", action: "Copy the selected text" },
+      { keys: "Ctrl+H / Ctrl+U / Ctrl+Shift+X", action: "Highlight / underline / strike through the selected text" },
+      { keys: "Ctrl+A", action: "Select all the text on the page" },
+      { keys: "Esc", action: "Clear the selection" },
+      { keys: "Click a link", action: "Follow it (web links open in the browser)" },
+    ],
+  },
+  {
+    title: "Markup",
+    items: [
+      ...letterShortcuts(),
+      { keys: "H (with text selected)", action: "Highlight the selected text" },
+      { keys: "Esc", action: "Abandon a shape being clicked out, else back to the Select tool, else clear the markup selection" },
+      { keys: "Shift while drawing", action: "Square, circle, or 15° steps for lines and points" },
+      { keys: "Double-click / Enter", action: "Finish a shape being clicked out (polyline, polygon, cloud, polyline length, area)" },
+      { keys: "Backspace / Ctrl+Z (clicking out a shape)", action: "Take back the last point" },
+      { keys: "Right-click (clicking out a shape)", action: "Finish, remove the last point, or cancel" },
+      { keys: "Delete / Backspace", action: "Delete the selected markups" },
+      { keys: "Arrow keys / Shift+arrow keys", action: "Nudge the selected markups" },
+      { keys: "Ctrl+Z / Ctrl+Y", action: "Undo / redo" },
+      { keys: "Ctrl+X / Ctrl+C / Ctrl+V", action: "Cut / copy / paste markups (paste lands at the pointer; a copied picture pastes as an image)" },
+      { keys: "Ctrl+A (a markup selected or a markup tool out)", action: "Select all the markups on the page" },
+      { keys: "Ctrl+S / Ctrl+Shift+S", action: "Save / Save a copy" },
     ],
   },
   {

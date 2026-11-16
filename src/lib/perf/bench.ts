@@ -129,6 +129,11 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     void v.whenFirstBand().then(() => (firstBandAt = performance.now()));
     await v.open(args.file);
     out.openParsedMs = performance.now() - t0;
+    // As the app does once a file is open (phase 7b): read its annotations in the background,
+    // alongside the first page's render, so the numbers include what that costs.
+    const annotRead = invoke<{ pages: { annots: unknown[] }[]; ms: number }>("annot_read", { path: args.file, password: null })
+      .then((r) => ({ ms: r.ms, annots: r.pages.reduce((n, p) => n + p.annots.length, 0), doneMs: performance.now() - t0 }))
+      .catch((e) => ({ error: String(e) }));
     const fs = await timeout(firstSharp, TIMEOUT);
     out.firstPageMs = fs ? performance.now() - t0 : null;
     // Progressive paint: open to the first band of the page on screen.
@@ -147,6 +152,7 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
       out.outlineTopLevel = (await v.renderer.outline?.(id))?.length ?? null;
     }
     await v.whenIdle(TIMEOUT);
+    out.annotRead = await annotRead;
     sampleHeap();
     out.memAfterOpenMb = (await memoryStats()).current.privateWsMb;
 

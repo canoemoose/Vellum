@@ -1,3 +1,5 @@
+pub mod annot; // editing: markups saved as annotations
+pub mod clipboard; // markups and pictures on the system clipboard
 pub mod docs;
 pub mod errcode;
 pub mod imagedoc;
@@ -11,7 +13,10 @@ pub mod print;
 // End WP-Print
 pub mod scale;
 pub mod shell; // WP-Shell
+pub mod signature; // signatures: import and library
 pub mod snap;
+pub mod stamps; // Stamps: your own image stamps (phase 5)
+pub mod text; // reading: text layer, links, search
 pub mod update; // in-app updates
 
 use docs::{DocInfo, Docs};
@@ -312,6 +317,34 @@ async fn doc_find_scale(
     blocking(move || docs.find_scale(&pdf, doc_id, page)).await
 }
 
+/// The page's characters with their boxes, and its links, as raw bytes (`text::encode_layer`).
+#[tauri::command]
+async fn doc_text_layer(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    page: usize,
+) -> Result<tauri::ipc::Response, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    let bytes = blocking(move || docs.text_layer(&pdf, doc_id, page)).await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Search hits on one page; rects in page points, y down.
+#[tauri::command]
+async fn doc_search_page(
+    pdf: tauri::State<'_, PdfiumState>,
+    docs: tauri::State<'_, Arc<Docs>>,
+    doc_id: u64,
+    page: usize,
+    query: String,
+    match_case: bool,
+    whole_word: bool,
+) -> Result<text::PageHits, String> {
+    let (pdf, docs) = (pdf.inner().clone(), docs.inner().clone());
+    blocking(move || docs.search_page(&pdf, doc_id, page, query, match_case, whole_word)).await
+}
+
 /// The page preview stored on disk for this document's file (WebP bytes), or an empty body.
 #[tauri::command]
 async fn doc_cached_preview(docs: tauri::State<'_, Arc<Docs>>, doc_id: u64, page: usize) -> Result<tauri::ipc::Response, String> {
@@ -398,6 +431,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             launch_args,
+            clipboard::clipboard_put_markups,
+            clipboard::clipboard_take,
+            clipboard::picture_open,
             read_file,
             append_perf_log,
             write_text_file,
@@ -415,12 +451,30 @@ pub fn run() {
             doc_page_text,
             doc_outline,
             doc_find_scale,
+            doc_text_layer,
+            doc_search_page,
             doc_cached_preview,
             doc_store_preview,
             pdfium_trims,
             // WP-Shell
             shell::shell_take_pending,
             shell::reveal_in_explorer,
+            shell::open_url,
+            // editing: saving markups
+            annot::commands::annot_inspect,
+            annot::commands::annot_prepare,
+            annot::commands::annot_commit,
+            annot::commands::annot_discard,
+            annot::commands::file_stamp,
+            annot::commands::doc_close_wait,
+            annot::commands::doc_page_frame,
+            annot::commands::doc_hide_annots,
+            annot::commands::annot_read,
+            annot::commands::annot_stamp_images,
+            annot::commands::recovery_write,
+            annot::commands::recovery_read,
+            annot::commands::recovery_delete,
+            annot::commands::user_display_name,
             shell::open_notices,
             snap::snap_max_button,
             // WP-Shell end
@@ -440,6 +494,28 @@ pub fn run() {
             print::print_send,
             print::print_cancel,
             // End WP-Print
+            // Signatures
+            signature::signature_preview,
+            signature::signature_import,
+            signature::signature_list,
+            signature::signature_add,
+            signature::signature_rename,
+            signature::signature_delete,
+            signature::signature_get,
+            signature::signature_strokes,
+            // End signatures
+            // Measuring
+            annot::measure::measure_user_units,
+
+            // Stamps
+            stamps::stamp_list,
+            stamps::stamp_add,
+            stamps::stamp_add_png,
+            stamps::stamp_get,
+            stamps::stamp_delete,
+            stamps::stamp_rename,
+
+            // Text markups
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

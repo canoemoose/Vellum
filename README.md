@@ -121,7 +121,7 @@ them. Hover over a tab for a preview of where you were.
 | Switch navigation | N | Same |
 | Previous / next page | Page Up / Page Down | Same |
 | First / last page | Home / End | Same |
-| Rotate the view | R / Shift+R | Same |
+| Rotate the view (or turn a selected stamp, image, polygon or cloud, or a stamp about to be placed; Shift for 15°) | ] / [ | Same |
 | Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Same |
 | Close tab | Ctrl+W, or middle-click the tab | Same |
 | Print | Ctrl+P | Same |
@@ -131,7 +131,8 @@ them. Hover over a tab for a preview of where you were.
 | Performance overlay | F12 (or Ctrl+Shift+D) | Same |
 | Menus from the keyboard | Alt or F10 | Same |
 
-The **View** menu has navigation, layout, theme (Dark, Light or System), units, the sidebar and
+The **View** menu has navigation, layout, theme (Dark, Light or System), units (paper sizes,
+read-outs, and measurements set to Auto), the sidebar and
 the mini map (Automatic, Show or Hide). The mini map resizes from its top-left corner
 (double-click resets it); click or drag inside it to move around.
 

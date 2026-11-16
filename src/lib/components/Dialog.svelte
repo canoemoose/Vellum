@@ -35,6 +35,8 @@
 
   function onKey(e: KeyboardEvent) {
     e.stopPropagation(); // the viewer's shortcuts don't apply behind a modal
+    // An Escape something inside has already handled (the signature framing view's Cancel) is theirs.
+    if (e.key === "Escape" && e.defaultPrevented) return;
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
@@ -109,6 +111,7 @@
     white-space: nowrap;
   }
   .body {
+    flex: 1 1 auto;
     padding: 18px 20px;
     overflow: auto;
     min-height: 0;

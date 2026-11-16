@@ -39,3 +39,15 @@ fn pending_opens_queue_until_front_end_ready() {
     assert!(!p.queue_if_not_ready(&["c".into()]));
     assert!(p.take().is_empty());
 }
+
+#[test]
+fn only_web_and_mail_links_are_opened() {
+    use vellum_lib::shell::safe_url;
+    assert_eq!(safe_url(" https://example.com/a?b=1 ").as_deref(), Some("https://example.com/a?b=1"));
+    assert!(safe_url("HTTP://EXAMPLE.COM").is_some());
+    assert!(safe_url("mailto:crew@example.com").is_some());
+    for bad in ["file:///C:/Windows/System32/calc.exe", "javascript:alert(1)", r"C:\x.exe", "https://", "http://a b", "http://a\nb", "", "ftp://x", r"\\server\share"] {
+        assert!(safe_url(bad).is_none(), "{bad:?} should be refused");
+    }
+    assert!(safe_url(&format!("https://x/{}", "a".repeat(3000))).is_none());
+}

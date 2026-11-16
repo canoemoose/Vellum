@@ -228,6 +228,8 @@ answer text, outline and scale queries with empty results.
 | `doc_page_text(docId, page)` | the page's text (`FPDFText_GetText`) |
 | `doc_outline(docId)` | `OutlineNode[]`: `{ title, page \| null, y \| null, children }`, y in points from the page top |
 | `doc_find_scale(docId, page)` | `[{ ratio, text, bbox: [x0, y0, x1, y1], statedRatio, sheet }]` best first; bbox in page points, y down. "1:200 @A3" on an A1 page gives ratio 100, statedRatio 200, sheet "A3" |
+| `doc_text_layer(docId, page)` | raw bytes: every character (code point, loose box in page points, generated flag) and the page's links as JSON (`text.rs`, `encode_layer`); parsed by `src/lib/text/layer.ts` |
+| `doc_search_page(docId, page, query, matchCase, wholeWord)` | `{ chars, hits: [{ index, count, rects, before, text, after }], truncated }`, PDFium's own matcher, at most 1000 hits |
 | `doc_close(docId)` | frees the document on every worker |
 
 `region` is `{ id, page, rs, x, y, w, h }`: a device-pixel rect of the page bitmap at `rs`
@@ -252,6 +254,40 @@ dates, paper sizes ("A1:50") and parts of larger numbers are rejected. Candidate
 1..100000 are dropped; the rest are ordered by a score: position (0 at the top-left, 2 at
 the bottom-right, since title blocks live there), +1.5 when "scale" appears in the 24
 characters before, +0.5 for a standard ratio, −1.5 for 1:1.
+
+### Text layer, links and search (`text.rs`, `src/lib/text/`, editing phase 1)
+
+PDFium reports character, link and search boxes in PDF user space (y up, before `/Rotate`,
+from the page box's own origin). `text::PageFrame` maps them into Vellum's page coordinates
+(the page as rendered: `/Rotate` applied, y down from the top-left), from
+`FPDFPage_GetRotation` and `FPDF_GetPageBoundingBox`; `doc_find_scale` uses it too. Text
+layers and page searches run on the page's own worker (`page % workers`, as small renders do),
+one page per job. The front end fetches a page's layer lazily (`engine/textTool.ts`: when the
+pointer rests on the page while the viewer is idle, or when a selection starts there) and keeps
+the last 12 per document. Selection, word and line ranges, highlight rectangles and link
+hit-testing are pure (`src/lib/text/`); whole-document search (`engine/search.ts`) runs two
+pages at a time from the current page, one session per document, stopping at 5,000 hits.
+`Viewer.setHighlights(name, layer)` draws rectangles above the tiles with a multiply blend
+(selection, search hits); `Viewer.revealRect(page, rect)` centres a hit and zooms in if it would
+be too small to read. Links: `open_url` (`shell.rs`) hands http, https and mailto addresses to
+the browser with `ShellExecuteW`; nothing else is followed.
+
+### Markups (`src/lib/markup/`, `engine/markup*.ts`, `src-tauri/src/annot/`, editing phases 2 and 3)
+
+Markups are plain objects in page points (`markup/types.ts`). Each one becomes a list of drawing
+operations (`markup/ops.ts`): paths and lines of text. The same operations are painted on the
+canvas (`engine/markupPainter.ts`, through `Viewer.setPainter`, above the tiles and highlights)
+and turned into the annotation's appearance stream in PDF user space when saved
+(`markup/pdf.ts`, using the page's frame from `doc_page_frame`), so the screen and the file
+agree. Text uses Helvetica's widths (`markup/helvetica.ts`; Arial on screen has the same).
+`engine/markupTool.ts` draws and edits; each tab has a `MarkupDoc` (undo history, what the file
+holds, frames, selection). Saving: `annot_prepare` applies add / replace / delete specs with
+`lopdf` and writes a temporary file beside the original; `Viewer.reopen` closes the document on
+every PDFium worker (`doc_close_wait`; PDFium holds the file open), `annot_commit` renames the
+file into place, and the document is reopened with the same view, tiles and previews, this
+session's markups hidden in PDFium (`doc_hide_annots`) so the overlay keeps drawing them. Files
+with broken cross-reference data are rewritten by PDFium first. Unsaved markups go to
+`%LOCALAPPDATA%\Vellum\recovery` a second after each change and are offered back after a crash.
 
 ### Running code on a PDFium worker (`run_on_worker`)
 
@@ -489,6 +525,8 @@ stroked lines, text and an optional clip. Rust composes the job into a PDF and p
 
 ## Navigation (`input.ts`)
 
+The left button (without Space) goes to `InputCallbacks.left`: the text tool, which selects
+text on or near characters, follows links on a click, and lets presses elsewhere fall through.
 Wheel events are classified as notched mouse wheel or touchpad. Per event: deltaMode 1/2,
 a single-axis whole multiple of 33.33 px (Chromium's pixels per system "line"; 100 at the
 default of 3 lines), or a single-axis integer delta of at least 50 px, counts as a notch.
@@ -499,6 +537,29 @@ zoom, touchpad scrolls pan. Touchpad pinch arrives as ctrl+wheel only if the win
 `zoomHotkeysEnabled` is on (wry ties WebView2's pinch-zoom setting to it); the wheel and key
 handlers cancel the browser's own page zoom so the setting only serves to let the gesture through. Ctrl+wheel always zooms (pinch arrives as ctrl+wheel). Middle button
 pans with pointer capture; its mousedown is cancelled to stop Windows autoscroll.
+
+## WebView2 switches
+
+The window sets `additionalBrowserArgs` in `tauri.conf.json`. Setting it replaces wry's
+defaults, so the first part repeats them (`--disable-features=msWebOOUI,msPdfOOUI,
+msSmartScreenProtection`: no mini menu, no SmartScreen). The second, `--enable-benchmarking`,
+makes WebView2 ignore the feature experiments Microsoft downloads into each profile (the
+`Variations*` files in `EBWebView`) and run every feature at its built-in default.
+
+Why: in November 2026 an experiment that reached Matt's profile made the eyedropper
+(`EyeDropper.open()`, in the colour picker) close 2 ms after opening with an `AbortError`, in
+dev and release. A fresh profile, or the same profile without its `Variations*` files, worked;
+Edge (its own profile) worked. The seeds are encrypted, so the feature couldn't be named and
+switched off on its own. Costs: Vellum gets Microsoft's trial changes only once they're
+standard in a runtime update (security fixes come in runtime updates regardless), and
+`--enable-benchmarking` is a testing switch Microsoft could change. Every speed measurement
+was taken on fresh profiles, which have no experiments either, so none of the numbers move.
+Worth trying without it after a runtime update: if the eyedropper works on a profile that has
+experiments, drop the switch. The colour picker logs a `[colour] eyedropper closed...` warning
+whenever it closes without a colour, so a return shows up in the log.
+
+Only the main window uses WebView2. A second window would need the same switches, or its own
+data directory (WebView2 refuses different switches on one data directory).
 
 ## Instrumentation
 

@@ -35,6 +35,10 @@ jpeg-decoder = { version = "0.3", default-features = false }
 moxcms = { version = "0.8", features = ["options"] }
 # WP-Shell: a second launch hands its file to the running window (Explorer "Open with").
 tauri-plugin-single-instance = "2"
+# Editing: appends markups to PDFs as annotations (incremental update). Chosen and proven in
+# phase 0 (docs/editing-scope.md). Pinned to the minor version: the writer relies on its
+# incremental-save and re-encryption behaviour; re-run tests/annot.rs on any upgrade.
+lopdf = { version = "~0.47", default-features = false }
 # In-app updates from GitHub Releases (docs/release-pipeline-scope.md).
 tauri-plugin-updater = "2"
 
@@ -44,11 +48,22 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_ProcessStatus",
   "Win32_System_Threading",
+  # signature/dpapi.rs: the signature library is encrypted for the Windows account.
+  "Win32_Security_Cryptography",
   # snap.rs: the native overlay over the maximise button (Windows 11 snap layouts).
   "Win32_Graphics_Gdi",
   "Win32_System_LibraryLoader",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
+  # text.rs links: ShellExecuteW hands a web address to the default browser.
+  "Win32_UI_Shell",
+  # annot/commands.rs: the account's display name for markups' author (GetUserNameExW).
+  "Win32_Security",
+  "Win32_Security_Authentication_Identity",
+  # clipboard.rs: markups and pictures on the system clipboard.
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
 ] }
 
 # WP-Print: printer enumeration, capabilities and GDI output (StartDoc / StretchDIBits), and
@@ -60,6 +75,11 @@ features = [
   "Win32_Graphics_Gdi",
   "Win32_Graphics_Printing",
   "Win32_Storage_Xps",
+  # signature/wic.rs: HEIC and other pictures through Windows' own codecs.
+  "Win32_Graphics_Imaging",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
 ]
 
 [target.'cfg(windows)'.dependencies.pdfium-render]
@@ -67,6 +87,12 @@ version = "0.9"
 default-features = false
 features = ["pdfium_latest", "pdfium_use_win32"]
 # End WP-Print
+
+# Dev builds (`tauri dev`) optimise the dependencies but not Vellum itself: unoptimised, the
+# image crate (decoding photos, encoding PNGs, scaling) runs many times slower, so opening a
+# signature photo or saving a stamp dragged in dev. Vellum's own code still builds quickly.
+[profile.dev.package."*"]
+opt-level = 3
 
 [profile.release]
 codegen-units = 1

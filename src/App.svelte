@@ -3,7 +3,7 @@
   // Viewer and one canvas serve every tab: switching detaches the current document (it stays
   // open in the backend with its previews) and attaches the next. Shell logic that can be pure
   // lives in src/lib/shell/ with tests; this file wires it to the viewer and the window.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { getCurrentWindow, availableMonitors, primaryMonitor, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import TitleBar, { type TabView } from "./lib/components/TitleBar.svelte";
@@ -11,6 +11,29 @@
   import MenuPopup from "./lib/components/MenuPopup.svelte";
   import Toolbar from "./lib/components/Toolbar.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
+  import SearchField from "./lib/components/SearchField.svelte";
+  import ToolPalette from "./lib/components/ToolPalette.svelte";
+  import PropertiesStrip from "./lib/components/PropertiesStrip.svelte";
+  import TextEditor from "./lib/components/TextEditor.svelte";
+  import ChoiceDialog, { type Choice } from "./lib/components/dialogs/ChoiceDialog.svelte";
+  import { type ClipRead, MarkupTool, type Tool } from "./lib/engine/markupTool";
+  import { labelOf } from "./lib/markup/kinds";
+  import { toolById, toolForKey } from "./lib/markup/tools";
+  import { barFor, subjectOf, subjectOfTool } from "./lib/markup/bar";
+  import { MarkupDoc } from "./lib/engine/markupDoc";
+  import { confirm as confirmSave, styleFor, textFor, sidesFor } from "./lib/markup/prefs";
+  import type { Frame } from "./lib/markup/pdf";
+  import { TEXT_PAD } from "./lib/markup/ops";
+  import type { Markup, Style, TextStyle } from "./lib/markup/types";
+  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage } from "./lib/shell/save";
+  import { type AnnotRead, fromFile, stampHashes, withStampImages } from "./lib/markup/fileAnnots"; // Existing annotations
+  import EditLock from "./lib/components/EditLock.svelte"; // Existing annotations
+  import type { Dock } from "./lib/shell/dock";
+  import { invoke } from "@tauri-apps/api/core";
+  import type { SearchView } from "./lib/components/SearchResults.svelte";
+  import { TextTool } from "./lib/engine/textTool";
+  import { SearchController } from "./lib/engine/search";
+  import { linkLabel } from "./lib/text/links";
   import MiniMap from "./lib/components/MiniMap.svelte";
   import { type MapMode, rememberDoc } from "./lib/shell/docMemory";
   import { hasCode, userMessage } from "./lib/shell/messages";
@@ -18,6 +41,42 @@
   import StatusBar from "./lib/components/StatusBar.svelte";
   import DebugOverlay from "./lib/components/DebugOverlay.svelte";
   import MarqueeOverlay from "./lib/components/MarqueeOverlay.svelte";
+  // Measuring
+  import CalibrateDialog from "./lib/components/dialogs/CalibrateDialog.svelte";
+  import Loupe from "./lib/components/Loupe.svelte";
+  import { type MeasureFormat, type PageMeasure, setMeasureSource } from "./lib/markup/measure";
+  import { drawingLine, isMeasurement, measurementLine, resizeLabels, reformat, resolveAuto, revalue } from "./lib/markup/measurements";
+  // Dimensions (stage 5)
+  import { type Measurement, hasEnds, relook } from "./lib/markup/measurements";
+  import { type DimensionLook, setDimensionLook } from "./lib/markup/dimension";
+  import { calibratePaperMm } from "./lib/markup/kinds/measureCalibrate";
+  import { type PageOverrides, fromRemembered, pageScaleText, rememberPages, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
+
+  // Stamps
+  import SignaturesDialog, { type SignaturesView } from "./lib/components/signature/SignaturesDialog.svelte";
+  import { armStamp, fieldValues, placeAt, setStampFields, stampVariant, withContent } from "./lib/markup/kinds/stamp";
+  import { type StampContent, BUILT_IN, cleanLine, fillFields, filledStamp, lineOf, sanitiseOwnTexts, subFor, withLine, refOf, textFromRef } from "./lib/markup/stamps";
+  import { setImageReady, preloadImage } from "./lib/engine/stampImages";
+  import { type Picture, PICTURE_EXTENSIONS, getStamp, openPicture, pictureContent, signatureContent } from "./lib/stamps/api";
+  import { type SignatureItem, listSignatures, signatureMessage } from "./lib/signature/api";
+  // Stage 8: the stamp tools' pickers in the context bar
+  import StampGrid, { type Family as StampFamily } from "./lib/components/signature/StampGrid.svelte";
+  import StampsDialog from "./lib/components/signature/StampsDialog.svelte";
+  import type { Out } from "./lib/shell/popout";
+  import { imageContent } from "./lib/markup/stamps";
+  import { newId, type Pt } from "./lib/markup/types";
+  import { open as pickPicture } from "@tauri-apps/plugin-dialog";
+  import { bakeQuestion, newSignatureIds, withBakes } from "./lib/shell/save";
+  import type { Change } from "./lib/markup/spec";
+
+  // Text markups
+  import SelectionBar from "./lib/components/SelectionBar.svelte";
+  import NoteLayer from "./lib/components/NoteLayer.svelte";
+  import { markupPages } from "./lib/markup/listing";
+  import { shapeBounds } from "./lib/markup/geometry";
+  import { selectionEnd, selectionLines } from "./lib/engine/textTool";
+  import type { Quad } from "./lib/text/quads";
+  import { type TextMarkVariant, textMarkStyle, textMarksFrom } from "./lib/markup/kinds/textmark";
   import PasswordDialog from "./lib/components/dialogs/PasswordDialog.svelte";
   import ScaleDialog from "./lib/components/dialogs/ScaleDialog.svelte";
   import PropertiesDialog from "./lib/components/dialogs/PropertiesDialog.svelte";
@@ -28,7 +87,7 @@
   import appIcon from "../src-tauri/icons/source/vellum.svg";
   import { Viewer, initialUiState, refreshCanvasColour, type DocView, type UiState, type NavMode } from "./lib/engine/viewer";
   import { attachInput } from "./lib/engine/input";
-  import { blockedWhileTyping, isWebViewAccelerator } from "./lib/engine/keys";
+  import { blockedWhileTyping, isTyping, isWebViewAccelerator } from "./lib/engine/keys";
   import { rendererFor, pdfRenderer } from "./lib/render/createRenderer";
   import type { DocInfo, ScaleCandidate } from "./lib/render/types";
   import type { LayoutMode } from "./lib/view/layout";
@@ -37,7 +96,7 @@
   import type { PageRect, PrintContext } from "./lib/print/context";
   import { loadSettings, saveSettings, type Settings } from "./lib/settings";
   import {
-    appendPerfLog, jsHeapMb, launchArgs, memoryStats, onForwardedFiles, pickFiles, pickFolder, revealInExplorer,
+    appendPerfLog, jsHeapMb, launchArgs, memoryStats, onForwardedFiles, openUrl, pickFiles, pickFolder, pickSavePdf, revealInExplorer,
     writeBinaryFile, type LaunchArgs,
   } from "./lib/platform";
   import { runBench } from "./lib/perf/bench";
@@ -75,6 +134,10 @@
     candidates: ScaleCandidate[] | null;
     password: string | null;
     token: number;
+    /** This tab's markups (engine/markupDoc.ts). */
+    marks: MarkupDoc;
+    /** The file's size and time when opened or last saved, to notice changes on disk. */
+    stamp: Stamp | null;
     /** The mini map's mode, its size now, and the size to remember (up to the guards). */
     map?: MapMode;
     mapSize?: number;
@@ -111,8 +174,1327 @@
   let nextTabId = 1;
   let loadSeq = 0;
 
+  // ------------------------------------------------------------------ reading: text, links, search
+
+  /** Text selection and links on the canvas (engine/textTool.ts); made with the viewer. */
+  let textTool: TextTool | null = null;
+  /** Whole-document search, one session per document (engine/search.ts). */
+  let search: SearchController | null = null;
+  let searchField = $state<SearchField>();
+  let textUi = $state({ hasSelection: false, link: "" });
+  let searchView = $state.raw<SearchView | null>(null);
+  let searchOpts = $state({ matchCase: false, wholeWord: false });
+
+  function refreshText() {
+    const t = textTool;
+    if (!t) return;
+    textUi = { hasSelection: t.hasSelection, link: t.hoverLink ? linkLabel(t.hoverLink, viewer?.doc?.numPages ?? 0) : "" };
+  }
+
+  function refreshSearch() {
+    const s = search?.session;
+    searchView = s
+      ? {
+          query: s.query, hits: s.list.hits.slice(), current: s.current, running: s.running, scanned: s.list.scanned,
+          numPages: s.numPages, withText: s.list.withText, truncated: s.list.truncated, error: s.error,
+        }
+      : null;
+  }
+
+  /** The attached document changed (tab switch, open, close): selection and highlights follow. */
+  function readingFollowsDoc() {
+    markupTool?.attach(active?.status === "open" ? active.marks : null);
+    // Existing annotations: who you are (for the lock), and anything changed while away lifted.
+    if (active) active.marks.author = settings.markup.author ?? author;
+    liftNow();
+    markVersion++;
+    textTool?.reset();
+    search?.paint();
+    refreshSearch();
+    refreshText();
+  }
+
+  function runSearch(q: string) {
+    search?.search(q, { ...searchOpts });
+  }
+
+  function toggleSearchOption(o: "matchCase" | "wholeWord") {
+    searchOpts[o] = !searchOpts[o];
+    if (searchView?.query) runSearch(searchView.query);
+  }
+
+  async function copySelection() {
+    const text = await textTool?.selectedText();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      console.warn("copy failed:", String(e));
+      notify("Couldn't copy the text to the clipboard");
+    }
+  }
+
+  function followUrl(url: string) {
+    openUrl(url).catch((e) => notify(userMessage(e, "open the link")));
+  }
+
+  // ------------------------------------------------------------------ markups (editing phases 2 and 3)
+
+  /** Drawing and editing markups on the canvas (engine/markupTool.ts); made with the viewer. */
+  let markupTool: MarkupTool | null = null;
+  /** Bumped whenever the markup tool reports a change, so derived UI re-reads it. */
+  let markVersion = $state(0);
+  /** The account's display name, written into markups unless one is set in the settings. */
+  let author = $state("");
+  /** A question waiting for an answer (ChoiceDialog). */
+  let choice = $state.raw<{ title: string; message: string; warnings?: string[]; note?: string | null; choices: Choice[]; onCancel: () => void } | null>(null);
+
+  /** Ask a question; resolves with the chosen label, or null if dismissed. */
+  function ask(title: string, message: string, labels: string[], extra: { warnings?: string[]; note?: string | null } = {}): Promise<string | null> {
+    return new Promise((resolve) => {
+      const done = (v: string | null) => {
+        choice = null;
+        resolve(v);
+      };
+      choice = {
+        title, message, ...extra,
+        choices: labels.map((label, i) => ({ label, primary: i === 0, action: () => done(label) })),
+        onCancel: () => done(null),
+      };
+    });
+  }
+
+  const toolNow = $derived.by<Tool>(() => {
+    void markVersion;
+    return markupTool?.tool ?? "select";
+  });
+
+  function setTool(t: Tool) {
+    // Calibrate goes back to the measuring tool that was out before it (else Length).
+    const was = markupTool?.tool;
+    if (t === "measureCalibrate" && was !== "measureCalibrate") calibrateFrom = was && toolById(was)?.group === "measure" ? was : "measureLength";
+    markupTool?.setTool(t);
+    stampToolPicked(t); // Stamps: the Signature and Stamp tools open their pickers
+    // A collapsed palette shows each group's last tool, remembered between runs.
+    const g = toolById(t)?.group;
+    // And each letter its last tool (rule 8: a shared letter picks the one last used).
+    const key = toolById(t)?.key;
+    if ((g && settings.markup.lastInGroup[g] !== t) || (key && settings.markup.lastForKey[key] !== t)) {
+      settings.markup = {
+        ...settings.markup,
+        lastInGroup: g ? { ...settings.markup.lastInGroup, [g]: t } : settings.markup.lastInGroup,
+        lastForKey: key ? { ...settings.markup.lastForKey, [key]: t } : settings.markup.lastForKey,
+      };
+      save();
+    }
+  }
+
+  function onMarkupsChanged() {
+    markVersion++;
+    liftNow(); // Existing annotations: anything from the file that changed or went
+    scheduleRecovery();
+  }
+
+  /**
+   * What the properties strip shows (rule 6: only the controls that do something, markup/bar.ts):
+   * the tool's style, or the selection's. `tool`: the tool whose remembered settings the bar
+   * also sets (rule 7: with a tool out, the selection is only what it just drew; in Select,
+   * restyling a markup changes that markup only).
+   */
+  const strip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    if (!mt || !pdfDoc) return null;
+    const tool = toolById(mt.tool);
+    // The Stamp and Signature tools (Matt's review): no bar until one is placed; then the bar is
+    // that one's (still selected), and what's changed there is remembered for the next.
+    if (tool && (tool.id === "stamp" || tool.id === "signature")) {
+      const sel = mt.selected();
+      const m = sel.length === 1 && sel[0].kind === "stamp" ? sel[0] : null;
+      const bar = m ? barFor([subjectOf(m)]) : null;
+      return m && bar ? { bar, kinds: [m.kind], tool: tool.id, style: m.style, text: null, label: labelOf(m), sides: null } : null;
+    }
+    if (tool?.kind) {
+      // Stage 8: a stamp tool's bar follows what it has armed (a text stamp has a colour).
+      const armed = isStampTool(tool.id) ? stampArmed[tool.id] : undefined;
+      // The Image tool's is a picture's bar; the Stamp tool with an image stamp armed keeps its picker.
+      const armedAs = armed ? stampVariant(armed.content, tool.id === "signature") : null;
+      const variant = !isStampTool(tool.id) ? undefined : tool.id === "image" ? "picture" : armedAs === "picture" ? "image" : (armedAs ?? (tool.id === "stamp" ? "text" : tool.id));
+      const bar = barFor([subjectOfTool(tool, variant)]);
+      if (!bar) return null;
+      const own = styleFor(settings.markup, tool.id);
+      const style = armed?.content.type === "text" ? { ...own, stroke: armed.content.colour } : own;
+      return { bar, kinds: [tool.kind], tool: tool.id, style, text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool`, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
+    }
+    const sel = mt.selected();
+    // Several kinds: only the controls they all have; none (a stamp, an annotation Vellum can't redraw), no bar.
+    const bar = barFor(sel.map(subjectOf));
+    if (!bar) return null;
+    const kinds = [...new Set(sel.map((m) => m.kind))];
+    const t = sel.find((m) => "textStyle" in m) as Extract<Markup, { textStyle: TextStyle }> | undefined;
+    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected`, sides: bar.sides ? mt.selectedSides() : null };
+  });
+
+  /**
+   * The bar's replace button (Matt's review): a stamp or signature selected, or just placed with
+   * its tool still out (then what's picked is also what's placed next). Not a picture (its
+   * right-click has "Replace picture…", a file).
+   */
+  const swapStrip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    const sel = mt?.selected() ?? [];
+    const m = sel.length === 1 && sel[0].kind === "stamp" ? sel[0] : null;
+    const toolOut = strip?.tool === "stamp" || strip?.tool === "signature";
+    if (!m || (m.content.type === "image" && !m.signature && !toolOut)) return null;
+    const family: StampFamily = m.signature ? "signature" : "stamp";
+    return {
+      content: m.content,
+      title: m.signature ? "Another signature in its place" : "Another stamp in its place",
+      onOpen: (from: DOMRect, out: Out) => (stampGrid = { family, replace: true, from, out, arm: toolOut }),
+    };
+  });
+
+  /** A text stamp's second line, on or off, in the bar (the stamp selected, or just placed). */
+  const dateLineStrip = $derived.by(() => {
+    void markVersion;
+    if (!strip?.bar.dateLine) return null;
+    const m = markupTool?.selected()[0];
+    return m?.kind === "stamp" && m.content.type === "text" ? { on: !!m.content.sub, onToggle: setDateLine } : null;
+  });
+
+  /** Cropping (Matt's review): the bar's Crop for the one selected picture. */
+  const cropStrip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    if (!mt || mt.tool !== "select" || !mt.croppable) return null;
+    const s = mt.selected()[0];
+    return {
+      on: mt.cropping,
+      cropped: s.kind === "stamp" && s.content.type === "image" && !!s.content.crop,
+      onToggle: () => mt.setCropping(!mt.cropping),
+      onReset: () => mt.uncrop(),
+    };
+  });
+
+  /** Stage 6: Sides set in the bar: remembered with the tool out (rule 7), and the selection's regular polygons change. */
+  function stripSides(n: number) {
+    const mt = markupTool;
+    if (!mt) return;
+    const id = strip?.tool;
+    if (id) {
+      settings.markup = { ...settings.markup, sides: { ...settings.markup.sides, [id]: n } };
+      save();
+    }
+    mt.setSides(n);
+    markVersion++;
+  }
+
+  /** The properties bar's dock while it's being dragged (saved when let go). */
+  let liveDock = $state<Dock | null>(null);
+
+  function stripStyle(patch: Partial<Style>, live = false) {
+    const mt = markupTool;
+    if (!mt || !strip) return;
+    // A slider being dragged: show it on the markups, but remember nothing until it's let go.
+    if (live) {
+      mt.preview(patch);
+      return;
+    }
+    // Each tool remembers its last style: set with the tool out (rule 7).
+    const id = strip.tool;
+    if (id) {
+      settings.markup = { ...settings.markup, styles: { ...settings.markup.styles, [id]: { ...styleFor(settings.markup, id), ...patch } } };
+      save();
+    }
+    // Stage 8: a text stamp's colour is what it places next.
+    if (id === "stamp" && patch.stroke) recolourArmed(patch.stroke);
+    // The selection: what is picked out, or with a drawing tool, the shape just drawn.
+    mt.restyle(patch);
+    markVersion++;
+  }
+
+  function stripText(patch: Partial<TextStyle>) {
+    const mt = markupTool;
+    if (!mt) return;
+    const id = strip?.tool;
+    if (id) {
+      settings.markup = { ...settings.markup, texts: { ...settings.markup.texts, [id]: { ...textFor(settings.markup, id), ...patch } } };
+      save();
+    }
+    mt.restyle({}, patch);
+    markVersion++;
+  }
+
+  /** The text box being typed into, placed on screen. */
+  const editor = $derived.by(() => {
+    void markVersion;
+    void [ui.viewWorld.x, ui.viewWorld.y, ui.zoom, ui.rotation];
+    const v = viewer;
+    const m = markupTool?.editingMarkup();
+    if (!v || !m) return null;
+    const tl = v.pageToScreen(m.page, m.rect[0], m.rect[1]);
+    if (!tl) return null;
+    return {
+      id: m.id, x: tl[0], y: tl[1], w: (m.rect[2] - m.rect[0]) * v.view.scale, h: (m.rect[3] - m.rect[1]) * v.view.scale,
+      rotation: ui.rotation, scale: v.view.scale, textStyle: m.textStyle, pad: TEXT_PAD + m.style.width, text: m.text,
+    };
+  });
+
+  // Later markup phases add their state and handlers inside their own block:
+  // Measuring (phase 4: per-page scales, calibration, live values, the loupe; see
+  // docs/editing-phase4-scope.md)
+
+  /** A tab's own per-page scales, remembered per file. */
+  function pagesOf(t: Tab | null | undefined): PageOverrides {
+    return t ? fromRemembered(settings.measure.pageScales[pathKey(t.path)]) : {};
+  }
+
+  /** /UserUnit per page, by tab id: read when measuring first starts on a tab (empty while read). */
+  let userUnits = $state<Record<number, number[]>>({});
+
+  /** How a page of a tab measures: its scale (own or the document's) and its /UserUnit. */
+  function pageMeasure(t: Tab | null | undefined, page: number): PageMeasure {
+    if (!t) return { ratio: null, userUnit: 1 };
+    return { ratio: scaleForPage(t.scale, pagesOf(t), page)?.ratio ?? null, userUnit: userUnits[t.id]?.[page] ?? 1 };
+  }
+
+  // New measurements take their page's scale, and the format and label size set in the bar.
+  // Imperial (stage 5 [A9]): the format comes with View > Units as what Auto resolves to.
+  setMeasureSource({ page: (p) => pageMeasure(active, p), format: () => viewFormat(settings.measure.format), labelSize: () => settings.measure.labelSize });
+
+  /** Imperial (stage 5 [A9]): a format with Auto resolved to View > Units. */
+  function viewFormat(f: MeasureFormat): MeasureFormat {
+    return { ...f, system: settings.units };
+  }
+  setDimensionLook(() => settings.measure.look); // Dimensions (stage 5)
+
+  /** A measuring tool (Calibrate included) is out. */
+  const measuring = $derived(toolById(toolNow)?.group === "measure");
+
+  /** Two points picked with Calibrate, waiting for the real length (CalibrateDialog). */
+  let calib = $state<{ tabId: number; page: number; paperMm: number } | null>(null);
+
+  /** Asked before a drawn markup is kept: Calibrate's points go to the dialog instead. */
+  function keepDrawn(m: Markup): boolean {
+    if (m.kind === "measureCalibrate") {
+      const t = active;
+      if (t) calib = { tabId: t.id, page: m.page, paperMm: calibratePaperMm(m) };
+      return false;
+    }
+    // An angle dragged out as a line has two points: no angle.
+    if (m.kind === "measureAngle") return m.vertices.length === 3;
+    return true;
+  }
+  $effect(() => {
+    if (viewer && markupTool) markupTool.keep = keepDrawn;
+  });
+
+  /** Set (or with null, clear) one page's own scale, remembered for the file. */
+  function setPageScale(t: Tab, page: number, ratio: number | null) {
+    const pages = withPageScale(pagesOf(t), page, ratio === null ? null : { ratio, source: "manual" });
+    settings.measure = { ...settings.measure, pageScales: rememberPages(settings.measure.pageScales, pathKey(t.path), pages) };
+    save();
+  }
+
+  /** The measuring tool to return to once a calibration is done or cancelled. */
+  let calibrateFrom: Tool = "measureLength";
+
+  /** Calibrating finished or cancelled: back to the measuring tool that was out before. */
+  function calibrationDone() {
+    calib = null;
+    if (markupTool?.tool === "measureCalibrate") setTool(calibrateFrom);
+  }
+
+  function applyCalibration(ratio: number, pageOnly: boolean) {
+    const c = calib;
+    calibrationDone();
+    const t = c ? tabById(c.tabId) : null;
+    if (!c || !t) return;
+    if (pageOnly) setPageScale(t, c.page, ratio);
+    else {
+      // Every page: the document's scale, and no page keeps one of its own.
+      applyScale(ratio);
+      settings.measure = { ...settings.measure, pageScales: rememberPages(settings.measure.pageScales, pathKey(t.path), {}) };
+      save();
+    }
+  }
+
+  // Read the pages' /UserUnit once measuring starts on a PDF (nearly always 1: a sheet over
+  // 200 inches uses it). Not on open, so opening never waits for it.
+  $effect(() => {
+    const t = active;
+    if (!measuring || !t || t.kind !== "pdf" || t.status !== "open" || untrack(() => userUnits[t.id])) return;
+    const id = t.id;
+    userUnits = { ...untrack(() => userUnits), [id]: [] };
+    invoke<number[]>("measure_user_units", { path: t.path, password: t.password })
+      .then((u) => {
+        if (u.some((x) => x !== 1)) console.info("measuring: pages with /UserUnit:", u.map((x, i) => (x !== 1 ? `${i + 1}=${x}` : "")).filter(Boolean).join(" "));
+        userUnits = { ...userUnits, [id]: u };
+      })
+      .catch((e) => console.warn("measuring: couldn't read /UserUnit, taking 1:", String(e)));
+  });
+
+  /**
+   * Measurements follow their page's scale: whenever it changes (or an undo brings back older
+   * values), re-value them in place, with no undo step of their own, and say how many. Their
+   * units and decimals are each one's own (set from the bar, rule 7).
+   */
+  const scaleSeen = new Map<number, string>();
+  $effect(() => {
+    void markVersion;
+    const t = active;
+    const v = viewer;
+    if (!t || t.status !== "open" || !v || !markupTool) return;
+    const sig = JSON.stringify([t.scale?.ratio ?? null, settings.measure.pageScales[pathKey(t.path)] ?? null, userUnits[t.id] ?? null]);
+    const units = settings.units; // Imperial (stage 5 [A9]): Auto follows View > Units
+    untrack(() => {
+      const r = revalue(t.marks.markups, null, (p) => pageMeasure(t, p));
+      r.markups = resolveAuto(r.markups, units); // Imperial (stage 5 [A9])
+      const before = scaleSeen.get(t.id);
+      scaleSeen.set(t.id, sig);
+      if (r.markups !== t.marks.markups) {
+        t.marks.history.replace(r.markups);
+        v.requestFrame();
+        onMarkupsChanged();
+      }
+      if (before !== undefined && before !== sig) {
+        const msg = revaluedText(r.changed);
+        if (msg) notify(msg);
+      }
+    });
+  });
+
+  /**
+   * The properties bar's measuring section: label size and number format. Like every control,
+   * it changes the selection; with a measuring tool out, the tools remember it (rule 7).
+   */
+  function onMeasure(patch: { labelSize?: number; format?: MeasureFormat }) {
+    const t = active;
+    const mt = markupTool;
+    if (mt && toolById(mt.tool)?.group === "measure") {
+      settings.measure = { ...settings.measure, ...patch };
+      // Imperial (stage 5 [A9]): the view's system isn't remembered with the format.
+      if (patch.format) settings.measure.format = { ...patch.format, system: undefined };
+      save();
+    }
+    if (t && mt) {
+      const ids = new Set(mt.selected().map((m) => m.id));
+      let next = t.marks.markups;
+      if (patch.labelSize) next = resizeLabels(next, ids, patch.labelSize);
+      if (patch.format) next = reformat(next, patch.format, ids).markups;
+      if (next !== t.marks.markups) {
+        t.marks.history.push(next);
+        viewer?.requestFrame();
+      }
+    }
+    onMarkupsChanged();
+  }
+
+  /** The right-click menu's "Apply to all measurements": every one takes this one's units and decimals. */
+  function formatAllLike(fmt: MeasureFormat) {
+    const t = active;
+    if (!t) return;
+    const r = reformat(t.marks.markups, fmt);
+    if (!r.changed) return;
+    t.marks.history.push(r.markups);
+    viewer?.requestFrame();
+    onMarkupsChanged();
+    notify(r.changed === 1 ? "1 measurement changed" : `${r.changed} measurements changed`);
+  }
+
+  const measureStrip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    if (!mt) return {};
+    const tool = toolById(mt.tool);
+    const ms = { labelSize: settings.measure.labelSize, format: viewFormat(settings.measure.format) };
+    if (tool?.kind) return tool.group === "measure" && tool.kind !== "measureCalibrate" ? { measure: ms, onMeasure } : {};
+    const sel = mt.selected();
+    if (!sel.length || !sel.every(isMeasurement)) return {};
+    return { measure: { labelSize: sel[0].labelSize, format: sel[0].fmt }, onMeasure };
+  });
+
+  // Dimensions (stage 5)
+  /**
+   * The bar's dimension controls: the ends (only where every measurement involved has a
+   * dimension line) and the value's font. Like every control they change the selection; with a
+   * measuring tool out, the tools remember them (rule 7).
+   */
+  function onDimension(patch: Partial<DimensionLook>) {
+    const t = active;
+    const mt = markupTool;
+    if (mt && toolById(mt.tool)?.group === "measure") {
+      settings.measure = { ...settings.measure, look: { ...settings.measure.look, ...patch } };
+      save();
+    }
+    if (t && mt) {
+      const next = relook(t.marks.markups, new Set(mt.selected().map((m) => m.id)), patch);
+      if (next !== t.marks.markups) {
+        t.marks.history.push(next);
+        viewer?.requestFrame();
+      }
+    }
+    onMarkupsChanged();
+  }
+
+  const dimensionStrip = $derived.by(() => {
+    void markVersion;
+    const mt = markupTool;
+    if (!mt) return {};
+    const tool = toolById(mt.tool);
+    const look = settings.measure.look;
+    if (tool?.kind) {
+      if (tool.group !== "measure" || tool.kind === "measureCalibrate") return {};
+      return { dimension: { ends: hasEnds({ kind: tool.kind }) ? look.ends : null, font: look.font }, onDimension };
+    }
+    const sel = mt.selected();
+    if (!sel.length || !sel.every(isMeasurement)) return {};
+    const m = sel[0] as Measurement;
+    return { dimension: { ends: sel.every(hasEnds) ? (m.ends ?? "bar") : null, font: m.font ?? "helvetica" }, onDimension };
+  });
+  // End dimensions
+
+  const measureBar = $derived.by(() => {
+    void markVersion;
+    void ui.cursor;
+    const t = active;
+    if (!hasDoc || !t) return {};
+    const mt = markupTool;
+    const d = mt?.drawingShape();
+    let line = d ? drawingLine(d.markup, d.segment) : null;
+    if (!line && mt) {
+      const sel = mt.selected();
+      if (sel.length === 1) line = measurementLine(sel[0]);
+    }
+    const noScale = measuring && pageMeasure(t, ui.page).ratio === null;
+    return {
+      scaleText: pageScaleText(t.scale, pagesOf(t), ui.page, settings.units),
+      measure: line,
+      onCalibrate: noScale && toolNow !== "measureCalibrate" ? () => setTool("measureCalibrate") : null,
+    };
+  });
+
+  const measureScaleDialog = $derived.by(() => {
+    const t = active;
+    if (!t?.info || t.info.numPages < 2) return {};
+    const page = ui.page;
+    return {
+      page: page + 1,
+      pageScale: pagesOf(t)[page] ?? null,
+      onApplyPage: (r: number | null) => {
+        setPageScale(t, page, r);
+        dialog = null;
+      },
+    };
+  });
+  // End measuring
+
+  // Stamps
+  /**
+   * The stamp tools' grid (Matt's review): open beside the tool's button once the tool is
+   * picked, or, `replace`, at a placed one's right-click to swap what it holds.
+   */
+  /** Manage stamps (docs/stamp-library-dialogs-scope.md). */
+  let stampsDialog = $state(false);
+  let stampGrid = $state<{ family: StampFamily; replace?: boolean; at?: { x: number; y: number }; from?: DOMRect; out?: Out; arm?: boolean } | null>(null);
+  /** The Signatures dialog, and the view it opened on: the list (Manage signatures) or the pad (+ New). */
+  let signaturesDialog = $state<SignaturesView | null>(null);
+  /**
+   * What each stamp tool last had armed in this run, so switching between them keeps each one's
+   * choice; `id` is its library id (an image stamp's, a signature's), `name` a picture's file name.
+   */
+  let stampArmed = $state.raw<Partial<Record<StampTool, { content: StampContent; id?: string; name?: string }>>>({});
+  /** Per tab: the signatures the save in progress bakes in (the bake question's answer). */
+  const pendingBake = new WeakMap<Tab, Set<string>>();
+
+  // A stamp's picture decoded after it was first drawn: draw again.
+  setImageReady(() => viewer?.requestFrame());
+  // A text stamp's fields (Matt's review): who, and which file, when it's placed.
+  setStampFields((page) => ({ author: settings.markup.author ?? author, now: new Date(), file: active?.title ?? "", page }));
+
+  function stampToolPicked(t: Tool) {
+    if (!isStampTool(t)) return;
+    const prev = stampArmed[t];
+    armStamp(prev?.content ?? null, t === "signature");
+    // The Image tool asks for a picture each time it's picked (Matt's review), then places it.
+    if (t === "image") {
+      void choosePicture(false);
+      return;
+    }
+    // The grid opens beside the tool's button, with what the tool last placed already armed:
+    // a click on the drawing places that; a tile arms another.
+    stampGrid = { family: t };
+    if (!prev) void armRemembered(t);
+  }
+
+  // The tool changed some other way (Esc, a tab closing): the picker goes with it.
+  $effect(() => {
+    if (stampGrid && !stampGrid.replace && toolNow !== stampGrid.family) stampGrid = null;
+  });
+
+  /** Replace…: what the one selected stamp holds now (to mark it in the grid). */
+  const replacing = $derived.by((): StampContent | null => {
+    void markVersion;
+    const m = markupTool?.selected()[0];
+    return m?.kind === "stamp" ? m.content : null;
+  });
+
+  /** A tile picked in the grid: what the tool places next, or (Replace…) what the selected one holds. */
+  function gridPicked(c: StampContent, id?: string) {
+    const g = stampGrid;
+    stampGrid = null;
+    if (g?.replace) replaceSelectedStamp(c, false);
+    // From the bar with the tool out: the one just placed is swapped, and it's what comes next too.
+    if (!g?.replace || g.arm) armFor(g?.family ?? "stamp", c, id);
+  }
+
+  async function gridPickedSignature(item: SignatureItem) {
+    const g = stampGrid;
+    stampGrid = null;
+    if (!g?.replace) return pickSignature(item);
+    try {
+      const c = await signatureContent(item);
+      if (!c) throw new Error("[signature_unreadable] no strokes or picture");
+      replaceSelectedStamp(c, true);
+      if (g.arm) armFor("signature", c, item.id);
+    } catch (e) {
+      console.warn(`signature ${item.id} could not be placed`);
+      notify(signatureMessage(e, "use the signature"));
+    }
+  }
+
+  /** Arm a stamp tool with what was picked, and close its picker. `id`: its library id. */
+  function armFor(tool: StampTool, c: StampContent, id?: string, name?: string) {
+    stampArmed = { ...stampArmed, [tool]: { content: c, id, name } };
+    armStamp(c, tool === "signature");
+    if (c.type === "image") preloadImage(c.hash, c.png);
+    remember(tool, c, id);
+    if (markupTool?.tool !== tool) setTool(tool);
+    stampGrid = null;
+  }
+
+  async function pickSignature(item: SignatureItem) {
+    try {
+      const c = await signatureContent(item);
+      if (!c) throw new Error("[signature_unreadable] no strokes or picture");
+      armFor("signature", c, item.id);
+    } catch (e) {
+      // By id only: a signature's data never goes in the log.
+      console.warn(`signature ${item.id} could not be placed`);
+      notify(signatureMessage(e, "use the signature"));
+    }
+  }
+
+  /** The Signatures dialog saved a new one: it's what the Signature tool places next. */
+  function newSignatureSaved(item: SignatureItem) {
+    void pickSignature(item);
+  }
+
+  /** A signature deleted in the Signatures dialog: not left armed, nor remembered. */
+  function signatureDeleted(id: string) {
+    if (stampArmed.signature?.id === id) {
+      const { signature: _gone, ...rest } = stampArmed;
+      stampArmed = rest;
+      if (markupTool?.tool === "signature") armStamp(null, true);
+    }
+    if (settings.stamps.last.signature === id) {
+      const { signature: _was, ...last } = settings.stamps.last;
+      settings.stamps = { ...settings.stamps, last };
+      save();
+    }
+  }
+
+  // Stage 8: the pickers in the context bar, the Image tool, pasted pictures
+  // (docs/editing-tool-consistency-brief.md, stage 8).
+
+  type StampTool = "stamp" | "signature" | "image";
+  const isStampTool = (t: string | null | undefined): t is StampTool => t === "stamp" || t === "signature" || t === "image";
+
+
+  /** Remember what a tool placed, by reference only (never a signature's picture or strokes). */
+  function remember(tool: StampTool, c: StampContent, id?: string) {
+    const last = settings.stamps.last;
+    if (tool === "stamp") {
+      const ref = refOf(c, id);
+      if (!ref) return;
+      settings.stamps = { ...settings.stamps, last: { ...last, stamp: ref } };
+    } else if (tool === "signature" && id) settings.stamps = { ...settings.stamps, last: { ...last, signature: id } };
+    else return;
+    save();
+  }
+
+  /** Arm what a tool last placed (in an earlier run), from its reference; the tool must still be out. */
+  async function armRemembered(t: "stamp" | "signature") {
+    const still = () => markupTool?.tool === t && !stampArmed[t];
+    const arm = (c: StampContent, id?: string) => {
+      if (!still()) return;
+      stampArmed = { ...stampArmed, [t]: { content: c, id } };
+      armStamp(c, t === "signature");
+      if (c.type === "image") preloadImage(c.hash, c.png);
+    };
+    const last = settings.stamps.last;
+    if (t === "stamp") {
+      const r = last.stamp;
+      if (r?.type === "image") {
+        const c = await getStamp(r.id).then(imageContent).catch(() => null);
+        if (c) return arm(c, r.id);
+      }
+      const ref = r?.type === "text" ? r : { type: "text" as const, ...BUILT_IN[0] };
+      return arm(textFromRef(ref, subFor(settings.stamps, ref.label)));
+    }
+    try {
+      const item = last.signature ? (await listSignatures()).items.find((i) => i.id === last.signature) : undefined;
+      const c = item ? await signatureContent(item) : null;
+      if (item && c) return arm(c, item.id);
+    } catch {
+      // By id only: a signature's data never goes in the log.
+      console.warn(`signature ${last.signature} could not be armed again`);
+    }
+    // None remembered, or it's gone: the grid (open already) offers them, and "+ New".
+  }
+
+  /** The one selected stamp holds `c` now: same middle and turn (one undo step). */
+  function replaceSelectedStamp(c: StampContent, signature: boolean) {
+    const mt = markupTool;
+    const sel = mt?.selected() ?? [];
+    if (!mt || sel.length !== 1 || sel[0].kind !== "stamp") return;
+    if (c.type === "image") preloadImage(c.hash, c.png);
+    // A text stamp's fields, filled in for the page the one it replaces is on.
+    const filled = c.type === "text" ? filledStamp(c, fieldValues(sel[0].page)) : c;
+    mt.updateMarkup(withContent(sel[0], filled, signature));
+  }
+
+  /** The selected stamps changed by `f`, as one undo step. */
+  function changeSelectedStamps(f: (m: Extract<Markup, { kind: "stamp" }>) => Markup) {
+    const t = active;
+    const mt = markupTool;
+    if (!t || !mt) return;
+    const now = new Date().toISOString();
+    let changed = false;
+    const next = t.marks.markups.map((m) => {
+      if (m.kind !== "stamp" || !t.marks.selection.has(m.id)) return m;
+      const n = f(m);
+      if (n === m) return m;
+      changed = true;
+      return { ...n, meta: { ...n.meta, modified: now } } as Markup;
+    });
+    if (!changed) return;
+    t.marks.history.push(next);
+    viewer?.requestFrame();
+    onMarkupsChanged();
+  }
+
+  /**
+   * The bar's Second line, on or off, for the selected text stamp (this one placed). With the
+   * Stamp tool out it's also what that stamp places next (rule 7), remembered for it.
+   */
+  function setDateLine(on: boolean) {
+    const m0 = markupTool?.selected()[0];
+    const label = m0?.kind === "stamp" && m0.content.type === "text" ? (m0.content.fields?.label ?? m0.content.label) : null;
+    if (strip?.tool === "stamp" && label) {
+      settings.stamps = withLine(settings.stamps, label, { sub: on });
+      save();
+      const a = stampArmed.stamp;
+      if (a?.content.type === "text" && (a.content.fields?.label ?? a.content.label) === label) {
+        const c = { ...a.content, sub: subFor(settings.stamps, label) };
+        stampArmed = { ...stampArmed, stamp: { ...a, content: c } };
+        armStamp(c, false);
+      }
+    }
+    const sub = label ? lineOf(settings.stamps, label).wording : settings.stamps.line;
+    const placed = on ? sub : null;
+    // A placed stamp's second line is filled in for its page now (its main line as it was placed).
+    changeSelectedStamps((m) => {
+      if (m.content.type !== "text" || !!m.content.sub === on) return m;
+      const { fields, ...c } = m.content;
+      return withContent(m, filledStamp({ ...c, label: fields?.label ?? c.label, sub: placed }, fieldValues(m.page)));
+    });
+  }
+
+  /** What a stamp field would say placed on the page in view now (a chip's tooltip). */
+  const fieldValue = (f: string) => fillFields(`{${f}}`, fieldValues(viewer?.currentPageIndex ?? null));
+
+  /** One of your own text stamps added from the grid's "+ Your wording" (kept, a tile of its own). */
+  function addOwnText(label: string, colour: Style["stroke"]) {
+    const texts = sanitiseOwnTexts([...settings.stamps.texts, { label, colour }]);
+    settings.stamps = { ...settings.stamps, texts };
+    save();
+  }
+
+  /** The text stamp a grid's second-line section is for: the armed (or replaced) one's wording as kept. */
+  const gridLineLabel = (c: StampContent | null): string | null => (c?.type === "text" ? (c.fields?.label ?? c.label) : null);
+
+  /**
+   * One stamp's second line set in the grid (Matt's review: per stamp): remembered for it, what
+   * the Stamp tool places next if that's the one armed, and, replacing, the placed one too.
+   */
+  function setLineFor(label: string, patch: { sub?: boolean; line?: string }) {
+    settings.stamps = withLine(settings.stamps, label, patch.line === undefined ? patch : { ...patch, line: cleanLine(patch.line) });
+    save();
+    const sub = subFor(settings.stamps, label);
+    const a = stampArmed.stamp;
+    if (a?.content.type === "text" && (a.content.fields?.label ?? a.content.label) === label) {
+      const c = { ...a.content, sub };
+      stampArmed = { ...stampArmed, stamp: { ...a, content: c } };
+      armStamp(c, false);
+    }
+    if (stampGrid?.replace)
+      changeSelectedStamps((m) => {
+        if (m.content.type !== "text") return m;
+        const { fields, ...c } = m.content;
+        return withContent(m, filledStamp({ ...c, label: fields?.label ?? c.label, sub }, fieldValues(m.page)));
+      });
+  }
+
+  /** The bar's colour with the Stamp tool out: the text stamp it places next takes it (remembered). */
+  function recolourArmed(colour: Style["stroke"]) {
+    const a = stampArmed.stamp;
+    if (a?.content.type !== "text") return;
+    const c = { ...a.content, colour };
+    stampArmed = { ...stampArmed, stamp: { ...a, content: c } };
+    armStamp(c, false);
+    remember("stamp", c);
+  }
+
+  /** The full library (rename, delete, add): Manage stamps, or the Signatures dialog's list. */
+  function manageStamps(family: StampFamily) {
+    if (family === "stamp") stampsDialog = true;
+    else signaturesDialog = "list";
+  }
+
+  /**
+   * The Image tool: pick a picture file (scaled to 2000 px on its long side on the way in) and
+   * place it; nothing goes in the stamp library. `forSelection`: it replaces the selected picture.
+   */
+  async function choosePicture(forSelection: boolean) {
+    const back = () => {
+      if (!forSelection && markupTool?.tool === "image" && !stampArmed.image) setTool("select");
+    };
+    const path = await pickPicture({ title: "Place a picture", multiple: false, filters: [{ name: "Pictures", extensions: PICTURE_EXTENSIONS }] }).catch(() => null);
+    if (typeof path !== "string") return back();
+    try {
+      const c = await pictureContent(await openPicture(path));
+      if (!c) throw new Error("[picture_unreadable] not a PNG");
+      if (forSelection) return replaceSelectedStamp(c, false);
+      if (markupTool?.tool !== "image") return;
+      armFor("image", c, undefined, path.split(/[\\/]/).pop());
+    } catch (e) {
+      console.warn("image tool: the picture could not be opened:", String(e).slice(0, 200));
+      notify(userMessage(e, "open the picture"));
+      back();
+    }
+  }
+
+  /** A picture pasted from the clipboard: an Image markup centred on `at`, upright as viewed. */
+  async function placePicture(pic: Picture, page: number, at: Pt) {
+    const mt = markupTool;
+    const c = await pictureContent(pic).catch(() => null);
+    if (!mt || !c) {
+      notify("Couldn't paste the picture");
+      return;
+    }
+    if (c.type === "image") preloadImage(c.hash, c.png);
+    const now = new Date().toISOString();
+    const meta = { author: settings.markup.author ?? author, created: now, modified: now };
+    mt.addMarkups([{ id: newId(), page, kind: "stamp", style: styleFor(settings.markup, "image"), meta, ...placeAt(c, false, at, viewer?.rotation ?? 0) } as Markup]);
+  }
+
+  /**
+   * Before a save: when signatures were placed since the last one, ask whether to bake them in
+   * (asked each time). The ids to bake (none to keep them movable), or null if cancelled.
+   */
+  async function askBake(t: Tab, copy: boolean): Promise<Set<string> | null> {
+    const ids = newSignatureIds(t.marks.saved, t.marks.markups as { id: string; kind: string; signature?: boolean }[]);
+    if (!ids.length) return new Set();
+    const q = bakeQuestion(ids.length, copy);
+    const a = await ask(q.title, q.message, [q.keep, q.bake, "Cancel"]);
+    if (a === q.bake) return new Set(ids);
+    if (a === q.keep) return new Set();
+    return null;
+  }
+
+  /** The save's changes, with the signatures being baked in drawn into their pages instead. */
+  function saveChanges(t: Tab, bake: Set<string> | undefined): Change[] {
+    return withBakes(t.marks.changes(), bake ?? new Set()) as Change[];
+  }
+
+  /** After a save that baked signatures in: they're part of the page now, not markups (and undo can't bring them back). */
+  function afterBake(t: Tab) {
+    const ids = pendingBake.get(t);
+    pendingBake.delete(t);
+    if (!ids?.size) return;
+    t.marks.history.forget(ids);
+    t.marks.saved = t.marks.saved.filter((m) => !ids.has(m.id));
+    for (const id of ids) t.marks.selection.delete(id);
+    markupTool?.attach(t.marks);
+  }
+
+  // Text markups
+  //
+  // Highlight, underline and strike through from a text selection: the selection bar beside it,
+  // the Edit menu and Ctrl+H / Ctrl+U / Ctrl+Shift+X. Each variant remembers its colour and
+  // opacity (settings.textMarks): the last it was made or restyled with.
+
+  /** The sidebar's Markups tab: the active tab's markups by page, the selection, their colours. */
+  const markupsTab = $derived.by(() => {
+    void markVersion;
+    const d = markupTool?.doc;
+    const ms = d?.markups ?? [];
+    const css = (c: [number, number, number]) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
+    return {
+      pages: markupPages(ms, d ? (m) => !d.editable(m) : undefined),
+      selected: new Set(d?.selection ?? []),
+      colours: new Map(ms.map((m) => [m.id, css(m.style.stroke)])),
+      editable: !!pdfDoc,
+    };
+  });
+
+  /** A row in the Markups tab clicked: back to Select, select it and bring it into view. */
+  function pickMarkup(id: string) {
+    const mt = markupTool;
+    const m = mt?.doc?.byId(id);
+    if (!mt || !m || !viewer) return;
+    if (mt.tool !== "select") setTool("select");
+    mt.select([id]);
+    viewer.revealRect(m.page, shapeBounds(m));
+  }
+
+  /** The markup tool for the notes' layer (made with the viewer; markVersion moves when it attaches). */
+  const noteTool = $derived.by(() => {
+    void markVersion;
+    return markupTool;
+  });
+
+  /** Where the text selection ends (its last line), for the selection bar. */
+  let selEnd = $state.raw<{ page: number; quad: Quad } | null>(null);
+  let selSeen: unknown = null;
+  $effect(() => {
+    void textUi;
+    const tt = textTool;
+    const s = tt?.selection ?? null;
+    if (!tt || s === selSeen) return;
+    selSeen = s;
+    if (!s) {
+      selEnd = null;
+      return;
+    }
+    void selectionEnd(tt).then((e) => {
+      if (tt.selection === s) selEnd = e;
+    });
+  });
+
+  /** The selection bar's place: just past the end of the selection's last line, below it. */
+  const selBar = $derived.by(() => {
+    void [ui.viewWorld.x, ui.viewWorld.y, ui.zoom, ui.rotation];
+    const v = viewer;
+    const e = selEnd;
+    if (!v || !e || !textUi.hasSelection || toolNow !== "select") return null;
+    const pts = e.quad.map((q) => v.pageToScreen(e.page, q[0], q[1]));
+    if (pts.some((q) => !q)) return null;
+    const xs = pts.map((q) => q![0]), ys = pts.map((q) => q![1]);
+    if (Math.max(...xs) < 0 || Math.min(...xs) > stageW || Math.max(...ys) < 0 || Math.min(...ys) > stageH) return null;
+    return { x: Math.max(...xs) + 4, y: Math.max(...ys) + 6 };
+  });
+
+  /** Mark up the selected text: one markup per page, selected so the bar can restyle it. */
+  async function markText(variant: TextMarkVariant) {
+    const tt = textTool;
+    const mt = markupTool;
+    if (!tt || !mt || !pdfDoc || !tt.hasSelection) return;
+    const lines = await selectionLines(tt);
+    const style = settings.textMarks[variant] ?? textMarkStyle(variant);
+    const marks = textMarksFrom(lines, variant, style, settings.markup.author ?? author);
+    if (!marks.length) return;
+    mt.addMarkups(marks);
+    tt.clear();
+  }
+
+  // A text markup restyled while selected: its variant remembers the style for next time.
+  let markStyles = new Map<string, string>();
+  $effect(() => {
+    void markVersion;
+    const sel = (markupTool?.selected() ?? []).filter((m) => m.kind === "textmark");
+    const next = new Map(sel.map((m) => [m.id, JSON.stringify([m.style.stroke, m.style.opacity])]));
+    for (const m of sel) {
+      const was = markStyles.get(m.id);
+      if (was !== undefined && was !== next.get(m.id) && m.kind === "textmark") {
+        settings.textMarks = { ...settings.textMarks, [m.variant]: { ...textMarkStyle(m.variant), stroke: m.style.stroke, opacity: m.style.opacity } };
+        save();
+      }
+    }
+    markStyles = next;
+  });
+
+  function textMarkKeys(e: KeyboardEvent) {
+    if (modalOpen || isTyping(e) || e.altKey || !(e.ctrlKey || e.metaKey) || !textUi.hasSelection) return;
+    const k = e.key.toLowerCase();
+    const v: TextMarkVariant | null = !e.shiftKey && k === "h" ? "highlight" : !e.shiftKey && k === "u" ? "underline" : e.shiftKey && k === "x" ? "strike" : null;
+    if (!v) return;
+    e.preventDefault();
+    if (!e.repeat) void markText(v);
+  }
+  $effect(() => {
+    window.addEventListener("keydown", textMarkKeys);
+    return () => window.removeEventListener("keydown", textMarkKeys);
+  });
+
+  // ---------------------------------------------------------------- saving
+
+  /** Fetch the frames of the pages a save touches. */
+  async function ensureFrames(t: Tab, docId: number) {
+    for (const page of t.marks.pagesWithoutFrames()) t.marks.frames.set(page, await invoke<Frame>("doc_page_frame", { docId, page }));
+  }
+
+  interface Prepared {
+    temp: string;
+    target: string;
+    added: number;
+    rebuilt: boolean;
+  }
+
+  /** Save the active tab's markups into its file (Ctrl+S). True when saved, or nothing to save. */
+  async function saveActive(): Promise<boolean> {
+    const t = active;
+    const v = viewer;
+    const mt = markupTool;
+    if (!t || !v || !mt || t.status !== "open" || !v.doc) return false;
+    mt.finishText();
+    if (!t.marks.dirty) return true;
+    if (t.kind !== "pdf") {
+      notify("Markups can't be saved into an image yet");
+      return false;
+    }
+    try {
+      await ensureFrames(t, v.doc.docId);
+      const key = pathKey(t.path);
+      if (!settings.markup.confirmed.includes(key)) {
+        const info = await invoke<FileInfo>("annot_inspect", { path: t.path, password: t.password });
+        const c = saveConfirmation(t.title, info);
+        const a = await ask("Save into the file", c.message, ["Save", "Save a copy…", "Cancel"], { warnings: c.warnings, note: c.note });
+        if (a === "Save a copy…") return saveCopy();
+        if (a !== "Save") return false;
+        settings.markup = confirmSave(settings.markup, key);
+        save();
+      }
+      // Stamps: bake placed signatures in, or keep them movable.
+      const bake = await askBake(t, false);
+      if (!bake) return false;
+      pendingBake.set(t, bake);
+      return await writeSave(t, v, true);
+    } catch (e) {
+      return failSave(t, e);
+    }
+  }
+
+  async function writeSave(t: Tab, v: Viewer, expect: boolean): Promise<boolean> {
+    // Existing annotations: positions are the last read's; one under way (after a save) first.
+    if (t.marks.reading) await t.marks.reading;
+    let p: Prepared;
+    try {
+      p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, pendingBake.get(t)), target: null, expect: expect ? t.stamp : null });
+    } catch (e) {
+      if (!hasCode(e, "changed_on_disk")) throw e;
+      const a = await ask("The file has changed", `${t.title} changed on disk since you opened it. Add your markups to it as it is now?`, ["Save", "Save a copy…", "Cancel"]);
+      if (a === "Save") return writeSave(t, v, false);
+      if (a === "Save a copy…") return saveCopy();
+      return false;
+    }
+    const oldId = v.doc!.docId;
+    // What the overlay goes on drawing is hidden again in the reopened file; the file's
+    // untouched annotations are PDFium's to draw (MarkupDoc.hideAfterSave).
+    const ids = t.marks.hideAfterSave();
+    try {
+      await v.reopen(
+        () => invoke("annot_commit", { temp: p.temp, target: p.target }),
+        async (docId) => {
+          for (const [page, nms] of ids) await invoke("doc_hide_annots", { docId, page, nms, hidden: true });
+        },
+      );
+    } catch (e) {
+      invoke("annot_discard", { temp: p.temp }).catch(() => {});
+      readingFollowsAfterReopen(t, oldId, v);
+      void rereadFileAnnots(t);
+      throw e;
+    }
+    t.marks.markSaved();
+    void rereadFileAnnots(t); // Existing annotations: where each now sits in the file
+    afterBake(t); // Stamps
+    readingFollowsAfterReopen(t, oldId, v);
+    const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
+    updateTab(t.id, { stamp });
+    invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+    markVersion++;
+    notify(p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`);
+    return true;
+  }
+
+  /** After a reopen the document has a new id: move the tab and the caches over to it. */
+  function readingFollowsAfterReopen(t: Tab, oldId: number, v: Viewer) {
+    if (!v.doc || v.doc.docId === oldId) return;
+    textTool?.forgetDoc(oldId);
+    search?.forgetDoc(oldId);
+    updateTab(t.id, { info: v.doc });
+    readingFollowsDoc();
+  }
+
+  async function failSave(t: Tab, e: unknown): Promise<boolean> {
+    console.warn("save failed:", String((e as Error)?.message ?? e));
+    const a = await ask("Couldn't save", `${userMessage(e, `save ${t.title}`)} Your markups are still here.`, ["Save a copy…", "Close"]);
+    if (a === "Save a copy…") return saveCopy();
+    return false;
+  }
+
+  /** Save the markups into a copy of the file, staying on the original (Ctrl+Shift+S). */
+  async function saveCopy(): Promise<boolean> {
+    const t = active;
+    const v = viewer;
+    if (!t || !v || !markupTool || t.status !== "open" || !v.doc) return false;
+    markupTool.finishText();
+    if (t.kind !== "pdf") {
+      notify("Markups can't be saved into an image yet");
+      return false;
+    }
+    const dir = t.path.replace(/[\\/][^\\/]*$/, "");
+    const dest = await pickSavePdf(`${dir}\\${copyName(t.path)}`, "Save a copy with markups");
+    if (!dest) return false;
+    if (pathKey(dest) === pathKey(t.path)) return saveActive();
+    // Stamps: the copy asks too; the signatures stay movable here either way.
+    const bake = await askBake(t, true);
+    if (!bake) return false;
+    try {
+      if (t.marks.reading) await t.marks.reading; // Existing annotations
+      await ensureFrames(t, v.doc.docId);
+      const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, bake), target: dest, expect: null });
+      await invoke("annot_commit", { temp: p.temp, target: p.target });
+      notify(`Saved a copy as ${fileName(dest)}`);
+      return true;
+    } catch (e) {
+      console.warn("save a copy failed:", String((e as Error)?.message ?? e));
+      notify(userMessage(e, "save the copy"));
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------- unsaved work
+
+  const dirtyTabs = () => tabs.tabs.filter((t) => t.marks.dirty);
+
+  /** Before a tab closes: save, discard or cancel. True to go ahead. */
+  async function settleTab(t: Tab): Promise<boolean> {
+    if (!t.marks.dirty) return true;
+    if (t.id !== tabs.activeId) await activate(t.id);
+    const a = await ask("Unsaved markups", unsavedMessage([t.title]), ["Save", "Don't save", "Cancel"]);
+    if (a === "Save") return saveActive();
+    if (a === "Don't save") {
+      invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+      return true;
+    }
+    return false;
+  }
+
+  /** Before Vellum closes (window close, update): save, discard or cancel. True to go ahead. */
+  async function settleAll(): Promise<boolean> {
+    const dirty = dirtyTabs();
+    if (!dirty.length) return true;
+    const a = await ask("Unsaved markups", unsavedMessage(dirty.map((t) => t.title)), [dirty.length > 1 ? "Save all" : "Save", "Don't save", "Cancel"]);
+    if (a === "Don't save") {
+      for (const t of dirty) await invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+      return true;
+    }
+    if (a !== "Save" && a !== "Save all") return false;
+    for (const t of dirty) {
+      await activate(t.id);
+      if (!(await saveActive())) return false;
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------- crash recovery
+
+  let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A second after a change, keep the active tab's unsaved markups where a crash can't lose them. */
+  function scheduleRecovery() {
+    clearTimeout(recoveryTimer);
+    recoveryTimer = setTimeout(() => {
+      const t = active;
+      if (!t || t.kind !== "pdf" || t.status !== "open") return;
+      const key = recoveryKey(pathKey(t.path));
+      if (!t.marks.dirty) {
+        invoke("recovery_delete", { key }).catch(() => {});
+        return;
+      }
+      const json = JSON.stringify({ v: 1, path: t.path, stamp: t.stamp, markups: t.marks.markups, saved: t.marks.saved.map((m) => m.id) });
+      invoke("recovery_write", { key, json }).catch((e) => console.warn("recovery write failed:", String(e)));
+    }, 1000);
+  }
+
+  /** After opening a PDF: note its stamp, and offer back markups a crash left unsaved. */
+  async function afterOpenMarkups(id: number) {
+    const t = tabById(id);
+    if (!t || t.kind !== "pdf") return;
+    const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
+    updateTab(id, { stamp });
+    // Existing annotations: read the file's own, in the background.
+    t.marks.author = settings.markup.author ?? author;
+    const reading = readFileAnnots(t);
+    const key = recoveryKey(pathKey(t.path));
+    const raw = await invoke<string | null>("recovery_read", { key }).catch(() => null);
+    if (!raw) return;
+    let rec: { stamp: Stamp | null; markups: Markup[]; saved: string[] } | null = null;
+    try {
+      rec = JSON.parse(raw);
+    } catch {
+      rec = null;
+    }
+    const same = rec && stamp && rec.stamp && rec.stamp.size === stamp.size && rec.stamp.mtimeMs === stamp.mtimeMs;
+    if (!rec || !same || !Array.isArray(rec.markups)) {
+      // The file changed since (or the record is unreadable): the markups may not fit it any more.
+      invoke("recovery_delete", { key }).catch(() => {});
+      return;
+    }
+    const a = await ask("Unsaved markups", `Vellum closed before your markups on ${t.title} were saved. Restore them?`, ["Restore", "Discard"]);
+    if (a !== "Restore") {
+      invoke("recovery_delete", { key }).catch(() => {});
+      return;
+    }
+    await reading;
+    const now = tabById(id);
+    const v = viewer;
+    if (!now || !v?.doc || now.id !== tabs.activeId) return;
+    // Existing annotations: with the file read, what it holds is known; the record's markups
+    // (the file's own by the same ids) become the present, and anything changed is lifted.
+    if (now.marks.read) {
+      now.marks.history.push(rec.markups);
+      markupTool?.attach(now.marks);
+      liftNow();
+      markVersion++;
+      return;
+    }
+    const savedIds = new Set(rec.saved);
+    now.marks.saved = rec.markups.filter((m) => savedIds.has(m.id));
+    now.marks.history.push(rec.markups);
+    const byPage = new Map<number, string[]>();
+    for (const m of now.marks.saved) byPage.set(m.page, [...(byPage.get(m.page) ?? []), m.id]);
+    for (const [page, nms] of byPage) await invoke("doc_hide_annots", { docId: v.doc.docId, page, nms, hidden: true }).catch(() => {});
+    v.dropTiles();
+    markupTool?.attach(now.marks);
+    markVersion++;
+  }
+
+  // ---------------------------------------------------------------- existing annotations (phase 7b)
+
+  /**
+   * Read the file's annotations into the tab's markups (annot_read: straight from the file, off
+   * the render workers), with the pictures of any image stamps Vellum wrote. In the background:
+   * nothing waits for it but a crash-recovery restore and a save.
+   */
+  function readFileAnnots(t: Tab): Promise<void> {
+    const marks = t.marks;
+    const { path, password } = t;
+    const run: Promise<void> = (async () => {
+      const r = await invoke<AnnotRead>("annot_read", { path, password });
+      // One set of ids for the whole file: an /NM used on two pages gets an id of its own the second time.
+      const used = new Set<string>();
+      let list = r.pages.flatMap((p) => fromFile(p, used));
+      const hashes = stampHashes(list.map((x) => x.markup));
+      if (hashes.length) {
+        const pngs = await invoke<Record<string, string>>("annot_stamp_images", { path, password, hashes }).catch(() => ({}));
+        const ms = withStampImages(list.map((x) => x.markup), pngs);
+        list = list.map((x, i) => ({ ...x, markup: ms[i] }));
+      }
+      if (!tabs.tabs.some((x) => x.marks === marks)) return; // closed meanwhile
+      marks.adoptFile(list);
+      if (active?.marks === marks) {
+        liftNow();
+        viewer?.requestFrame();
+      }
+      markVersion++;
+    })()
+      .catch((e) => console.warn("reading the file's annotations failed:", String((e as Error)?.message ?? e)))
+      .finally(() => {
+        if (marks.reading === run) marks.reading = null;
+      });
+    marks.reading = run;
+    return run;
+  }
+
+  /** After a save: read the file again for where each annotation now sits (MarkupDoc.reread). */
+  function rereadFileAnnots(t: Tab): Promise<void> {
+    const marks = t.marks;
+    const run: Promise<void> = invoke<AnnotRead>("annot_read", { path: t.path, password: t.password })
+      .then((r) => {
+        marks.reread(r.pages);
+        if (active?.marks === marks) liftNow();
+        markVersion++;
+      })
+      .catch((e) => console.warn("reading the file's annotations again failed:", String((e as Error)?.message ?? e)))
+      .finally(() => {
+        if (marks.reading === run) marks.reading = null;
+      });
+    marks.reading = run;
+    return run;
+  }
+
+  let liftChain: Promise<void> = Promise.resolve();
+  /**
+   * Hide in PDFium the annotations from the file the overlay now draws instead (with `ids`,
+   * those a drag is starting on; otherwise any that changed or went), then re-render those
+   * pages: the active tab only, whose document is the one open on the canvas.
+   */
+  function liftNow(ids?: string[]) {
+    const t = active;
+    const v = viewer;
+    if (!t || t.status !== "open" || t.kind !== "pdf" || !v?.doc || markupTool?.doc !== t.marks) return;
+    const groups = t.marks.toLift(ids);
+    if (!groups.length) return;
+    const docId = v.doc.docId;
+    liftChain = liftChain.then(async () => {
+      for (const g of groups) {
+        await invoke("doc_hide_annots", { docId, page: g.page, nms: g.nms, indices: g.indices, hidden: true }).catch((e) => console.warn("hiding an annotation failed:", String(e)));
+        if (viewer?.doc?.docId === docId) viewer.dropPageTiles(g.page);
+      }
+    });
+  }
+
+  /** The padlock: unlock "Edit document" (saying so first if the file is signed or asks not to be changed), or lock it again. */
+  async function toggleEditLock() {
+    const t = active;
+    if (!t || t.status !== "open" || t.kind !== "pdf") return;
+    const marks = t.marks;
+    if (marks.unlocked) {
+      marks.unlocked = false;
+      for (const id of [...marks.selection]) {
+        const m = marks.byId(id);
+        if (m && !marks.editable(m)) marks.selection.delete(id);
+      }
+      markVersion++;
+      viewer?.requestFrame();
+      return;
+    }
+    const info = await invoke<FileInfo>("annot_inspect", { path: t.path, password: t.password }).catch(() => null);
+    const warnings = unlockWarnings(t.title, info);
+    if (warnings.length) {
+      const a = await ask("Edit document", "Unlock to move, restyle and delete the annotations that came with the file?", ["Unlock", "Cancel"], { warnings });
+      if (a !== "Unlock") return;
+    }
+    if (active !== t) return;
+    marks.unlocked = true;
+    markVersion++;
+    viewer?.requestFrame();
+  }
+
+  const unlockedNow = $derived.by(() => {
+    void markVersion;
+    return !!markupTool?.doc?.unlocked;
+  });
+
   const active = $derived(activeTab(tabs));
   const hasDoc = $derived(!!active && active.status === "open" && ui.docId !== null);
+  /** A PDF is showing: search, selection and links apply (images have no text). */
+  const textDoc = $derived(hasDoc && ui.kind === "pdf");
+  /** A PDF is showing: markups can be drawn and saved (not into images, yet). */
+  const pdfDoc = $derived(hasDoc && ui.kind === "pdf");
   const theme = $derived(resolveTheme(settings.theme, systemDark));
   const chrome = $derived(!bench);
 
@@ -164,7 +1546,7 @@
     return {
       id: nextTabId++, path, title: fileName(path), kind: rendererFor(path).name === "image" ? "image" : "pdf",
       status: "pending", error: null, view: null, info: null, scale: null, detected: null, candidates: null,
-      password: null, token: 0,
+      password: null, token: 0, marks: new MarkupDoc(), stamp: null,
     };
   }
 
@@ -219,11 +1601,14 @@
       v.attach(t.view);
       updateTab(id, { view: null });
       setTitle(t.title);
+      readingFollowsDoc();
     } else if (t.status === "pending") {
+      readingFollowsDoc();
       await load(id, t.password ?? undefined);
     } else {
       v.close(); // error or password tab: nothing on the canvas
       setTitle(t.title);
+      readingFollowsDoc();
     }
   }
 
@@ -269,6 +1654,8 @@
       map: mem?.map ?? "auto", mapSize: mem?.mapSize ?? 1, mapKeep: mem?.mapSize ?? 1,
     });
     if (passwordFor?.tabId === id) passwordFor = null;
+    readingFollowsDoc();
+    void afterOpenMarkups(id);
     settings.recent = addRecent(settings.recent, t.path);
     save();
     detectScale(id, info);
@@ -276,11 +1663,19 @@
 
   async function closeTab(id: number) {
     const v = viewer;
+    const first = tabById(id);
+    if (!v || !first) return;
+    if (!(await settleTab(first))) return;
     const t = tabById(id);
-    if (!v || !t) return;
+    if (!t) return;
     if (passwordFor?.tabId === id) passwordFor = null;
     const wasActive = id === tabs.activeId;
     if (wasActive && t.status === "open") rememberActive();
+    const closingDoc = wasActive ? (v.doc?.docId ?? null) : (t.info?.docId ?? null);
+    if (closingDoc !== null) {
+      textTool?.forgetDoc(closingDoc);
+      search?.forgetDoc(closingDoc);
+    }
     if (wasActive) v.close(); // also abandons an open in progress
     else if (t.view) v.closeDetached(t.view);
     const after = closeTabModel(tabs, id);
@@ -466,6 +1861,7 @@
    * (return false to keep Vellum open).
    */
   async function closeForUpdate(): Promise<boolean> {
+    if (!(await settleAll())) return false;
     rememberActive();
     return true;
   }
@@ -487,6 +1883,7 @@
   const docItem = (label: string, action: () => void, shortcut?: string): MenuItem => ({ label, action, shortcut, disabled: !hasDoc });
 
   const menus = $derived.by((): Menu[] => {
+    void markVersion;
     const v = viewer;
     const recent: MenuItem[] = settings.recent.length
       ? [
@@ -505,10 +1902,38 @@
           docItem("Export pages as images…", () => { exportState = { progress: null, result: null, ac: null }; dialog = "export"; }),
           docItem("Show in Explorer", () => active && showInExplorer(active.path)),
           { separator: true },
+          { label: "Save", shortcut: "Ctrl+S", disabled: !pdfDoc || !active?.marks.dirty, action: () => void saveActive() },
+          { label: "Save a copy…", shortcut: "Ctrl+Shift+S", disabled: !pdfDoc, action: () => void saveCopy() },
+          { separator: true },
           docItem("Print…", openPrint, "Ctrl+P"),
           docItem("Document properties", () => (dialog = "properties"), "Ctrl+D"),
           { separator: true },
           { label: "Close tab", shortcut: "Ctrl+W", disabled: !active, action: () => active && closeTab(active.id) },
+        ],
+      },
+      {
+        label: "Edit",
+        items: [
+          { label: "Undo", shortcut: "Ctrl+Z", disabled: !markupTool?.drawingPoints && !markupTool?.doc?.history.canUndo, action: () => (markupTool?.drawingPoints ? markupTool.removeLastPoint() : markupTool?.undo()) },
+          { label: "Redo", shortcut: "Ctrl+Y", disabled: !markupTool?.doc?.history.canRedo, action: () => markupTool?.redo() },
+          { separator: true },
+          { label: "Cut markups", shortcut: "Ctrl+X", disabled: !markupTool?.hasSelection, action: () => markupTool?.cut() },
+          { label: "Copy", shortcut: "Ctrl+C", disabled: !textUi.hasSelection && !markupTool?.hasSelection, action: () => (markupTool?.hasSelection ? markupTool.copy() : copySelection()) },
+          { label: "Paste", shortcut: "Ctrl+V", disabled: !pdfDoc || !markupTool?.canPaste, action: () => void markupTool?.paste("centre") },
+          { label: "Delete markups", shortcut: "Delete", disabled: !markupTool?.hasSelection, action: () => markupTool?.deleteSelection() },
+          // Existing annotations
+          { label: unlockedNow ? "Lock document" : "Unlock document…", disabled: !pdfDoc, action: () => void toggleEditLock() },
+          { separator: true },
+          { label: "Select all markups on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? "Ctrl+A" : undefined, disabled: !pdfDoc, action: selectAllMarkups },
+          { label: "Select all text on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? undefined : "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
+          // Text markups
+          { label: "Highlight text", shortcut: "Ctrl+H", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("highlight") },
+          { label: "Underline text", shortcut: "Ctrl+U", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("underline") },
+          { label: "Strike through text", shortcut: "Ctrl+Shift+X", disabled: !textUi.hasSelection || !pdfDoc, action: () => void markText("strike") },
+          { separator: true },
+          { label: "Find…", shortcut: "Ctrl+F", disabled: !textDoc, action: () => searchField?.focus() },
+          { label: "Find next", shortcut: "F3", disabled: !searchView?.hits.length, action: () => search?.step(1) },
+          { label: "Find previous", shortcut: "Shift+F3", disabled: !searchView?.hits.length, action: () => search?.step(-1) },
         ],
       },
       {
@@ -554,10 +1979,12 @@
             })),
           },
           {
-            label: "Units",
+            // Paper sizes, the read-outs, and the units measurements set to Auto are written in
+            // (tool consistency stage 10).
+            label: "Units for sizes and measurements",
             submenu: [
-              { label: "Millimetres and metres", radio: true, checked: settings.units === "metric", action: () => { settings.units = "metric"; save(); } },
-              { label: "Inches and feet", radio: true, checked: settings.units === "imperial", action: () => { settings.units = "imperial"; save(); } },
+              { label: "Metric: millimetres and metres", radio: true, checked: settings.units === "metric", action: () => { settings.units = "metric"; save(); } },
+              { label: "Imperial: feet and inches", radio: true, checked: settings.units === "imperial", action: () => { settings.units = "imperial"; save(); } },
             ],
           },
           { separator: true },
@@ -567,8 +1994,8 @@
       {
         label: "Document",
         items: [
-          docItem("Rotate view clockwise", () => v?.rotate(1), "R"),
-          docItem("Rotate view anticlockwise", () => v?.rotate(-1), "Shift+R"),
+          docItem("Rotate view clockwise", () => v?.rotate(1), "]"),
+          docItem("Rotate view anticlockwise", () => v?.rotate(-1), "["),
           { separator: true },
           docItem("Drawing scale…", openScale),
         ],
@@ -627,10 +2054,19 @@
     };
   }
 
+  /** Stage 9: select the current page's markups (in Select: a drawing tool's selection is only what it drew). */
+  function selectAllMarkups() {
+    const mt = markupTool;
+    if (!mt || !pdfDoc) return;
+    if (mt.tool !== "select") setTool("select");
+    textTool?.clear();
+    mt.selectAllOnPage(ui.page);
+  }
+
   // ------------------------------------------------------------------ keyboard (shell-level; navigation keys live in input.ts)
 
   /** A modal (a dialog, or the print dialog unless it's hidden for an area pick) owns the keyboard. */
-  const modalOpen = $derived(dialog !== null || (printOpen && !marquee));
+  const modalOpen = $derived(dialog !== null || choice !== null || (printOpen && !marquee));
 
   // WebView2's own accelerators (reload, find, save page...) don't belong here. Capture phase,
   // so it runs before a dialog or menu can stop the key.
@@ -641,7 +2077,25 @@
   function onKeyDown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
-    if (isWebViewAccelerator(e) || marquee || modalOpen || blockedWhileTyping(e)) return;
+    if (marquee || modalOpen) return;
+    // Find is ours, though it's also one of WebView2's accelerators (guardWebView stops that).
+    if (ctrl && !e.shiftKey && !e.altKey && k === "f") {
+      if (textDoc) searchField?.focus();
+      e.preventDefault();
+      return;
+    }
+    // Save is ours too (Ctrl+S is also a WebView2 accelerator).
+    if (ctrl && !e.altKey && k === "s") {
+      e.preventDefault();
+      if (!e.repeat && pdfDoc) void (e.shiftKey ? saveCopy() : saveActive());
+      return;
+    }
+    if (e.key === "F3" && !ctrl) {
+      search?.step(e.shiftKey ? -1 : 1);
+      e.preventDefault();
+      return;
+    }
+    if (isWebViewAccelerator(e) || blockedWhileTyping(e)) return;
     // Holding a key must not close every tab, spin the view or flicker the sidebar. Ctrl+Tab
     // may repeat to cycle through tabs.
     if (e.repeat && !(ctrl && e.key === "Tab")) return;
@@ -657,6 +2111,53 @@
       if (hasDoc) dialog = "properties";
     } else if (ctrl && !e.shiftKey && k === "b") {
       toggleSidebar();
+    } else if (ctrl && !e.shiftKey && k === "z" && !isTyping(e)) {
+      // While a shape is being clicked out, undo takes back its last point.
+      if (markupTool?.drawingPoints) markupTool.removeLastPoint();
+      else markupTool?.undo();
+    } else if (ctrl && (k === "y" || (e.shiftKey && k === "z")) && !isTyping(e)) {
+      markupTool?.redo();
+    } else if (ctrl && !e.shiftKey && k === "c" && !isTyping(e)) {
+      if (markupTool?.hasSelection) markupTool.copy();
+      else if (textUi.hasSelection) copySelection();
+      else handled = false;
+    } else if (ctrl && !e.shiftKey && k === "x" && !isTyping(e)) {
+      if (!markupTool?.cut()) handled = false;
+    } else if (ctrl && !e.shiftKey && k === "v" && !isTyping(e)) {
+      // Whatever was copied last, anywhere: markups (at the pointer) or a picture.
+      if (pdfDoc && markupTool) void markupTool.paste("pointer");
+      else handled = false;
+    } else if (e.key === "Backspace" && !isTyping(e) && markupTool?.drawingPoints) {
+      markupTool.removeLastPoint();
+    } else if ((e.key === "Delete" || e.key === "Backspace") && !isTyping(e)) {
+      if (!markupTool?.deleteSelection()) handled = false;
+    } else if (e.key.startsWith("Arrow") && !ctrl && !isTyping(e) && markupTool?.hasSelection) {
+      const step = e.shiftKey ? 10 : 1;
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key] ?? [0, 0];
+      markupTool.nudge(d[0], d[1]);
+    } else if (e.key === "Enter" && !isTyping(e) && markupTool?.drawingPoints) {
+      markupTool.finishPoints(true);
+    } else if ((e.key === "Escape" || e.key === "Enter") && !isTyping(e) && markupTool?.cropping) {
+      // Cropping: Enter or Esc finishes (each drag was already its own undo step).
+      markupTool.setCropping(false);
+    } else if (e.key === "Escape" && !isTyping(e) && markupTool && (markupTool.drawingPoints || markupTool.tool !== "select" || markupTool.hasSelection)) {
+      if (markupTool.drawingPoints) markupTool.finishPoints(false);
+      else if (markupTool.tool !== "select") markupTool.setTool("select");
+      else markupTool.clearSelection();
+    } else if (!ctrl && !e.altKey && !e.shiftKey && k === "h" && !isTyping(e) && textUi.hasSelection && pdfDoc) {
+      // H with text selected highlights it, rather than picking the Highlighter.
+      void markText("highlight");
+    } else if (!ctrl && !e.altKey && !isTyping(e) && markupTool && toolForKey(k, markupTool.tool) !== null) {
+      // A tool's letter: its last used, again for the next sharing it, Shift for the one before
+      // (rule 8, markup/tools.ts).
+      if (pdfDoc) setTool(toolForKey(k, markupTool.tool, settings.markup.lastForKey, e.shiftKey)!);
+    } else if (ctrl && !e.shiftKey && k === "a" && !isTyping(e)) {
+      // Never the WebView's select-all, which would highlight the whole shell. With a markup
+      // selected or a markup tool out, the page's markups; otherwise the page's text.
+      if (pdfDoc && markupTool && (markupTool.hasSelection || markupTool.tool !== "select")) selectAllMarkups();
+      else if (textDoc) textTool?.selectPage(ui.page);
+    } else if (e.key === "Escape" && !isTyping(e) && textUi.hasSelection) {
+      textTool?.clear();
     } else if (e.key === "F1") {
       dialog = "shortcuts";
     } else if (ctrl && e.shiftKey && !e.altKey && /^Digit[123]$/.test(e.code)) {
@@ -664,8 +2165,12 @@
       if (hasDoc) setLayout(e.code === "Digit1" ? "single" : e.code === "Digit2" ? "continuous" : "columns");
     } else if (!ctrl && !e.altKey && !e.shiftKey && k === "n") {
       if (hasDoc) setNav(ui.navMode === "cad" ? "document" : "cad");
-    } else if (!ctrl && !e.altKey && k === "r") {
-      if (hasDoc) viewer?.rotate(e.shiftKey ? -1 : 1);
+    } else if (!ctrl && !e.altKey && (e.code === "BracketLeft" || e.code === "BracketRight") && !isTyping(e)) {
+      // By the physical key (Shift+[ types a brace). A stamp about to be placed, or a selection
+      // that can turn, turns a quarter (Shift: 15 degrees); a selection that can't turn stays
+      // put. Otherwise the view turns (was R, which is now the Rectangle's).
+      const cw = e.code === "BracketRight";
+      if (hasDoc && !markupTool?.turnBy((cw ? 1 : -1) * (e.shiftKey ? 15 : 90))) viewer?.rotate(cw ? 1 : -1);
     } else {
       handled = false;
     }
@@ -765,11 +2270,125 @@
       ro = new ResizeObserver(measure);
       ro.observe(host);
       measure();
+      const tt = new TextTool(v, { openUrl: followUrl, onChange: refreshText });
+      textTool = tt;
+      const mt = new MarkupTool(v, {
+        styleFor: (_k, tool) => styleFor(settings.markup, tool),
+        textStyle: (tool) => textFor(settings.markup, tool),
+        author: () => settings.markup.author ?? author,
+        onChange: onMarkupsChanged,
+        onLift: (ids) => liftNow(ids), // Existing annotations
+        // Stage 9: markups go on the system clipboard in Vellum's own format (src-tauri/src/clipboard.rs).
+        clipboard: {
+          write: (json) => invoke<void>("clipboard_put_markups", { json }),
+          read: () => invoke<ClipRead>("clipboard_take").catch((e) => {
+            console.warn("paste: clipboard read failed:", String(e));
+            return { kind: "none" } as const;
+          }),
+        },
+        notify,
+        sides: (tool) => sidesFor(settings.markup, tool), // Stage 6
+        // Stage 8: a picture pasted from the clipboard becomes an Image markup, upright as viewed.
+        onPicture: (pic, page, at) => void placePicture(pic, page, at),
+        placedOnce: () => setTool("select"), // the Image tool places one picture
+      });
+      markupTool = mt;
+      // With --debug, scripted checks (DevTools) can reach the engine. Never in a normal launch.
+      if (args.debug) (window as unknown as { __vellum: unknown }).__vellum = { viewer: v, markupTool: mt, textTool: tt, tabs: () => tabs };
+      invoke<string>("user_display_name")
+        .then((n) => {
+          author = n;
+          // Existing annotations: the lock leaves your own markups free.
+          for (const t of tabs.tabs) t.marks.author = settings.markup.author ?? n;
+          markVersion++;
+        })
+        .catch(() => {});
+      // Closing the window: settle unsaved markups first (the title bar's close calls close()).
+      win
+        .onCloseRequested(async (ev) => {
+          if (!dirtyTabs().length) {
+            rememberActive();
+            return;
+          }
+          ev.preventDefault();
+          if (await settleAll()) {
+            rememberActive();
+            await win.destroy();
+          }
+        })
+        .then((un) => cleanups.push(un))
+        .catch(() => {});
+      search = new SearchController(v, refreshSearch);
       detachInput = attachInput(host, v, {
         open: openDialog,
         toggleDebug: () => (debug = !debug),
         blocked: () => modalOpen,
         hasDoc: () => hasDoc,
+        // Markups first (handles, markups, drawing tools), then text and links, then a marquee.
+        left: {
+          down: (x, y, clicks, mods) => {
+            if (pdfDoc && mt.down(x, y, clicks, mods)) return true;
+            if (textDoc && mt.tool === "select" && tt.pointerDown(x, y, clicks)) return true;
+            return pdfDoc && mt.marqueeDown(x, y, mods);
+          },
+          move: (x, y, mods) => {
+            if (mt.active) mt.move(x, y, mods);
+            else if (tt.active) tt.pointerMove(x, y);
+            else {
+              if (pdfDoc) mt.move(x, y, mods);
+              if (textDoc && mt.tool === "select") tt.pointerMove(x, y);
+            }
+          },
+          up: (x, y, mods) => {
+            if (mt.active) mt.up(x, y, mods);
+            else tt.pointerUp();
+          },
+          leave: () => {
+            tt.pointerLeave();
+            mt.leave(); // a paste now goes to the middle of the view
+          },
+          cursor: () => (pdfDoc ? mt.cursor() : null) ?? (textDoc && mt.tool === "select" ? tt.cursor() : null),
+        },
+        contextMenu: (x, y) => {
+          // Clicking out a shape: finish it, take back a point, or cancel, by mouse.
+          if (mt.drawingPoints) {
+            contextMenu = {
+              x, y,
+              items: [
+                { label: "Finish", shortcut: "Enter", disabled: !mt.canFinishPoints, action: () => mt.finishPoints(true) },
+                { label: "Remove last point", shortcut: "Backspace", action: () => mt.removeLastPoint() },
+                { label: "Cancel", shortcut: "Esc", action: () => mt.finishPoints(false) },
+              ],
+            };
+            return;
+          }
+          // Stage 6: on a selected shape's corner, remove it (never below the fewest it takes).
+          const hr = host.getBoundingClientRect(); // client to canvas coordinates, as input.ts gives the left button
+          const corner = mt.cornerAt(x - hr.left, y - hr.top);
+          const cornerItems: MenuItem[] = corner ? [{ label: "Remove corner", disabled: !corner.removable, action: () => mt.removeCorner(corner.id, corner.index) }] : [];
+          // One picture selected: put another in its place (same middle, width and turn).
+          const sel = mt.tool === "select" ? mt.selected() : [];
+          const pic = sel.length === 1 && sel[0].kind === "stamp" && sel[0].content.type === "image" && !sel[0].signature;
+          if (pic) cornerItems.push({ label: "Replace picture…", action: () => void choosePicture(true) });
+          // A placed stamp or signature: the grid at the pointer, to swap what it holds (same place, size and turn).
+          const st = sel.length === 1 && sel[0].kind === "stamp" && !pic ? sel[0] : null;
+          if (st) {
+            const family: StampFamily = st.signature ? "signature" : "stamp";
+            cornerItems.push({ label: st.signature ? "Replace signature…" : "Replace stamp…", action: () => (stampGrid = { family, replace: true, at: { x, y } }) });
+          }
+          // Measuring: the rare case of every measurement in the file taking one's units and decimals.
+          const m = mt.tool === "select" ? mt.selected().find(isMeasurement) : undefined;
+          if (m) {
+            contextMenu = { x, y, items: [...cornerItems, { label: "Apply its units and decimals to all measurements", action: () => formatAllLike(m.fmt) }] };
+            return;
+          }
+          if (cornerItems.length) {
+            contextMenu = { x, y, items: cornerItems };
+            return;
+          }
+          if (!tt.hasSelection) return;
+          contextMenu = { items: [{ label: "Copy", shortcut: "Ctrl+C", action: copySelection }], x, y };
+        },
       });
 
       // Log every settle-to-sharp event while the debug overlay is up.
@@ -856,6 +2475,7 @@
       note: t.info?.meta.note ?? null,
       detail: tabDetail(t),
       snapshot: t.view?.snapshot ?? null,
+      dirty: (void markVersion, t.marks.dirty),
     })),
   );
   const sizes = $derived(hasDoc && active?.info ? active.info.sizes : []);
@@ -896,7 +2516,7 @@
     const c = ui.cursor;
     const s = c ? sizes[c.page] : null;
     if (!c || !s) return "";
-    return cursorText(c.x, c.y, s.h, active?.scale?.ratio ?? null, settings.units);
+    return cursorText(c.x, c.y, s.h, pageMeasure(active, c.page).ratio, settings.units); // Measuring: the page's own scale
   });
   const pageSizeLabel = $derived.by(() => {
     const s = sizes[ui.page];
@@ -946,7 +2566,33 @@
       layoutMode={ui.layoutMode}
       columns={ui.columns}
       onLayout={setLayout}
-    />
+    >
+      {#snippet centre()}
+        <ToolPalette
+          tool={toolNow}
+          disabled={!pdfDoc}
+          disabledReason={hasDoc && !pdfDoc ? "Markups on images come later (they can't be saved into an image)" : undefined}
+          lastInGroup={settings.markup.lastInGroup}
+          onTool={setTool}
+        />
+        <EditLock unlocked={unlockedNow} disabled={!pdfDoc} onToggle={() => void toggleEditLock()} />
+      {/snippet}
+      {#snippet searchBox()}
+        <SearchField
+          bind:this={searchField}
+          disabled={!textDoc}
+          view={searchView}
+          docKey={ui.docId}
+          matchCase={searchOpts.matchCase}
+          wholeWord={searchOpts.wholeWord}
+          onSearch={runSearch}
+          onStep={(d) => search?.step(d)}
+          onSelect={(i) => search?.select(i)}
+          onOption={toggleSearchOption}
+        />
+      {/snippet}
+    </Toolbar>
+
   {/if}
 
   <div class="body">
@@ -971,6 +2617,9 @@
         }}
         onGoto={(p) => viewer?.gotoPage(p)}
         onGotoPoint={(p, y) => viewer?.gotoPagePoint(p, y)}
+        markups={markupsTab}
+        onPickMarkup={pickMarkup}
+        onDeleteMarkup={(id) => markupTool?.removeMarkup(id)}
       />
     {/if}
 
@@ -1046,6 +2695,57 @@
       {#if chrome && hasDoc && viewer && ui.navMode === "document"}
         <CanvasScrollbars view={ui.viewWorld} bounds={ui.bounds} unitsPerPx={1 / (ui.zoom * PT_TO_CSS)} onPan={(dx, dy) => viewer?.panBy(dx, dy)} />
       {/if}
+      {#if chrome && strip}
+        <!-- Floats over the top of the canvas: showing or hiding it never resizes the canvas,
+             so the drawing doesn't move under the pointer. -->
+        <PropertiesStrip
+          bar={strip.bar} kinds={strip.kinds} style={strip.style} text={strip.text} label={strip.label}
+          {...measureStrip}
+          sides={strip.sides} onSides={stripSides}
+          {...dimensionStrip}
+          dock={liveDock ?? settings.markup.dock} areaW={stageW} areaH={stageH}
+          onStyle={stripStyle} onText={stripText}
+          crop={cropStrip}
+          dateLine={dateLineStrip}
+          swap={swapStrip}
+          onDock={(d, done) => {
+            liveDock = done ? null : d;
+            if (done) {
+              settings.markup = { ...settings.markup, dock: d };
+              save();
+            }
+          }}
+        />
+      {/if}
+      {#if editor}
+        {#key editor.id}
+          <TextEditor
+            x={editor.x} y={editor.y} w={editor.w} h={editor.h} rotation={editor.rotation} scale={editor.scale}
+            textStyle={editor.textStyle} pad={editor.pad} text={editor.text}
+            onInput={(s) => markupTool?.setText(s)}
+            onDone={() => markupTool?.finishText()}
+          />
+        {/key}
+      {/if}
+      <!-- Measuring -->
+      {#if measuring && hasDoc}
+        <Loupe />
+      {/if}
+      {#if calib && active?.info && calib.tabId === active.id}
+        <CalibrateDialog
+          paperMm={calib.paperMm} page={calib.page + 1} numPages={active.info.numPages} current={pageMeasure(active, calib.page).ratio}
+          onApply={applyCalibration} onClose={calibrationDone} units={settings.units}
+        />
+      {/if}
+      <!-- End measuring -->
+      <!-- Stamps -->
+      <!-- Text markups -->
+      {#if chrome && selBar}
+        <SelectionBar x={selBar.x} y={selBar.y} areaW={stageW} areaH={stageH} onMark={(v) => void markText(v)} onCopy={() => void copySelection()} />
+      {/if}
+      {#if viewer && noteTool && pdfDoc}
+        <NoteLayer {viewer} markupTool={noteTool} version={markVersion} view={[ui.viewWorld.x, ui.viewWorld.y, ui.zoom, ui.rotation]} tool={toolNow} areaW={stageW} areaH={stageH} />
+      {/if}
       {#if marquee}
         <MarqueeOverlay pageAt={(x, y) => viewer?.pagePointAt(x, y) ?? null} {pointOn} onDone={marquee} />
       {/if}
@@ -1060,12 +2760,13 @@
 
   {#if chrome}
     <StatusBar
-      scaleText={hasDoc ? scaleStatusText(active?.scale ?? null) : null}
-      hint={hasDoc ? navHint(ui.navMode) : ""}
+      scaleText={hasDoc ? scaleStatusText(active?.scale ?? null, settings.units) : null}
+      hint={hasDoc ? textUi.link || navHint(ui.navMode) : ""}
       {notice}
       cursor={cursorLabel}
       pageSize={pageSizeLabel}
       onScale={openScale}
+      {...measureBar}
     />
   {/if}
 </div>
@@ -1073,6 +2774,52 @@
 {#if contextMenu}
   <MenuPopup items={contextMenu.items} x={contextMenu.x} y={contextMenu.y} onClose={() => (contextMenu = null)} />
   <div class="ctx-catch" role="presentation" onpointerdown={() => (contextMenu = null)} oncontextmenu={(e) => { e.preventDefault(); contextMenu = null; }}></div>
+{/if}
+
+<!-- Stamps. The grid and Manage stamps sit outside the drawing area, so the pointer over them
+     isn't over the drawing (no placing preview under them, no crosshair). -->
+{#if stampsDialog}
+  <StampsDialog
+    prefs={settings.stamps}
+    {fieldValue}
+    onPrefs={(prefs) => {
+      settings.stamps = prefs;
+      save();
+    }}
+    onClose={() => (stampsDialog = false)}
+  />
+{/if}
+{#if stampGrid}
+  {@const g = stampGrid}
+  {@const a = g.replace ? null : stampArmed[g.family]}
+  {#key g}
+    <StampGrid
+      family={g.family} at={g.at ?? null} from={g.from ?? null} out={g.out ?? "down"}
+      current={g.replace ? replacing : (a?.content ?? null)} currentId={a?.id ?? null}
+      lineLabel={g.family !== "stamp" ? null : gridLineLabel(g.replace ? replacing : (a?.content ?? null))}
+      lineOf={(label) => lineOf(settings.stamps, label)} onLine={setLineFor} defaultLine={settings.stamps.line}
+      preview={(c) => filledStamp(c, fieldValues(viewer?.currentPageIndex ?? null))} {fieldValue}
+      texts={settings.stamps.texts}
+      onPick={gridPicked} onPickSignature={gridPickedSignature}
+      onAddText={addOwnText}
+      onNewSignature={() => (signaturesDialog = "pad")}
+      onManage={() => manageStamps(g.family)}
+      onClose={() => (stampGrid = null)}
+    />
+  {/key}
+{/if}
+{#if signaturesDialog}
+  <SignaturesDialog
+    start={signaturesDialog}
+    armedId={stampArmed.signature?.id ?? null}
+    onSaved={newSignatureSaved}
+    onDeleted={signatureDeleted}
+    onClose={() => (signaturesDialog = null)}
+  />
+{/if}
+
+{#if choice}
+  <ChoiceDialog title={choice.title} message={choice.message} warnings={choice.warnings} note={choice.note} choices={choice.choices} onCancel={choice.onCancel} />
 {/if}
 
 {#if passwordFor}
@@ -1094,7 +2841,7 @@
 {/if}
 
 {#if dialog === "scale" && active?.info}
-  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} />
+  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} {...measureScaleDialog} units={settings.units} />
 {:else if dialog === "properties" && active?.info}
   <PropertiesDialog
     path={active.path}
