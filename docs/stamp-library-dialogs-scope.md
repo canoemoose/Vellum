@@ -1,7 +1,7 @@
 # Stamp and signature library dialogs: scope
 
-Status: **in progress on `editing`** (15 to 16 November 2026). Steps 1 to 3b built, nothing
-committed yet; next is step 4. App-wide requests Matt raised along the way are in
+Status: **in progress on `editing`** (15 to 16 November 2026). Steps 1 to 3b built and
+committed; step 4 built, not committed, waiting for Matt's check; next is step 5. App-wide requests Matt raised along the way are in
 [backlog.md](backlog.md) (on `main`). Part of Matt's review of the tool
 consistency brief ([editing-tool-consistency-brief.md](editing-tool-consistency-brief.md));
 follows the stamp grid (the Stamp and Signature buttons open a grid of tiles beside the
@@ -57,6 +57,30 @@ an editor for adding (and, for image stamps, editing again).
    **Built**, waiting for Matt's check (with 3a's field menu now opening at the caret).
 4. **The Signatures dialog**: the list (from SignatureLibrary) and the pad (SignaturePad,
    SignatureFrame) as the two views of one dialog. Retire SignaturePopover and SignatureDialog.
+   **Built** (`components/signature/SignaturesDialog.svelte`), waiting for Matt's check. The
+   list is laid out as Manage stamps' (preview on paper, name edited in place, Drawing or
+   Import, the bin that arms on the first click, a "Draw or import a new one…" row) with the
+   unreadable tidy-up under it; the armed one is ringed and says "Placing next". 880 wide, its
+   height following each view (Matt: a fixed height left the pad with empty space under Save
+   and made a photo scroll), not resizable (nothing to gain), and the framing stage is capped to what
+   leaves its buttons in the window. The pad's Save is in the footer beside Cancel (Matt: Save in the pad and
+   "Back to the list" in the footer read oddly as OK and Cancel); Cancel goes back to the list,
+   or closes the dialog if "+ New" opened it on the pad; no footer while a photo is framed (its
+   view has its own Cancel and "Remove the paper"). Deleting the armed signature disarms it and forgets it as the tool's
+   last one. `Dialog.svelte` leaves an Escape a child has
+   already handled (the framing view's Cancel used to close the whole dialog too).
+   The pad's inks (Matt): still the pen inks (Black, ballpoint Blue, Original for an import),
+   now drawn with the app's `ColourSwatches` (which takes a `colours` list and a null `value`)
+   and its colour picker for a custom one, instead of the pad's own swatches and the browser's
+   picker. The pale-ink warning sits on the name's row (it used to come and go under the pad and
+   make the dialog jump), in a new `--warn` colour (app.css, both themes). While the eyedropper is open, dialogs lose their dim (`:root[data-picking]` clears
+   `--scrim`), so it samples the drawing's true colours. The eyedropper itself had stopped
+   working on Matt's machine (closed after 2 ms): a Microsoft feature experiment in Vellum's
+   WebView2 profile, fixed app-wide with `--enable-benchmarking` (ARCHITECTURE.md, "WebView2
+   switches"). The framing view's Reset is a full-size button, as Cancel and "Remove the paper".
+   SignaturePopover and SignatureDialog are gone; with `VELLUM_STAMP_POPOUTS=1` only the Stamp
+   tool still has its old panel (the Signature tool has the grid). SignatureLibrary stays for
+   the dev demo (`src/dev/SignaturePadDemo.svelte`) until step 7.
 5. **The image stamp editor**: SignatureFrame for framing; background removal that keeps
    colour (Rust, beside `prepare` in `stamps.rs`); a name. "Add a picture…" opens it.
 6. **Keep originals** (`<id>.orig.<ext>` beside each stamp) and "Edit" in the list.

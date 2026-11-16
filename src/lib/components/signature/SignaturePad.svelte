@@ -7,7 +7,9 @@
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import SignatureFrame from "./SignatureFrame.svelte";
   import { Drawing, drawStrokes, INK, PEN_WIDTH, type Pt } from "../../signature/strokes";
-  import { INKS, parseHex, tooLight } from "../../signature/ink";
+  import { INKS, parseHex, toHex, tooLight } from "../../signature/ink";
+  import ColourSwatches from "../ColourSwatches.svelte";
+  import type { Rgb } from "../../markup/base";
   import { initialAdjust, type Adjust } from "../../signature/frame";
   import {
     addSignature,
@@ -24,8 +26,14 @@
   interface Props {
     /** Called with the new library entry after a save. */
     onsaved?: (item: SignatureItem) => void;
+    /** The Save button under the name; off where the pad's host has its own (a dialog's footer calls `save()`). */
+    saveButton?: boolean;
+    /** Out: there's something to save and nothing in progress. */
+    ready?: boolean;
+    /** Out: a photo is being framed (its view has its own buttons). */
+    framed?: boolean;
   }
-  let { onsaved }: Props = $props();
+  let { onsaved, saveButton = true, ready = $bindable(false), framed = $bindable(false) }: Props = $props();
 
   const drawing = new Drawing();
   /** Bumped whenever the finished strokes change, so derived state re-reads `drawing`. */
@@ -39,9 +47,8 @@
   let source = $state.raw<Photo | null>(null);
   /** The photo being framed: a new one, or `source` again. */
   let framing = $state.raw<Photo | null>(null);
-  /** The ink: "original" (an import's own colour), a ready-made ink's id, or "custom". */
-  let choice = $state<string>("black");
-  let custom = $state("#7a1f2b");
+  /** The ink, "#rrggbb", or "original" (an import's own colour). */
+  let choice = $state<string>(INK);
   let name = $state("");
   let busy = $state(false);
   let error = $state("");
@@ -56,9 +63,11 @@
     return imported === null && drawing.isEmpty;
   });
   /** The ink in use, or null for an import's own colour. */
-  const inkHex = $derived(
-    choice === "original" ? null : choice === "custom" ? custom : (INKS.find((i) => i.id === choice)?.hex ?? INK),
-  );
+  const inkHex = $derived(choice === "original" ? null : choice);
+  // The pen inks and the chosen one as the app's swatches have them: 0 to 1 a channel.
+  const to01 = (hex: string): Rgb => (parseHex(hex) ?? [0, 0, 0]).map((v) => v / 255) as Rgb;
+  const inkSwatches = INKS.map((i) => ({ name: i.label, c: to01(i.hex) }));
+  const inkValue = $derived(inkHex === null ? null : to01(inkHex));
   const pale = $derived(inkHex !== null && tooLight(parseHex(inkHex) ?? [0, 0, 0]));
 
   const canUndo = $derived.by(() => {
@@ -204,7 +213,7 @@
     drawing.clear();
     dropImported();
     dropPhotos();
-    if (choice === "original") choice = "black";
+    if (choice === "original") choice = INK;
     error = "";
     version++;
     redraw();
@@ -272,7 +281,12 @@
     framing = null;
   }
 
-  async function save() {
+  $effect(() => {
+    ready = !empty && !busy;
+    framed = framing !== null;
+  });
+
+  export async function save() {
     if (empty || busy) return;
     busy = true;
     error = "";
@@ -336,28 +350,29 @@
         title="Crop, turn or straighten the photo again">Adjust the photo…</button>
     {/if}
     <span class="spacer"></span>
-    <span class="inks" role="radiogroup" aria-label="Ink">
+    <span class="inks" role="group" aria-label="Ink">
       <span class="label">Ink</span>
       {#if imported}
         <button class="chip" class:on={choice === "original"} role="radio" aria-checked={choice === "original"}
           onclick={() => (choice = "original")} title="The ink's own colour, from the picture">Original</button>
       {/if}
-      {#each INKS as ink (ink.id)}
-        <button class="swatch" class:on={choice === ink.id} role="radio" aria-checked={choice === ink.id}
-          aria-label={ink.label} title={ink.label} style:--ink={ink.hex} onclick={() => (choice = ink.id)}></button>
-      {/each}
-      <label class="swatch custom" class:on={choice === "custom"} title="Choose a colour" style:--ink={custom}>
-        <input type="color" aria-label="Choose a colour" bind:value={custom} oninput={() => (choice = "custom")}
-          onclick={() => (choice = "custom")} />
-      </label>
+      <ColourSwatches label="Ink" value={inkValue} colours={inkSwatches} onPick={(c) => (choice = toHex(c.map((v) => v * 255) as Rgb))} />
     </span>
   </div>
 
   <div class="row">
-    <span class="spacer"></span>
+    <!-- On the name's row, so it doesn't move anything when it comes and goes. -->
+    <span class="spacer">
+      {#if pale && !error}
+        <span class="warn" role="status">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2 14.6 13.5H1.4Z" /><path d="M8 6.5v3.2M8 11.6v.1" /></svg>
+          This ink is pale, so it may be hard to read on the page.
+        </span>
+      {/if}
+    </span>
     <input class="field" placeholder="Name" maxlength="80" bind:value={name} aria-label="Signature name"
       onkeydown={(e) => e.key === "Enter" && save()} />
-    <button class="btn primary" onclick={save} disabled={empty || busy}>Save</button>
+    {#if saveButton}<button class="btn primary" onclick={save} disabled={empty || busy}>Save</button>{/if}
   </div>
   {/if}
 
@@ -365,8 +380,6 @@
     <p class="error" role="alert">{error}</p>
   {:else if framing}
     <!-- nothing: the framing view has its own hint -->
-  {:else if pale}
-    <p class="note">That ink is pale: it may be hard to read on white paper.</p>
   {:else if imported}
     <p class="note">The paper has been removed. Check the edges look clean, then save it, or adjust the photo and try again.</p>
   {/if}
@@ -435,6 +448,24 @@
   }
   .spacer {
     flex: 1;
+    min-width: 0;
+  }
+  .warn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--warn);
+    font-size: 13px;
+  }
+  .warn svg {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .field {
     width: 220px;
@@ -447,37 +478,11 @@
   .label {
     color: var(--tx3);
   }
-  /* Round ink swatches; the chosen one gets an accent ring with a gap. */
-  .swatch {
-    position: relative;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border-radius: 50%;
-    border: 1px solid rgba(0, 0, 0, 0.25);
-    background: var(--ink);
-    box-shadow: 0 0 0 1px var(--bd-strong);
-    cursor: pointer;
-  }
-  .swatch.on,
+  /* The chosen "Original" gets the swatches' accent ring with a gap. */
   .chip.on {
     box-shadow:
       0 0 0 2px var(--app),
       0 0 0 4px var(--accent);
-  }
-  /* The colour picker: the custom colour inside a small rainbow ring that says "any colour". */
-  .swatch.custom {
-    background:
-      radial-gradient(circle, var(--ink) 52%, transparent 55%),
-      conic-gradient(#e5484d, #f5a524, #46a758, #0d9488, #3e63dd, #8e4ec6, #e5484d);
-  }
-  .swatch.custom input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
   }
   .chip {
     height: 22px;

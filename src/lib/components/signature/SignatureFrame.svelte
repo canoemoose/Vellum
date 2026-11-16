@@ -387,7 +387,7 @@
   <div class="row">
     <span class="hint">Drag to crop. Drag the top handle to rotate, double-click it to level. Enter applies, Esc cancels.</span>
     <span class="spacer"></span>
-    <button class="btn small" onclick={reset} disabled={busy}>Reset</button>
+    <button class="btn" onclick={reset} disabled={busy}>Reset</button>
     <button class="btn" onclick={oncancel} disabled={busy}>Cancel</button>
     <button class="btn primary" onclick={() => onapply($state.snapshot(adj))} disabled={busy}>Remove the paper</button>
   </div>
@@ -404,7 +404,9 @@
     width: 100%;
     aspect-ratio: 3 / 2;
     min-height: 240px;
-    max-height: 70vh;
+    /* No taller than leaves its controls in view: the window less a dialog's header, footer and
+       padding (176 px) and the two rows of buttons under it, with room for a message. */
+    max-height: calc(100vh - 290px);
     background: #1b1c1f;
     border: 1px solid var(--bd-strong);
     border-radius: 8px;

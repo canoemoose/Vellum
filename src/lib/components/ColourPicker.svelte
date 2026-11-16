@@ -77,7 +77,14 @@
     const Ctor = (window as unknown as { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper;
     if (!Ctor) return;
     picking = true;
+    // The eyedropper samples the screen as drawn: a dialog's dim (its scrim) goes while it's open,
+    // so a colour picked from the drawing behind it comes out true. One frame for it to repaint.
+    const root = document.documentElement;
+    root.dataset.picking = "1";
+    let opened = performance.now();
     try {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      opened = performance.now();
       const r = await new Ctor().open();
       const c = fromHex(r.sRGBHex);
       if (c) {
@@ -85,9 +92,13 @@
         hex = toHex(c);
         commit();
       }
-    } catch {
-      // Cancelled with Esc.
+    } catch (e) {
+      // Esc cancels it (an AbortError), but so does anything else that closes it, and it has been
+      // refused outright in WebView2: say which, and how long it was open.
+      const name = e instanceof Error ? e.name : "unknown";
+      console.warn(`[colour] eyedropper closed without a colour after ${Math.round(performance.now() - opened)} ms: ${name}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      delete root.dataset.picking;
       picking = false;
     }
   }

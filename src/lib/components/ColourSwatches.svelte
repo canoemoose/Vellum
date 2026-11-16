@@ -1,20 +1,27 @@
 <script lang="ts">
   // A colour from the line palette (markup/palette.ts), or a custom one from the picker: the
-  // context bar's swatches, for wherever else a colour is chosen (a text stamp's).
+  // context bar's swatches, for wherever else a colour is chosen (a text stamp's). `colours`
+  // gives a list of its own (the signature pad's pen inks); `value` null marks none of them.
   import ColourPicker from "./ColourPicker.svelte";
   import type { Rgb } from "../markup/types";
   import { LINE_COLOURS } from "../markup/palette";
   import { sameColour } from "../markup/colour";
 
-  let { value, onPick, label = "Colour" }: { value: Rgb; onPick: (c: Rgb) => void; label?: string } = $props();
+  interface Props {
+    value: Rgb | null;
+    onPick: (c: Rgb) => void;
+    label?: string;
+    colours?: readonly { name: string; c: Rgb }[];
+  }
+  let { value, onPick, label = "Colour", colours = LINE_COLOURS }: Props = $props();
 
   let anchor = $state<DOMRect | null>(null);
   const css = (c: readonly number[]) => `rgb(${c.map((v) => Math.round(v * 255)).join(", ")})`;
-  const isCustom = $derived(!LINE_COLOURS.some((q) => sameColour(q.c, value)));
+  const isCustom = $derived(value !== null && !colours.some((q) => sameColour(q.c, value)));
 </script>
 
 <span class="swatches" role="radiogroup" aria-label={label}>
-  {#each LINE_COLOURS as col (col.name)}
+  {#each colours as col (col.name)}
     {@const on = sameColour(value, col.c)}
     <button type="button" class="sw" class:on role="radio" aria-checked={on} aria-label={col.name} title={col.name} style:--c={css(col.c)} onclick={() => onPick(col.c)}></button>
   {/each}
@@ -25,13 +32,13 @@
     aria-label="Custom colour"
     aria-haspopup="dialog"
     title="Custom colour, or pick one from the screen"
-    style:--c={isCustom ? css(value) : ""}
+    style:--c={isCustom && value ? css(value) : ""}
     onclick={(e) => (anchor = anchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect())}
   ></button>
 </span>
 
 {#if anchor}
-  <ColourPicker {value} {anchor} onPick={(c) => onPick(c)} onClose={() => (anchor = null)} />
+  <ColourPicker value={value ?? [0, 0, 0]} {anchor} onPick={(c) => onPick(c)} onClose={() => (anchor = null)} />
 {/if}
 
 <style>

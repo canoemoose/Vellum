@@ -53,8 +53,7 @@
   import { type PageOverrides, fromRemembered, pageScaleText, rememberPages, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
 
   // Stamps
-  import SignaturePopover from "./lib/components/signature/SignaturePopover.svelte";
-  import SignatureDialog from "./lib/components/signature/SignatureDialog.svelte";
+  import SignaturesDialog, { type SignaturesView } from "./lib/components/signature/SignaturesDialog.svelte";
   import StampPicker from "./lib/components/signature/StampPicker.svelte";
   import { armStamp, fieldValues, placeAt, setStampFields, stampVariant, withContent } from "./lib/markup/kinds/stamp";
   import { type StampContent, BUILT_IN, cleanLine, fillFields, filledStamp, lineOf, sanitiseOwnTexts, subFor, withLine, refOf, textFromRef } from "./lib/markup/stamps";
@@ -693,8 +692,8 @@
   // End measuring
 
   // Stamps
-  /** Which stamp picker is open over the drawing area: the Signature tool's or the Stamp tool's. */
-  let stampPanel = $state<"signature" | "stamp" | null>(null);
+  /** The Stamp tool's old panel, open over the drawing area (VELLUM_STAMP_POPOUTS=1 only). */
+  let stampPanel = $state<"stamp" | null>(null);
   /**
    * The stamp tools' grid (Matt's review): open beside the tool's button once the tool is
    * picked, or, `replace`, at a placed one's right-click to swap what it holds.
@@ -702,9 +701,8 @@
   /** Manage stamps (docs/stamp-library-dialogs-scope.md). */
   let stampsDialog = $state(false);
   let stampGrid = $state<{ family: StampFamily; replace?: boolean; at?: { x: number; y: number }; from?: DOMRect; out?: Out; arm?: boolean } | null>(null);
-  /** The pad, in its dialog ("New signature..."). */
-  let signatureDialog = $state(false);
-  let signaturePopover = $state<SignaturePopover>();
+  /** The Signatures dialog, and the view it opened on: the list (Manage signatures) or the pad (+ New). */
+  let signaturesDialog = $state<SignaturesView | null>(null);
   /**
    * What each stamp tool last had armed in this run, so switching between them keeps each one's
    * choice; `id` is its library id (an image stamp's, a signature's), `name` a picture's file name.
@@ -730,8 +728,9 @@
       void choosePicture(false);
       return;
     }
-    // The popouts (VELLUM_STAMP_POPOUTS=1): the panel opens each time the tool is picked.
-    if (stampPopouts) {
+    // The popouts (VELLUM_STAMP_POPOUTS=1): the Stamp tool's panel opens each time it's picked.
+    // (Signatures have only the grid now: their panel went with the Signatures dialog.)
+    if (stampPopouts && t === "stamp") {
       stampPanel = t;
       return;
     }
@@ -743,7 +742,7 @@
 
   // The tool changed some other way (Esc, a tab closing): the picker goes with it.
   $effect(() => {
-    if (toolNow !== "signature" && toolNow !== "stamp") stampPanel = null;
+    if (toolNow !== "stamp") stampPanel = null;
     if (stampGrid && !stampGrid.replace && toolNow !== stampGrid.family) stampGrid = null;
   });
 
@@ -808,10 +807,23 @@
     }
   }
 
+  /** The Signatures dialog saved a new one: it's what the Signature tool places next. */
   function newSignatureSaved(item: SignatureItem) {
-    signatureDialog = false;
-    signaturePopover?.refresh();
-    pickSignature(item);
+    void pickSignature(item);
+  }
+
+  /** A signature deleted in the Signatures dialog: not left armed, nor remembered. */
+  function signatureDeleted(id: string) {
+    if (stampArmed.signature?.id === id) {
+      const { signature: _gone, ...rest } = stampArmed;
+      stampArmed = rest;
+      if (markupTool?.tool === "signature") armStamp(null, true);
+    }
+    if (settings.stamps.last.signature === id) {
+      const { signature: _was, ...last } = settings.stamps.last;
+      settings.stamps = { ...settings.stamps, last };
+      save();
+    }
   }
 
   // Stage 8: the pickers in the context bar, the Image tool, pasted pictures
@@ -863,7 +875,6 @@
       console.warn(`signature ${last.signature} could not be armed again`);
     }
     // None remembered, or it's gone: the grid (open already) offers them, and "+ New".
-    if (still() && stampPopouts) stampPanel = "signature";
   }
 
   /** The one selected stamp holds `c` now: same middle and turn (one undo step). */
@@ -969,16 +980,10 @@
     remember("stamp", c);
   }
 
-  /** The full library (rename, delete, add a picture): the panel, with its tool out. */
+  /** The full library (rename, delete, add): Manage stamps, or the Signatures dialog's list. */
   function manageStamps(family: StampFamily) {
-    // Stamps: the Manage stamps dialog. Signatures: their panel, until their dialog is built
-    // (docs/stamp-library-dialogs-scope.md, step 4).
-    if (family === "stamp") {
-      stampsDialog = true;
-      return;
-    }
-    if (markupTool?.tool !== "signature") setTool("signature");
-    stampPanel = "signature";
+    if (family === "stamp") stampsDialog = true;
+    else signaturesDialog = "list";
   }
 
   /**
@@ -2758,9 +2763,7 @@
       {/if}
       <!-- End measuring -->
       <!-- Stamps -->
-      {#if stampPanel === "signature"}
-        <SignaturePopover bind:this={signaturePopover} onPick={pickSignature} onNew={() => (signatureDialog = true)} onClose={closeStampPanel} />
-      {:else if stampPanel === "stamp"}
+      {#if stampPanel === "stamp"}
         <StampPicker
           author={settings.markup.author ?? author}
           prefs={settings.stamps}
@@ -2835,14 +2838,20 @@
       texts={settings.stamps.texts}
       onPick={gridPicked} onPickSignature={gridPickedSignature}
       onAddText={addOwnText}
-      onNewSignature={() => (signatureDialog = true)}
+      onNewSignature={() => (signaturesDialog = "pad")}
       onManage={() => manageStamps(g.family)}
       onClose={() => (stampGrid = null)}
     />
   {/key}
 {/if}
-{#if signatureDialog}
-  <SignatureDialog onSaved={newSignatureSaved} onClose={() => (signatureDialog = false)} />
+{#if signaturesDialog}
+  <SignaturesDialog
+    start={signaturesDialog}
+    armedId={stampArmed.signature?.id ?? null}
+    onSaved={newSignatureSaved}
+    onDeleted={signatureDeleted}
+    onClose={() => (signaturesDialog = null)}
+  />
 {/if}
 
 {#if choice}
