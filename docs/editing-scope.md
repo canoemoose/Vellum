@@ -1,13 +1,17 @@
 # Editing, markup and reading: scope
 
 Status: **phases 0 to 3 done and reviewed by Matt; phases 4, 5, 7a and 7b built on
-`editing`, not yet reviewed by Matt** (15 November 2026; see "Phases 4, 5 and 7: how they
+`editing` and reviewed by Matt** (built 15 November 2026, reviewed by the 16th; see "Phases 4, 5 and 7: how they
 run"). **The tool consistency changes are built on `editing` too**: one behaviour per
 gesture, the new shortcut letters (R Rectangle, G Polygon, P Pen, D measuring, I Image, ]
 and [ rotate the view), per-tool memory, imperial measuring and CAD-style dimensions,
 regular polygons, pinned notes, turning stamps, the Image tool and the system clipboard.
 Where they differ from the phase scopes, the brief wins: see
-[the tool consistency brief](editing-tool-consistency-brief.md). Phase 7b brings a file's own annotations, and markups saved in an earlier session, back
+[the tool consistency brief](editing-tool-consistency-brief.md). Matt reviewed that build on
+15 and 16 November and the changes he asked for are in (the brief's "Matt's review"); the
+stamp and signature libraries were then reworked as dialogs
+([stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md)). **Not started: phase 6
+(form filling) and phase 8 (page operations).** Nothing is on `main` or released. Phase 7b brings a file's own annotations, and markups saved in an earlier session, back
 for editing behind the padlock. The signatures back end (part of phase 5) and the OCR search spike
 (phase 9) were built on side branches and are merged into `editing`, along with `main` at
 0.1.4. See "Phase 0 results" below,
@@ -301,22 +305,42 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
    built, and phase 2 has nothing to review on its own):** see
    [editing-phase2-scope.md](editing-phase2-scope.md). Not yet built from phase 2: the edit
    lock's padlock (nothing to unlock until lifting or page operations exist).
-4. **Measuring** and calibration. **Built, not yet reviewed:**
+4. **Measuring** and calibration. **Built and reviewed by Matt:**
    [editing-phase4-scope.md](editing-phase4-scope.md).
-5. **Stamps and signatures.** The capture side is built but stands alone (photo import,
-   encrypted library, drawing pad, framing view; `npm run dev:signatures`): see
-   [signatures-backend.md](signatures-backend.md). Still to do: reach it from the main
-   window and place a signature on a page as a stamp.
-   **Built, not yet reviewed** (pickers in the main window, stamps, baking in, encrypted
-   recovery): [editing-phase5-scope.md](editing-phase5-scope.md).
-6. **Form filling.**
+5. **Stamps and signatures.** **Built and reviewed by Matt** (stamps, signatures placed as stamps, baking in,
+   encrypted recovery): [editing-phase5-scope.md](editing-phase5-scope.md), with the capture
+   side in [signatures-backend.md](signatures-backend.md). Since reworked: stamps turn, an
+   Image tool places a picture, and the libraries are dialogs in the main window (the
+   standalone signatures page is retired): see the brief and
+   [stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md).
+6. **Form filling.** Not started.
 7. **Remaining markup tools** (line, ellipse, polyline, polygon, callout, highlighter), the
    markups list, and **reading, part two** (text highlight, underline, strikethrough, notes).
-   **7a and 7b built, not yet reviewed** (7b: editing annotations already in the file, and
+   **7a and 7b built and reviewed by Matt** (7b: editing annotations already in the file, and
    the padlock): [editing-phase7-scope.md](editing-phase7-scope.md).
-8. **Page operations.**
+8. **Page operations.** Not started.
 9. **Later phases**, each scoped when reached. OCR search has its spike and design in
-   [ocr-search-scope.md](ocr-search-scope.md); nothing is wired into the app.
+   [ocr-search-scope.md](ocr-search-scope.md); nothing is wired into the app. Placing a
+   picture is built as the Image tool (a stamp annotation, not page content); deleting or
+   covering an object is not started.
+
+**Open on what is built** (16 November 2026):
+
+- Checked by Matt in Acrobat and other readers on a sample of every kind (16 November):
+  two fixes followed (stamps write no /Contents, so Acrobat shows no comment icon on them;
+  a pinned note carries /Open itself as well as on its pop-up). Polyline length, area and
+  angle show Acrobat's comment icon, as Acrobat's own perimeter and area measurements do:
+  left as it is. Not on the sample: a signature, text markups on real text, a page rotated
+  in the file, a baked-in stamp.
+- A dimension once vanished when its Weight slider was dragged (release build, not
+  reproduced).
+- Phase 7b's benchmark showed one file's 400% settle median move from 48 to 93 ms. Not a
+  slowdown: 7b ran it again (nine settles each side) and the settles fall in two clusters
+  in both builds (40 to 50 ms and 85 to 115 ms; 5 of 9 low before, 4 of 9 after), so the
+  median lands either side by chance. Why that file's settle has two clusters at all is
+  not known, and predates 7b. See [editing-phase7-scope.md](editing-phase7-scope.md).
+- Deferred, in the brief: fields in text boxes and callouts, "Update fields" on a placed
+  stamp, a preferences panel.
 
 ## Phases 4, 5 and 7: how they run (scoped 15 November 2026)
 
