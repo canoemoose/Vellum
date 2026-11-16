@@ -53,6 +53,12 @@ export interface MarkupToolOptions {
    */
   onLift?(ids: string[]): void;
   /**
+   * docs/edit-lock-brief.md, 2: the user went to change a markup that came with the file while
+   * the file is locked (clicked the padlock on its selection, or tried to drag it). The shell
+   * asks whether to unlock the file; the markup stays selected either way.
+   */
+  onUnlockAsk?(id: string): void;
+  /**
    * Stage 9: the system clipboard (src-tauri/src/clipboard.rs). Without it (tests), copies are
    * held in memory for this tool alone.
    */
@@ -74,6 +80,9 @@ export type ClipRead = { kind: "markups"; json: string } | { kind: "picture"; pn
 /** CSS px: how close the pointer must be to pick a markup, and a handle. */
 const PICK_PX = 5;
 const HANDLE_PX = 7;
+/** CSS px: the padlock on a locked markup's selection, its radius and how far out from the corner it sits. */
+const LOCK_PX = 8;
+const LOCK_OUT_PX = 3;
 /** CSS px the pointer must move with the button down before a press becomes a drag. */
 const DRAG_PX = 3;
 
@@ -210,12 +219,54 @@ export class MarkupTool {
     const d = this.doc;
     if (!d) return;
     if (!add) d.selection.clear();
-    // Phase 7b: what came with the file can't be picked while the document is locked.
-    for (const id of ids) {
-      const m = d.byId(id);
-      if (!m || d.editable(m)) d.selection.add(id);
-    }
+    // docs/edit-lock-brief.md, 2: what came with the file can be picked while the file is locked
+    // (a click on it, its row in the Markups list), though not changed: every change below skips
+    // it. A marquee and select all still leave it out (their callers filter by `editable`).
+    for (const id of ids) d.selection.add(id);
     this.redraw();
+  }
+
+  /** The selected markups that may be changed: all of them, less any the file's lock keeps. */
+  selectedChangeable(): Markup[] {
+    const d = this.doc;
+    return d ? this.selected().filter((m) => d.editable(m)) : [];
+  }
+
+  private changeable(): Set<string> {
+    return new Set(this.selectedChangeable().map((m) => m.id));
+  }
+
+  /** Whether markup `m` is selected but locked: it came with the file and the file is locked. */
+  isLocked(m: Markup): boolean {
+    return !!this.doc && !this.doc.editable(m);
+  }
+
+  /** The selection holds only markups the lock keeps (the context bar has nothing to offer them). */
+  get selectionLocked(): boolean {
+    const s = this.selected();
+    return s.length > 0 && s.every((m) => this.isLocked(m));
+  }
+
+  /**
+   * Where the padlock sits on a locked markup's selection, screen (CSS px): just out from the
+   * top-right corner of its box as shown, whatever the page's turn.
+   */
+  lockBadgeAt(m: Markup): [number, number] | null {
+    const b = shapeBounds(m);
+    const cs = ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] as Pt[]).map((p) => this.viewer.pageToScreen(m.page, p[0], p[1]));
+    if (cs.some((c) => !c)) return null;
+    const xs = cs.map((c) => c![0]), ys = cs.map((c) => c![1]);
+    return [Math.max(...xs) + LOCK_OUT_PX + LOCK_PX, Math.min(...ys) - LOCK_OUT_PX - LOCK_PX];
+  }
+
+  /** The locked, selected markup whose padlock is under screen point (sx, sy). */
+  private lockBadgeHit(sx: number, sy: number): Markup | null {
+    for (const m of this.selected()) {
+      if (!this.isLocked(m)) continue;
+      const at = this.lockBadgeAt(m);
+      if (at && Math.hypot(at[0] - sx, at[1] - sy) <= LOCK_PX + 2) return m;
+    }
+    return null;
   }
 
   clearSelection(): void {
@@ -269,7 +320,10 @@ export class MarkupTool {
   deleteSelection(): boolean {
     const d = this.doc;
     if (!d?.selection.size) return false;
-    this.commit(this.markups.filter((m) => !d.selection.has(m.id)));
+    // What the lock keeps stays (and stays selected).
+    const gone = this.changeable();
+    if (!gone.size) return false;
+    this.commit(this.markups.filter((m) => !gone.has(m.id)));
     return true;
   }
 
@@ -278,7 +332,7 @@ export class MarkupTool {
     const d = this.doc;
     if (!d?.selection.size) return false;
     // Text markups don't move: a selection of only those takes no undo step.
-    const moving = (m: Markup) => d.selection.has(m.id) && !defOf(m).ofText;
+    const moving = (m: Markup) => d.selection.has(m.id) && !defOf(m).ofText && d.editable(m);
     if (!this.markups.some(moving)) return false;
     const [dx, dy] = this.screenDeltaToPage(dxPx, dyPx);
     this.commit(this.markups.map((m) => (moving(m) ? touch(moveBy(m, dx, dy)) : m)));
@@ -309,9 +363,10 @@ export class MarkupTool {
   cut(): boolean {
     if (!this.copy()) return false;
     const d = this.doc!;
-    const gone = new Set(this.selected().filter((m) => !defOf(m).ofText && !defOf(m).fixed).map((m) => m.id));
-    this.commit(this.markups.filter((m) => !gone.has(m.id)));
-    d.selection.clear();
+    // What the lock keeps is copied (copying is free) but not cut.
+    const gone = new Set(this.selected().filter((m) => !defOf(m).ofText && !defOf(m).fixed && d.editable(m)).map((m) => m.id));
+    if (gone.size) this.commit(this.markups.filter((m) => !gone.has(m.id)));
+    for (const id of gone) d.selection.delete(id);
     this.redraw();
     return true;
   }
@@ -417,9 +472,11 @@ export class MarkupTool {
   private previewBase: Markup[] | null = null;
 
   private styled(from: Markup[], sel: Set<string>, patch: Partial<Style>, text?: Partial<TextStyle>): Markup[] {
+    const d = this.doc;
     return from.map((m) => {
-      // An annotation Vellum can't redraw keeps its own look (kind.ts, fixed).
-      if (!sel.has(m.id) || defOf(m).fixed) return m;
+      // An annotation Vellum can't redraw keeps its own look (kind.ts, fixed); one the lock
+      // keeps isn't restyled.
+      if (!sel.has(m.id) || defOf(m).fixed || (d && !d.editable(m))) return m;
       let next = { ...m, style: { ...m.style, ...patch } } as Markup;
       if (text && "textStyle" in next) next = { ...next, textStyle: { ...next.textStyle, ...text } };
       const def = defOf(m);
@@ -434,7 +491,7 @@ export class MarkupTool {
   preview(patch: Partial<Style>): boolean {
     const d = this.doc;
     if (!d?.selection.size) return false;
-    if (!this.previewBase) this.opts.onLift?.([...d.selection]);
+    if (!this.previewBase) this.opts.onLift?.([...this.changeable()]);
     this.previewBase ??= this.markups;
     d.history.replace(this.styled(this.previewBase, d.selection, patch));
     this.redraw();
@@ -449,7 +506,10 @@ export class MarkupTool {
       this.previewBase = null;
     }
     if (!d?.selection.size) return false;
-    this.commit(this.styled(this.markups, d.selection, patch, text));
+    const next = this.styled(this.markups, d.selection, patch, text);
+    // Nothing it may change (all locked, say): no undo step for nothing.
+    if (next.every((m, i) => m === this.markups[i])) return false;
+    this.commit(next);
     return true;
   }
 
@@ -484,9 +544,9 @@ export class MarkupTool {
 
   private topAt(page: number, p: Pt): Markup | null {
     const tol = this.tolPt(PICK_PX);
-    // Phase 7b: what came with the file is out of reach while the document is locked.
-    const d = this.doc;
-    const on = this.markups.filter((m) => m.page === page && (!d || d.editable(m)));
+    // docs/edit-lock-brief.md, 2: what came with the file can be picked while the file is
+    // locked, to be found and copied, and asked to unlock from; it can't be changed.
+    const on = this.markups.filter((m) => m.page === page);
     for (let i = on.length - 1; i >= 0; i--) if (hits(on[i], p, tol)) return on[i];
     return null;
   }
@@ -526,9 +586,15 @@ export class MarkupTool {
       }
     }
     if (this.cropId) this.setCropping(false);
-    // A handle of a selected markup first.
+    // A locked markup's padlock: ask to unlock the file (brief, 2).
+    const badge = this.lockBadgeHit(sx, sy);
+    if (badge) {
+      this.opts.onUnlockAsk?.(badge.id);
+      return true;
+    }
+    // A handle of a selected markup first (the lock keeps a locked one's: it shows a padlock).
     for (const m of this.selected()) {
-      if (m.page !== page) continue;
+      if (m.page !== page || this.isLocked(m)) continue;
       const h = handleAt(m, p, this.tolPt(HANDLE_PX), this.tolPt(1));
       // Dimensions (stage 5): a double-click on a grip puts back what it holds (a moved value).
       const reset = h && clicks === 2 ? defOf(m).resetHandle?.(m, h) : null;
@@ -556,6 +622,12 @@ export class MarkupTool {
     }
     // Stage 6: a double-click on an edge of a shape of points adds a corner there.
     if (clicks === 2 && this.addCornerAt(hit, p)) return true;
+    // A double-click to type into one the lock keeps: it's selected, and the question asked.
+    if (clicks === 2 && defOf(hit).typed && this.isLocked(hit)) {
+      this.select([hit.id]);
+      this.opts.onUnlockAsk?.(hit.id);
+      return true;
+    }
     if (clicks === 2 && defOf(hit).typed) {
       this.select([hit.id]);
       this.startText(hit.id, false);
@@ -613,8 +685,19 @@ export class MarkupTool {
           this.gesture = { kind: "handle", page: g.page, id: g.id, handle: g.part.handle, before: g.before, nudge: g.part.nudge };
           return this.move(sx, sy, mods);
         }
-        this.gesture = { kind: "move", page: g.page, start: g.start, before: g.before, ids: [...this.doc!.selection], moved: true };
-        this.opts.onLift?.([...this.doc!.selection]);
+        {
+          // Only what may change moves. Dragging one the lock keeps asks to unlock instead
+          // (brief, 2): the drag ends there, and the markup stays selected.
+          const ids = [...this.changeable()];
+          const held = this.doc!.byId(g.id);
+          if (held && this.isLocked(held)) {
+            this.gesture = null;
+            this.opts.onUnlockAsk?.(held.id);
+            return;
+          }
+          this.gesture = { kind: "move", page: g.page, start: g.start, before: g.before, ids, moved: true };
+          this.opts.onLift?.(ids);
+        }
         return this.move(sx, sy, mods);
       case "move": {
         let dx = p[0] - g.start[0], dy = p[1] - g.start[1];
@@ -702,9 +785,10 @@ export class MarkupTool {
           // Text markups don't move: over one, the text tool's cursor shows. Over a part that
           // works a grip, the grip's cursor.
           const top = this.topAt(at.page, at.p);
-          const part = top ? partAt(top, at.p, this.tolPt(PICK_PX)) : null;
+          const locked = !!top && this.isLocked(top);
+          const part = top && !locked ? partAt(top, at.p, this.tolPt(PICK_PX)) : null;
           if (part && top) c = handleCursor(part, this.viewer.rotation, turnOf(top));
-          else if (top && !defOf(top).ofText) c = "move";
+          else if (top && !defOf(top).ofText) c = locked ? "default" : "move";
         }
       }
     }
@@ -1081,7 +1165,7 @@ export class MarkupTool {
   setSides(n: number): boolean {
     const d = this.doc;
     if (!d?.selection.size) return false;
-    const change = (m: Markup) => d.selection.has(m.id) && defOf(m).withSides && defOf(m).sides?.(m) != null;
+    const change = (m: Markup) => d.selection.has(m.id) && d.editable(m) && defOf(m).withSides && defOf(m).sides?.(m) != null;
     if (!this.markups.some(change)) return false;
     this.opts.onLift?.(this.markups.filter(change).map((m) => m.id));
     this.commit(this.markups.map((m) => (change(m) ? touch(defOf(m).withSides!(m, n)) : m)));
@@ -1181,6 +1265,11 @@ export class MarkupTool {
       if (x.id === editing) continue;
       ctx.strokeStyle = accent;
       ctx.lineWidth = 1;
+      // One the lock keeps: its box, dashed, and a padlock in place of grips (brief, 2).
+      if (this.isLocked(x)) {
+        paintLockedSelection(ctx, x, dev, accent, this.viewer.dpr);
+        continue;
+      }
       // Text markups: a markup with no grips (a text highlight, a note) shows its box instead.
       if (!handles(x).length) {
         const b = shapeBounds(x);
@@ -1335,4 +1424,46 @@ function touch(m: Markup): Markup {
 function settle(m: Markup): Markup {
   const def = defOf(m);
   return def.settle ? def.settle(m) : m;
+}
+
+/**
+ * A locked markup's selection (docs/edit-lock-brief.md, 2): its box dashed, and at its top-right
+ * corner as shown, a padlock on an accent disc (with a darker rim: a filled control needs a
+ * visible edge). Clicking the padlock asks to unlock the file. Device pixels; `dev` maps page
+ * points to them. Placed as MarkupTool.lockBadgeAt places it in CSS px.
+ */
+function paintLockedSelection(ctx: CanvasRenderingContext2D, x: Markup, dev: (p: Pt) => Pt, accent: string, dpr: number): void {
+  const b = shapeBounds(x);
+  const pts = ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] as Pt[]).map(dev);
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
+  ctx.closePath();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const r = LOCK_PX * dpr;
+  const cx = Math.max(...pts.map((q) => q[0])) + (LOCK_OUT_PX + LOCK_PX) * dpr;
+  const cy = Math.min(...pts.map((q) => q[1])) - (LOCK_OUT_PX + LOCK_PX) * dpr;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = accent;
+  ctx.fill();
+  ctx.lineWidth = dpr;
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
+  ctx.stroke();
+  // The padlock, closed, in white: a body and a shackle.
+  const u = dpr;
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1.4 * u;
+  ctx.fillRect(cx - 3.5 * u, cy - 0.5 * u, 7 * u, 5 * u);
+  ctx.beginPath();
+  ctx.arc(cx, cy - 1.5 * u, 2.4 * u, Math.PI, 0);
+  ctx.moveTo(cx - 2.4 * u, cy - 1.5 * u);
+  ctx.lineTo(cx - 2.4 * u, cy - 0.5 * u);
+  ctx.moveTo(cx + 2.4 * u, cy - 1.5 * u);
+  ctx.lineTo(cx + 2.4 * u, cy - 0.5 * u);
+  ctx.stroke();
+  ctx.restore();
 }

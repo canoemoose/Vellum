@@ -77,7 +77,7 @@ describe("markup preferences", () => {
 // Existing annotations (phase 7b)
 import { forbidsChanges, unlockWarnings } from "./save";
 
-describe("unlocking Edit document", () => {
+describe("unlocking Edit file", () => {
   it("goes ahead without a word on an ordinary file", () => {
     expect(unlockWarnings("plan.pdf", plain)).toEqual([]);
     expect(unlockWarnings("plan.pdf", null)).toEqual([]);

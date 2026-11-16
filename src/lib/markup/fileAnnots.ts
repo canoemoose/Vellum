@@ -363,7 +363,7 @@ export function fromFile(p: PageAnnots, used: Set<string>, now = new Date().toIS
 /**
  * Whether a markup that came with the file may be changed without unlocking the document
  * (docs/editing-phase7-scope.md, 7b "Assumed" 1): only Vellum's own markups, back exactly as
- * drawn, whose author is you. Everything else needs "Edit document" unlocked.
+ * drawn, whose author is you. Everything else needs "Edit file" switched on.
  */
 export function freeToEdit(origin: FileOrigin, m: Markup, author: string): boolean {
   return origin.exact && !!author && m.meta.author.trim().toLowerCase() === author.trim().toLowerCase();
