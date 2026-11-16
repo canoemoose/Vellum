@@ -2500,6 +2500,7 @@
       detail: tabDetail(t),
       snapshot: t.view?.snapshot ?? null,
       dirty: (void markVersion, t.marks.dirty),
+      unlocked: t.status === "open" && t.kind === "pdf" && t.marks.unlocked,
     })),
   );
   const sizes = $derived(hasDoc && active?.info ? active.info.sizes : []);
@@ -2793,6 +2794,7 @@
       pageSize={pageSizeLabel}
       onScale={openScale}
       {...measureBar}
+      unlocked={unlockedNow}
     />
   {/if}
 </div>
