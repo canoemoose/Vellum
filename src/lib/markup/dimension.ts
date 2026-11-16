@@ -121,12 +121,44 @@ export const EXT_BEYOND = 3;
 const lineSegs = (pts: Pt[]): Seg[] => pts.map((p, i) => [i ? "L" : "M", p[0], p[1]] as Seg);
 
 /**
+ * How far an end reaches along its dimension line from its point, points: an arrow's length,
+ * a tick's lean; a bar is square to the line and takes none.
+ */
+export const endReach = (ends: DimEnds | undefined, width: number): number =>
+  ends === "arrow" ? DIMENSION_HEAD.length(width) : ends === "tick" ? barHalf(width) * Math.SQRT1_2 : 0;
+
+/** The clearance a value keeps from each end of the room it sits in, points. */
+export const VALUE_CLEAR = 2;
+
+/**
+ * Whether a value `width` points wide fits on a dimension line `length` points long between its
+ * ends (docs/edit-lock-brief.md, 7): inside the arrowheads, ticks or bars, with VALUE_CLEAR to
+ * spare at each side.
+ */
+export const valueFits = (length: number, width: number, ends: DimEnds | undefined, lineWidth: number): boolean =>
+  width + 2 * VALUE_CLEAR <= length - 2 * endReach(ends, lineWidth);
+
+/**
  * A dimension line through `pts` with an end at each: a bar square to the line (the default), a
  * tick at 45 degrees (both leaning the same way, drawn twice the line's weight), or a filled
  * arrow pointing out. The line takes the style's pattern; the ends are always solid.
+ *
+ * `outside` (a two-point line whose value had no room between its ends, brief 7): arrows sit
+ * outside the points, pointing in at them, as CAD draws a tight dimension; the line between is
+ * plain. The runs carrying them outside are the caller's. Bars and ticks don't change.
  */
-export function dimensionLine(pts: Pt[], s: Style, ends: DimEnds = "bar"): Op[] {
+export function dimensionLine(pts: Pt[], s: Style, ends: DimEnds = "bar", outside = false): Op[] {
   if (pts.length < 2) return [];
+  if (ends === "arrow" && outside && pts.length === 2) {
+    const [a, b] = pts;
+    const u = unit(sub(b, a)), h = DIMENSION_HEAD.length(s.width);
+    return [
+      path(lineSegs([a, b]), s, null),
+      // Each head drawn as the end of a run its own length coming in from outside: tip on the point.
+      ...endedLine([sub(a, mul(u, h)), a], ["none", "filled"], { ...s, dash: null }, DIMENSION_HEAD),
+      ...endedLine([add(b, mul(u, h)), b], ["none", "filled"], { ...s, dash: null }, DIMENSION_HEAD),
+    ];
+  }
   if (ends === "arrow") return endedLine(pts, ["filled", "filled"], s, DIMENSION_HEAD);
   const h = barHalf(s.width);
   // Square to the line, or for a tick, a further eighth of a turn: the same line at both ends.
