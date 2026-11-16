@@ -104,6 +104,50 @@ describe("rule 1: one gesture, one behaviour", () => {
     });
   }
 
+  // A box without a click of its own (Rectangle, Ellipse) is clicked out corner to corner too.
+  const clickedBoxes = withGesture((d) => d.gesture === "box" && !d.click);
+  it("covers Rectangle and Ellipse", () => {
+    expect(clickedBoxes.map((t) => t.id)).toEqual(expect.arrayContaining(["rect", "ellipse"]));
+  });
+  for (const tool of clickedBoxes) {
+    it(`${tool.label}: clicks out corner to corner, Shift squares it, and a stray double-click adds nothing`, async () => {
+      const { v, doc, t } = await setup();
+      t.setTool(tool.id);
+      click(t, v, [100, 100]);
+      expect(t.drawingPoints).toBe(true);
+      expect(t.canFinishPoints).toBe(false);
+      click(t, v, [100, 101]); // too small to be a box: ignored, still waiting for the corner
+      expect(t.drawingPoints).toBe(true);
+      click(t, v, [220, 160]);
+      expect(t.drawingPoints).toBe(false);
+      expect(doc.markups.length).toBe(1);
+      const b = shapeBounds(doc.markups[0]);
+      expect([b[2] - b[0], b[3] - b[1]]).toEqual([120, 60].map((n) => expect.closeTo(n, 3)));
+      click(t, v, [220, 160], 2); // the double-click's second press
+      expect(t.drawingPoints).toBe(false);
+      click(t, v, [300, 300]);
+      click(t, v, [420, 340], 1, shift);
+      const s = shapeBounds(doc.markups[1]);
+      expect(s[2] - s[0]).toBeCloseTo(s[3] - s[1], 3);
+      // Backspace takes back the first corner, and Esc's finishPoints(false) abandons one.
+      click(t, v, [100, 300]);
+      expect(t.removeLastPoint()).toBe(true);
+      expect(t.drawingPoints).toBe(false);
+      expect(doc.markups.length).toBe(2);
+    });
+  }
+
+  for (const tool of withGesture((d) => d.gesture === "freehand")) {
+    it(`${tool.label}: a click without moving makes a dot`, async () => {
+      const { v, doc, t } = await setup();
+      t.setTool(tool.id);
+      click(t, v, [150, 150]);
+      expect(doc.markups.length).toBe(1);
+      const m = doc.markups[0] as MarkupOf<"ink">;
+      expect(m.strokes).toEqual([[[expect.closeTo(150, 3), expect.closeTo(150, 3)]]]);
+    });
+  }
+
   const clickOut = withGesture((d) => d.gesture === "points" && !d.max);
   for (const tool of clickOut) {
     it(`${tool.label}: Backspace takes back the last point, and the last one abandons the shape`, async () => {
@@ -166,8 +210,8 @@ describe("rule 2: Shift toggles the lock", () => {
     expect(s[0]).toBeCloseTo(Math.hypot(100, 4));
   });
 
-  it("every dimension starts ortho-locked on its second point (rule 2: dimensions start locked)", () => {
-    for (const tool of drawing.filter((t) => t.group === "measure")) {
+  it("every dimension starts ortho-locked on its second point (rule 2: dimensions start locked), but Length, whose pull picks level or upright", () => {
+    for (const tool of drawing.filter((t) => t.group === "measure" && t.id !== "measureLength")) {
       const d = def(tool).draw;
       expect(d.gesture, tool.id).toBe("points");
       expect(lockTo(d, [[0, 0]], [100, 30], false), tool.id).toEqual([100, 0]);

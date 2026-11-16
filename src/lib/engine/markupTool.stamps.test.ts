@@ -7,7 +7,7 @@ import { installFakes, openViewer } from "./testkit";
 import { MarkupTool, type Mods } from "./markupTool";
 import { MarkupDoc } from "./markupDoc";
 import { type MarkupOf, defaultStyle, DEFAULT_TEXT } from "../markup/types";
-import { ROTATE_GAP_PX, armStamp } from "../markup/kinds/stamp";
+import { ROTATE_GAP_PX, armStamp, setStampFields } from "../markup/kinds/stamp";
 import { centreOf, rotateGripAt, turnPt } from "../markup/turn";
 import { ROTATE_CURSOR } from "../markup/shape";
 import type { Viewer } from "./viewer";
@@ -95,5 +95,113 @@ describe("stamps through the gestures", () => {
     click(t, v, [300, 200]);
     drag(t, v, [100, 100], [200, 160]);
     expect(doc.markups.length).toBe(0);
+  });
+});
+
+describe("[ and ] turn what's selected or about to be placed (Matt's review)", () => {
+  it("turn a selected stamp a quarter in one undo step, and Shift's 15 degrees", async () => {
+    const { v, doc, t } = await setup();
+    armStamp({ type: "text", label: "APPROVED", sub: null, colour: [0, 0.5, 0] }, false);
+    t.setTool("stamp");
+    click(t, v, [300, 200]);
+    t.setTool("select");
+    t.select([doc.markups[0].id]);
+    expect(t.turnBy(90)).toBe(true);
+    expect((doc.markups[0] as MarkupOf<"stamp">).angle).toBe(90);
+    expect(t.turnBy(-15)).toBe(true);
+    expect((doc.markups[0] as MarkupOf<"stamp">).angle).toBe(75);
+    t.undo();
+    expect((doc.markups[0] as MarkupOf<"stamp">).angle).toBe(90);
+  });
+
+  it("leave a selection with anything that can't turn as it is, and say the key was used", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("rect");
+    drag(t, v, [100, 100], [200, 160]);
+    t.setTool("select");
+    t.select([doc.markups[0].id]);
+    const before = doc.markups[0];
+    expect(t.turnBy(90)).toBe(true);
+    expect(doc.markups[0]).toBe(before);
+  });
+
+  it("with nothing selected and no stamp tool out, leave it to the view", async () => {
+    const { t } = await setup();
+    t.setTool("select");
+    expect(t.turnBy(90)).toBe(false);
+  });
+
+  it("with a stamp tool out, turn the next one placed, until the tool changes", async () => {
+    const { v, doc, t } = await setup();
+    armStamp({ type: "text", label: "APPROVED", sub: null, colour: [0, 0.5, 0] }, false);
+    t.setTool("stamp");
+    expect(t.turnBy(90)).toBe(true);
+    click(t, v, [300, 200]);
+    expect((doc.markups[0] as MarkupOf<"stamp">).angle).toBe(90);
+    t.setTool("select");
+    t.setTool("stamp");
+    t.select([]);
+    click(t, v, [300, 300]);
+    expect((doc.markups[1] as MarkupOf<"stamp">).angle).toBeUndefined();
+  });
+});
+
+describe("the Image tool places one picture (Matt's review)", () => {
+  it("says so once a picture is placed, clicked or dragged, and the Stamp tool doesn't", async () => {
+    const { v, doc } = await setup();
+    let done = 0;
+    const t = new MarkupTool(v, { styleFor: (k) => defaultStyle(k), textStyle: () => DEFAULT_TEXT, author: () => "Tester", onChange: () => {}, placedOnce: () => done++ });
+    t.attach(doc);
+    armStamp({ type: "image", png: "AAAA", hash: "abcdef0123456789abcd", w: 200, h: 100 }, false);
+    t.setTool("image");
+    click(t, v, [300, 200]);
+    expect(done).toBe(1);
+    expect(t.selected().map((m) => m.id)).toEqual([doc.markups[0].id]);
+    drag(t, v, [100, 100], [200, 160]);
+    expect(done).toBe(2);
+    t.setTool("stamp");
+    click(t, v, [300, 300]);
+    expect(done).toBe(2);
+  });
+});
+
+describe("cropping a picture in the tool (Matt's review)", () => {
+  it("crops by the grips while on, one undo step a drag, and stops on a click elsewhere", async () => {
+    const { v, doc, t } = await setup();
+    armStamp({ type: "image", png: "AAAA", hash: "abcdef0123456789abcd", w: 200, h: 100 }, false);
+    t.setTool("image");
+    drag(t, v, [100, 100], [300, 200]);
+    t.setTool("select");
+    const id = doc.markups[0].id;
+    t.select([id]);
+    expect(t.croppable).toBe(true);
+    t.setCropping(true);
+    expect(t.cropping).toBe(true);
+    const m0 = doc.markups[0] as MarkupOf<"stamp">;
+    const r = m0.rect;
+    // The right-hand edge's grip, dragged in: cropped, not resized (the height stays).
+    drag(t, v, [r[2], (r[1] + r[3]) / 2], [r[2] - 50, (r[1] + r[3]) / 2]);
+    const m1 = doc.markups[0] as MarkupOf<"stamp">;
+    expect(m1.rect[3] - m1.rect[1]).toBeCloseTo(r[3] - r[1], 6);
+    expect(m1.content.type === "image" && m1.content.crop![2]).toBeCloseTo(0.75, 6);
+    t.undo();
+    expect((doc.markups[0] as MarkupOf<"stamp">).content).toEqual(m0.content);
+    t.redo();
+    // A click away from the picture: no longer cropping (the grips resize again).
+    click(t, v, [500, 350]);
+    expect(t.cropping).toBe(false);
+  });
+});
+
+describe("a text stamp's fields (Matt's review)", () => {
+  it("are filled in when it's placed, for the page it lands on, and its wording is kept", async () => {
+    const { v, doc, t } = await setup();
+    setStampFields((page) => ({ author: "Tester", now: new Date(2026, 10, 15, 9, 5), file: "GA-101.pdf", page }));
+    armStamp({ type: "text", label: "CHECKED {FILE}", sub: "{author}, {date}, p{page}", colour: [0, 0.5, 0] }, false);
+    t.setTool("stamp");
+    click(t, v, [300, 200]);
+    const s = doc.markups[0] as MarkupOf<"stamp">;
+    expect(s.content).toMatchObject({ label: "CHECKED GA-101.PDF", sub: "Tester, 15 Nov 2026, p1", fields: { label: "CHECKED {FILE}", sub: "{author}, {date}, p{page}" } });
+    setStampFields((page) => ({ author: "", now: new Date(), file: "", page }));
   });
 });

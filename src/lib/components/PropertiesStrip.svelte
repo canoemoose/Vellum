@@ -13,6 +13,8 @@
   import { sameColour as same } from "../markup/colour";
   import ColourPicker from "./ColourPicker.svelte";
   import WeightControl from "./WeightControl.svelte";
+  import { LINE_COLOURS } from "../markup/palette";
+  import StampLikeness from "./signature/StampLikeness.svelte";
   import PopChoice from "./PopChoice.svelte";
   import { DASHES, dashOption } from "../markup/dash";
   import { outFrom } from "../shell/popout";
@@ -78,6 +80,15 @@
     text: TextStyle | null;
     /** "Arrow tool" or "2 markups selected". */
     label: string;
+    /**
+     * A stamp or signature selected (or just placed): a button with its likeness, after the label,
+     * that opens the stamp grid to swap it for another (Matt's review).
+     */
+    swap?: { content: import("../markup/stamps").StampContent; title: string; onOpen: (from: DOMRect, out: import("../shell/popout").Out) => void } | null;
+    /** A text stamp selected: its second line on or off. */
+    dateLine?: { on: boolean; onToggle: (on: boolean) => void } | null;
+    /** One picture selected (Matt's review): Crop, on while its grips crop it, and its whole picture back. */
+    crop?: { on: boolean; cropped: boolean; onToggle: () => void; onReset: () => void } | null;
     // Measuring
     /** Measurements: the label size and number format (what the tool draws, or the selection's). */
     measure?: { labelSize: number; format: MeasureFormat } | null;
@@ -86,13 +97,6 @@
     /** A dimension's ends (null where none of those involved has a dimension line) and its value's font. */
     dimension?: { ends: DimEnds | null; font: DimFont } | null;
     onDimension?: (patch: { ends?: DimEnds; font?: DimFont }) => void;
-
-    // Stamps
-    /**
-     * Stage 8: the stamp's picker ("Stamp: APPROVED", components/signature/StampBar.svelte), in
-     * place of the label; given the thin column (narrow) and which way pop-outs open.
-     */
-    stamp?: import("svelte").Snippet<[boolean, import("../shell/popout").Out]>;
 
     // Stage 6: shapes
     /** A regular polygon's sides (the tool's remembered Sides, or the selection's). */
@@ -112,15 +116,7 @@
   }
   let p: Props = $props();
 
-  const COLOURS: { name: string; c: Rgb }[] = [
-    { name: "Red", c: [0.85, 0.1, 0.1] },
-    { name: "Orange", c: [0.95, 0.5, 0.05] },
-    { name: "Yellow", c: [0.95, 0.78, 0.0] },
-    { name: "Green", c: [0.1, 0.6, 0.2] },
-    { name: "Blue", c: [0.05, 0.35, 0.8] },
-    { name: "Magenta", c: [0.75, 0.1, 0.6] },
-    { name: "Black", c: [0, 0, 0] },
-  ];
+  const COLOURS = LINE_COLOURS;
   const FILLS: { name: string; c: Rgb }[] = [
     { name: "White", c: [1, 1, 1] },
     { name: "Pale yellow", c: [1, 0.97, 0.7] },
@@ -255,19 +251,22 @@
     <span class="grip" role="separator" aria-label="Move the properties bar" title={narrow ? `${p.label}: drag to move it to any edge` : "Drag to move it to any edge"} onpointerdown={grip}>
       <svg width="8" height="14" viewBox="0 0 8 14" aria-hidden="true"><g fill="currentColor"><circle cx="2" cy="2" r="1.2" /><circle cx="6" cy="2" r="1.2" /><circle cx="2" cy="7" r="1.2" /><circle cx="6" cy="7" r="1.2" /><circle cx="2" cy="12" r="1.2" /><circle cx="6" cy="12" r="1.2" /></g></svg>
     </span>
-    <!-- Stage 8: a stamp's picker stands in for the label. -->
-    {#if p.stamp && bar.picker && idp === "mk"}
-      {@render p.stamp(narrow, out)}
-    {:else}
-      <span class="label">{p.label}</span>
-    {/if}
+    <span class="label">{p.label}</span>
   </div>
+
+  {#if p.swap}
+  {@const s = p.swap}
+  <button type="button" class="swap" aria-haspopup="listbox" title={s.title} onclick={(e) => s.onOpen((e.currentTarget as HTMLElement).getBoundingClientRect(), out)}>
+    <StampLikeness content={s.content} size={narrow ? 7 : 9} sub={false} maxWidth={narrow ? 40 : 120} />
+    <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden="true" class="chev"><path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+  </button>
+  {/if}
 
   <!-- Stage 8: a signature or a picture has no colour of its own, only opacity. -->
   {#if bar.colour || bar.opacity}
   <span class="sep" aria-hidden="true"></span>
-  <div class="prop" role="group" aria-label={isText ? "Border" : bar.colour ? "Line" : "Opacity"}>
-    <span class="k">{isText ? "Border" : bar.colour ? "Colour" : "Opacity"}</span>
+  <div class="prop" role="group" aria-label={isText || bar.border ? "Border" : bar.colour ? "Line" : "Opacity"}>
+    <span class="k">{isText || bar.border ? "Border" : bar.colour ? "Colour" : "Opacity"}</span>
     <div class="pal">
       {#if bar.colour}
       <div class="swatches" role="radiogroup" aria-label={isText ? "Border colour" : "Line colour"}>
@@ -284,6 +283,29 @@
   </div>
   {/if}
 
+  {#if p.dateLine}
+  {@const d = p.dateLine}
+  <span class="sep" aria-hidden="true"></span>
+  <div class="prop" role="group" aria-label="Second line">
+    <span class="k">Second line</span>
+    <div class="controls">
+      {@render toggle(d.on ? "Second line on: its wording is set in the stamp grid" : "Second line off", d.on, () => d.onToggle(!d.on), dateIcon)}
+    </div>
+  </div>
+  {/if}
+
+  {#if p.crop}
+  {@const c = p.crop}
+  <span class="sep" aria-hidden="true"></span>
+  <div class="prop" role="group" aria-label="Crop">
+    <span class="k">Crop</span>
+    <div class="controls">
+      {@render toggle(c.on ? "Cropping: drag the grips, then Enter or click elsewhere" : "Crop: drag the grips to trim the picture", c.on, c.onToggle, cropIcon)}
+      {@render toggle(c.cropped ? "Show the whole picture again" : "Showing the whole picture", false, c.onReset, uncropIcon, "", !c.cropped)}
+    </div>
+  </div>
+  {/if}
+
   <!-- No weight or pattern for markups without a line (kind.ts, lineless); no pattern for the
        highlighter (rule 6, markup/bar.ts). -->
   {#if bar.weight}
@@ -291,7 +313,7 @@
   <div class="prop">
     <label class="k" for="{idp}-weight">Weight</label>
     <div class="controls">
-      <WeightControl id="{idp}-weight" value={p.style.width} min={isText ? 0 : 0.25} compact={narrow} {out} onChange={(wt) => p.onStyle({ width: wt })} onPreview={(wt) => p.onStyle({ width: wt }, true)} />
+      <WeightControl id="{idp}-weight" value={p.style.width} min={isText || bar.border ? 0 : 0.25} compact={narrow} {out} onChange={(wt) => p.onStyle({ width: wt })} onPreview={(wt) => p.onStyle({ width: wt }, true)} />
       {#if bar.pattern}
         <PopChoice label="Line pattern" options={PATTERNS} value={dashOption(p.style.dash)?.name ?? null} compact={narrow} {out} sample={dashSample} onChange={(k) => p.onStyle({ dash: DASHES.find((o) => o.name === k)?.dash ?? null })} />
       {/if}
@@ -441,7 +463,7 @@
     <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d={polyPath(Number(k))} fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
   {/if}
 {/snippet}
-<!-- Dimensions (stage 5): a short dimension line with the end at each end; the font as "12.4". -->
+<!-- Dimensions (stage 5): a short dimension line with the end at each end; the font as "Aa". -->
 {#snippet dimEndSample(k: DimEnds | null, w: number)}
   {@const e = k ?? p.dimension?.ends ?? "bar"}
   {@const x1 = Math.min(w, 34) - 4}
@@ -458,14 +480,23 @@
 {/snippet}
 {#snippet dimFontSample(k: DimFont | null, w: number)}
   {@const f = k ?? p.dimension?.font ?? "helvetica"}
-  <span class="aa" style:font-family={cssFamily(f === "helvetica" ? "helvetica" : "courier")} style:font-weight={f === "courierBold" ? "bold" : "normal"} style:width="{Math.min(w, 30)}px">12.4</span>
+  <span class="aa" style:font-family={cssFamily(f === "helvetica" ? "helvetica" : "courier")} style:font-weight={f === "courierBold" ? "bold" : "normal"} style:width="{Math.min(w, 30)}px">Aa</span>
 {/snippet}
 
 <!-- A small on/off button with an icon (bold, italic, alignment...). -->
-{#snippet toggle(name: string, on: boolean, act: () => void, icon: import("svelte").Snippet<[string]>, arg: string = "")}
-  <button type="button" class="tgl" class:on aria-pressed={on} aria-label={name} title={name} onclick={act}>{@render icon(arg)}</button>
+{#snippet toggle(name: string, on: boolean, act: () => void, icon: import("svelte").Snippet<[string]>, arg: string = "", disabled = false)}
+  <button type="button" class="tgl" class:on aria-pressed={on} aria-label={name} title={name} {disabled} onclick={act}>{@render icon(arg)}</button>
 {/snippet}
 
+{#snippet dateIcon(_: string)}
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" /></svg>
+{/snippet}
+{#snippet cropIcon(_: string)}
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 1.5v10h10M1.5 4.5h10v10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+{/snippet}
+{#snippet uncropIcon(_: string)}
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.6" /><path d="M5.5 5.5h5v5h-5z" fill="currentColor" opacity="0.5" /></svg>
+{/snippet}
 {#snippet boldIcon(_: string)}<span class="glyph" style:font-weight="bold">B</span>{/snippet}
 {#snippet italicIcon(_: string)}<span class="glyph" style:font-style="italic" style:font-family="Times New Roman, serif">I</span>{/snippet}
 {#snippet underIcon(_: string)}<span class="glyph" style:text-decoration="underline">U</span>{/snippet}
@@ -773,9 +804,32 @@
     color: var(--tx2);
     cursor: default;
   }
-  .tgl:hover {
+  .tgl:hover:not(:disabled) {
     background: var(--hover);
     color: var(--tx);
+  }
+  .tgl:disabled {
+    opacity: 0.4;
+  }
+  /* The stamp's likeness, to swap it (opens the stamp grid). */
+  .swap {
+    height: 26px;
+    max-width: 150px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 5px;
+    border: 1px solid var(--bd-input);
+    border-radius: 4px;
+    background: var(--app);
+    color: var(--tx3);
+    overflow: hidden;
+  }
+  .swap:hover {
+    border-color: var(--bd-strong);
+  }
+  .chev {
+    flex-shrink: 0;
   }
   .tgl.on {
     background: var(--accent-soft);

@@ -65,6 +65,7 @@
     role="radio"
     aria-checked={p.tool === t.id}
     aria-label={t.label}
+    data-tool={measuring ? undefined : t.id}
     class="icon-btn"
     class:on={p.tool === t.id}
     disabled={p.disabled}
@@ -116,6 +117,7 @@
                   role="radio"
                   aria-checked={on}
                   aria-label="{face.label} ({g.group.label} tools)"
+                  data-tool={face.id}
                   class="icon-btn main"
                   disabled={p.disabled}
                   title={tip(face)}

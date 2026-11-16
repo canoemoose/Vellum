@@ -8,16 +8,17 @@ import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor } from "../markup/ops";
 import { fitText } from "../markup/textbox";
-import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, orthoFrom, rectPts, shapeBounds, simplify, snapAngle, squareFrom, turnOf } from "../markup/geometry";
+import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, partAt, orthoFrom, rectPts, shapeBounds, simplify, snapAngle, squareFrom, turnOf } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
 import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX, pointLock } from "../markup/kinds/kind";
 import { defOf, kindOf } from "../markup/kinds";
 import { toolById, withPreset } from "../markup/tools";
-import { centredOn, fromClip, newSession, toClip } from "../markup/clip";
+import { centredOn, fromClip, keptOn, newSession, toClip } from "../markup/clip";
 // Stage 6: shapes
 import { DEFAULT_SIDES, regularFromDrag, regularVertices } from "../markup/regular";
 import { addCorner, canRemoveCorner, cornerOfGrip, removeCorner } from "../markup/corners";
-import { topMiddle } from "../markup/turn"; // Stage 8
+import { topMiddle, turnPt } from "../markup/turn"; // Stage 8
+import { canCrop, cropHandles, dragCrop, faded, uncropped } from "../markup/kinds/stamp"; // Cropping
 
 export { fitText, refitText } from "../markup/textbox";
 
@@ -34,6 +35,8 @@ export interface Mods {
 }
 
 export interface MarkupToolOptions {
+  /** A tool that places one (ToolDef.once) has placed it: the app goes back to Select. */
+  placedOnce?(): void;
   /** The style a tool draws with (each tool remembers its last). */
   styleFor(kind: MarkupKind, tool: Tool): Style;
   /** The text style a typing tool draws with (each remembers its own). */
@@ -76,10 +79,10 @@ const DRAG_PX = 3;
 
 type Gesture =
   | { kind: "move"; page: number; start: Pt; before: Markup[]; ids: string[]; moved: boolean }
-  | { kind: "handle"; page: number; id: string; handle: HandleId; before: Markup[] }
+  | { kind: "handle"; page: number; id: string; handle: HandleId; before: Markup[]; nudge?: Pt; crop?: boolean }
   | { kind: "marquee"; page: number; a: Pt; b: Pt; add: boolean }
   | { kind: "draw"; page: number; a: Pt; sx: number; sy: number; draft: Markup | null; points: Pt[] }
-  | { kind: "pending"; page: number; id: string; sx: number; sy: number; start: Pt; before: Markup[] };
+  | { kind: "pending"; page: number; id: string; sx: number; sy: number; start: Pt; before: Markup[]; part?: { handle: HandleId; nudge: Pt } };
 
 export class MarkupTool {
   tool: Tool = "select";
@@ -132,6 +135,7 @@ export class MarkupTool {
     this.finishText();
     this.finishPoints(false);
     this.placeAt = null;
+    this.placeTurn = 0;
     // With a drawing tool, the selection is only ever the shape just drawn (each new shape is
     // selected), so the properties bar restyles it as well as what's drawn next. Markups picked
     // out before switching mustn't be restyled by it.
@@ -145,8 +149,38 @@ export class MarkupTool {
   }
 
   private redraw(): void {
+    // Cropping ends when the picture is no longer the one thing selected (or has gone).
+    const d = this.doc;
+    if (this.cropId && (!d || d.selection.size !== 1 || !d.selection.has(this.cropId) || !d.byId(this.cropId))) this.cropId = null;
     this.viewer.requestFrame();
     this.opts.onChange();
+  }
+
+  // ---------------------------------------------------------------- cropping (Matt's review)
+
+  /** The picture being cropped: its grips crop it rather than resize it. */
+  private cropId: string | null = null;
+
+  get cropping(): boolean {
+    return this.cropId !== null;
+  }
+
+  /** The one selected markup, if it's a picture that can be cropped. */
+  get croppable(): boolean {
+    const s = this.selected();
+    return s.length === 1 && s[0].kind === "stamp" && canCrop(s[0]) && !!this.doc?.editable(s[0]);
+  }
+
+  /** Crop the one selected picture (its grips crop it until Enter, Esc or a click elsewhere), or stop. */
+  setCropping(on: boolean): void {
+    this.cropId = on && this.croppable ? this.selected()[0].id : null;
+    this.redraw();
+  }
+
+  /** The whole picture again, one undo step. */
+  uncrop(): void {
+    const s = this.selected();
+    if (s.length === 1 && s[0].kind === "stamp" && s[0].content.type === "image" && s[0].content.crop) this.updateMarkup(uncropped(s[0]));
   }
 
   /** Record a new state of the markups as one undo step. */
@@ -299,11 +333,47 @@ export class MarkupTool {
   /** The pointer left the drawing: paste goes to the middle of the view. */
   leave(): void {
     this.pointer = null;
+    this.pointerAt = null;
+    // A stamp's preview doesn't stay behind at the edge (or under a picker opened over the drawing).
+    if (this.placeAt) {
+      this.placeAt = null;
+      this.viewer.requestFrame();
+    }
   }
 
-  /** Where a paste lands: the pointer, if it's on a page and `where` allows; else the middle of the view. */
+  /** Where the pointer is over the drawing, on a page or beside one (screen, CSS px). */
+  private pointerAt: [number, number] | null = null;
+
+  /**
+   * The point on a page nearest the pointer, when it's over the drawing but off every page: the
+   * nearest page, among those either side of the one in view, and the nearest point on it.
+   */
+  private nearestOnPage(sx: number, sy: number): { page: number; p: Pt } | null {
+    const sizes = this.viewer.doc?.sizes;
+    if (!sizes?.length) return null;
+    const mid = this.viewer.currentPageIndex;
+    let best: { page: number; p: Pt; d: number } | null = null;
+    for (let page = Math.max(0, mid - 2); page <= Math.min(sizes.length - 1, mid + 2); page++) {
+      const at = this.pointOn(sx, sy, page);
+      if (!at) continue;
+      const { w, h } = sizes[page];
+      const q: Pt = [Math.min(w, Math.max(0, at.p[0])), Math.min(h, Math.max(0, at.p[1]))];
+      const d = Math.hypot(q[0] - at.p[0], q[1] - at.p[1]);
+      if (!best || d < best.d) best = { page, p: q, d };
+    }
+    return best && { page: best.page, p: best.p };
+  }
+
+  /**
+   * Where a paste lands: the pointer, if `where` allows and it's over the drawing (beside a
+   * page, the nearest point on one); else the middle of the view.
+   */
   private pasteTarget(where: "pointer" | "centre"): { page: number; p: Pt } | null {
     if (where === "pointer" && this.pointer) return this.pointer;
+    if (where === "pointer" && this.pointerAt) {
+      const near = this.nearestOnPage(...this.pointerAt);
+      if (near) return near;
+    }
     const at = this.pointOn(this.viewer.vw / 2, this.viewer.vh / 2) ?? this.pointOn(this.viewer.vw / 2, this.viewer.vh / 2, this.viewer.currentPageIndex);
     return at;
   }
@@ -329,7 +399,10 @@ export class MarkupTool {
     if (r.skipped) this.opts.notify?.(r.skipped === 1 ? "A signature can only be pasted in the window it was copied from" : `${r.skipped} signatures or markups couldn't be pasted here`);
     if (!r.markups.length) return false;
     const now = new Date().toISOString();
-    const copies = centredOn(r.markups, target.p).map((m) => ({
+    // On the page, all of it: a paste near its edge is moved in as far as it takes.
+    const size = this.viewer.doc?.sizes[target.page];
+    const placed = centredOn(r.markups, target.p);
+    const copies = (size ? keptOn(placed, size) : placed).map((m) => ({
       ...m,
       id: newId(),
       page: target.page,
@@ -422,6 +495,7 @@ export class MarkupTool {
 
   /** Left button down. True if the markup tool takes the gesture. */
   down(sx: number, sy: number, clicks: number, mods: Mods): boolean {
+    this.shiftHeld = mods.shift;
     if (!this.doc) return false;
     // Rule 3: a click away from text being typed ends the typing and does nothing else.
     if (this.editing) {
@@ -441,6 +515,17 @@ export class MarkupTool {
       return false;
     }
     const { page, p } = at;
+    // Cropping: its crop grips first; a press anywhere else ends cropping, and goes on as usual.
+    const cm = this.cropId ? this.doc.byId(this.cropId) : undefined;
+    if (cm?.kind === "stamp" && cm.page === page) {
+      const tol = this.tolPt(HANDLE_PX);
+      const grip = cropHandles(cm).find((h) => Math.hypot(h.at[0] - p[0], h.at[1] - p[1]) <= tol);
+      if (grip) {
+        this.gesture = { kind: "handle", page, id: cm.id, handle: grip.id, before: this.markups, crop: true };
+        return true;
+      }
+    }
+    if (this.cropId) this.setCropping(false);
     // A handle of a selected markup first.
     for (const m of this.selected()) {
       if (m.page !== page) continue;
@@ -482,8 +567,19 @@ export class MarkupTool {
       this.redraw();
       return true;
     }
-    if (!this.doc.selection.has(hit.id)) this.select([hit.id]);
-    this.gesture = { kind: "pending", page, id: hit.id, sx, sy, start: p, before: this.markups };
+    // A part that works a grip (a dimension's value or line): dragged, it's that grip, held
+    // where it was taken so nothing jumps; double-clicked, what the grip puts back.
+    const ph = this.doc.editable(hit) ? partAt(hit, p, this.tolPt(PICK_PX)) : null;
+    const reset = ph && clicks === 2 ? defOf(hit).resetHandle?.(hit, ph) : null;
+    if (reset) {
+      this.select([hit.id]);
+      this.updateMarkup(reset);
+      return true;
+    }
+    if (!this.doc.selection.has(hit.id) || ph) this.select([hit.id]);
+    const grip = ph ? handles(hit, this.tolPt(1)).find((x) => x.id === ph) : undefined;
+    const part = ph && grip ? { handle: ph, nudge: [grip.at[0] - p[0], grip.at[1] - p[1]] as Pt } : undefined;
+    this.gesture = { kind: "pending", page, id: hit.id, sx, sy, start: p, before: this.markups, ...(part ? { part } : {}) };
     return true;
   }
 
@@ -497,9 +593,11 @@ export class MarkupTool {
   }
 
   move(sx: number, sy: number, mods: Mods): void {
+    this.shiftHeld = mods.shift;
     // Stage 9: where a paste would land.
     const on = this.pointOn(sx, sy);
     this.pointer = on;
+    this.pointerAt = [sx, sy];
     const g = this.gesture;
     if (!g) {
       this.hover(sx, sy, mods);
@@ -511,6 +609,10 @@ export class MarkupTool {
     switch (g.kind) {
       case "pending":
         if (Math.hypot(sx - g.sx, sy - g.sy) < DRAG_PX) return;
+        if (g.part) {
+          this.gesture = { kind: "handle", page: g.page, id: g.id, handle: g.part.handle, before: g.before, nudge: g.part.nudge };
+          return this.move(sx, sy, mods);
+        }
         this.gesture = { kind: "move", page: g.page, start: g.start, before: g.before, ids: [...this.doc!.selection], moved: true };
         this.opts.onLift?.([...this.doc!.selection]);
         return this.move(sx, sy, mods);
@@ -523,7 +625,11 @@ export class MarkupTool {
       }
       case "handle":
         if (this.markups === g.before) this.opts.onLift?.([g.id]);
-        this.doc!.history.replace(g.before.map((m) => (m.id === g.id ? dragHandle(m, g.handle, p, mods.shift) : m)));
+        {
+          const q: Pt = g.nudge ? [p[0] + g.nudge[0], p[1] + g.nudge[1]] : p;
+          const drag = (m: Markup): Markup => (g.crop && m.kind === "stamp" ? dragCrop(m, g.handle, q, this.tolPt(MIN_BOX_PX)) : dragHandle(m, g.handle, q, mods.shift));
+          this.doc!.history.replace(g.before.map((m) => (m.id === g.id ? drag(m) : m)));
+        }
         break;
       case "marquee":
         g.b = p;
@@ -583,13 +689,22 @@ export class MarkupTool {
       if (at) {
         let h: HandleId | null = null;
         let turn = 0;
+        // Cropping: the crop grips' cursors.
+        const cm = this.cropId ? this.doc.byId(this.cropId) : undefined;
+        if (cm?.kind === "stamp" && cm.page === at.page) {
+          const grip = cropHandles(cm).find((g) => Math.hypot(g.at[0] - at.p[0], g.at[1] - at.p[1]) <= this.tolPt(HANDLE_PX));
+          if (grip) [h, turn] = [grip.id, cm.angle ?? 0];
+        }
         for (const m of this.selected())
           if (!h && m.page === at.page && (h = handleAt(m, at.p, this.tolPt(HANDLE_PX), this.tolPt(1)))) turn = turnOf(m);
         if (h) c = handleCursor(h, this.viewer.rotation, turn);
         else {
-          // Text markups don't move: over one, the text tool's cursor shows.
+          // Text markups don't move: over one, the text tool's cursor shows. Over a part that
+          // works a grip, the grip's cursor.
           const top = this.topAt(at.page, at.p);
-          if (top && !defOf(top).ofText) c = "move";
+          const part = top ? partAt(top, at.p, this.tolPt(PICK_PX)) : null;
+          if (part && top) c = handleCursor(part, this.viewer.rotation, turnOf(top));
+          else if (top && !defOf(top).ofText) c = "move";
         }
       }
     }
@@ -623,7 +738,39 @@ export class MarkupTool {
   }
 
   private get drawContext(): DrawContext {
-    return { textStyle: this.opts.textStyle(this.tool), pick: this.tolPt(HANDLE_PX), viewRotation: this.viewer.rotation };
+    // A stamp turned with [ and ] before it's placed starts that much further round than upright as viewed.
+    return { textStyle: this.opts.textStyle(this.tool), pick: this.tolPt(HANDLE_PX), viewRotation: this.viewer.rotation - this.placeTurn, free: this.shiftHeld, ...(this.ctxPage !== null ? { page: this.ctxPage } : {}) };
+  }
+
+  /** Shift, as of the last press or move (what a shape being drawn is made with). */
+  private shiftHeld = false;
+
+  /** The page what's being drawn is on (drawContext's page), set before each make. */
+  private ctxPage: number | null = null;
+
+  /** Degrees clockwise [ and ] have turned what the current "place" tool places next (reset with the tool). */
+  private placeTurn = 0;
+
+  /**
+   * [ and ]: turn by `deg` clockwise as seen. With a tool that places (a stamp, a signature, an
+   * image) out, what it places next, its preview turning with it; otherwise the selection, in
+   * one undo step, if everything in it can turn. True if a turn was for the markups (so the view
+   * isn't turned): also when the selection holds something that can't turn, which stays as it is.
+   */
+  turnBy(deg: number): boolean {
+    if (this.def?.draw.gesture === "place") {
+      this.placeTurn = ((this.placeTurn + deg) % 360 + 360) % 360;
+      this.viewer.requestFrame();
+      return true;
+    }
+    const d = this.doc;
+    const sel = this.selected();
+    if (!d || !sel.length) return false;
+    if (sel.some((m) => !defOf(m).turnBy || !d.editable(m))) return true;
+    this.opts.onLift?.(sel.map((m) => m.id));
+    this.commit(this.markups.map((m) => (d.selection.has(m.id) ? touch(defOf(m).turnBy!(m, deg)) : m)));
+    this.opts.onChange();
+    return true;
   }
 
   private newMarkup(def: KindDef, page: number, shape: Shape<Markup>): Markup {
@@ -641,6 +788,21 @@ export class MarkupTool {
     const at = this.pointOn(sx, sy, this.clicking?.page);
     if (!at) return false;
     const c = this.clicking;
+    if (c && def.draw.gesture === "box") {
+      // A box clicked out: the second click is the opposite corner (Shift squares it). One
+      // too small to be a box is ignored, so a stray double-click doesn't make a sliver.
+      const p = lockTo(def.draw, c.points, at.p, mods.shift);
+      const a = c.points[0];
+      const min = this.tolPt(MIN_BOX_PX);
+      if (Math.abs(p[0] - a[0]) >= min && Math.abs(p[1] - a[1]) >= min) {
+        c.points = [a, p];
+        this.finishPoints(true);
+      }
+      this.viewer.requestFrame();
+      return true;
+    }
+    // The second press of a double-click that just finished a clicked-out box starts nothing.
+    if (!c && clicks >= 2 && def.draw.gesture === "box" && !def.draw.click) return true;
     if (c && def.draw.gesture === "points") {
       // Clicking out a shape: a double-click (or Enter) finishes it; so does a click on the
       // first point of a closed one.
@@ -665,6 +827,7 @@ export class MarkupTool {
   private drawMove(g: Extract<Gesture, { kind: "draw" }>, sx: number, sy: number, p: Pt, mods: Mods): void {
     const def = this.def;
     if (!def) return;
+    this.ctxPage = g.page;
     const far = Math.hypot(sx - g.sx, sy - g.sy) >= DRAG_PX;
     if (!far && !g.draft) return;
     const a = g.a;
@@ -708,6 +871,7 @@ export class MarkupTool {
   private drawUp(g: Extract<Gesture, { kind: "draw" }>): void {
     const def = this.def;
     if (!def) return;
+    this.ctxPage = g.page;
     const d = def.draw;
     let m = g.draft;
     const size = (x: Markup): [number, number] => {
@@ -725,8 +889,12 @@ export class MarkupTool {
     switch (d.gesture) {
       case "box":
         if (tooSmall(m, true)) {
-          // A click (or a drag too small to be a box): one at the point, if the kind has one.
-          if (!d.click) return;
+          // A click (or a drag too small to be a box): one at the point, if the kind has one;
+          // otherwise the first corner of a box clicked out, the next click its opposite corner.
+          if (!d.click) {
+            this.clicking = { def, page: g.page, points: [g.a], hover: null };
+            return;
+          }
           m = this.newMarkup(def, g.page, d.click(g.a, this.drawContext));
         }
         break;
@@ -738,8 +906,8 @@ export class MarkupTool {
         }
         break;
       case "freehand":
-        if (!m) return;
-        m = this.newMarkup(def, g.page, d.make([simplify(g.points, this.tolPt(0.6))]));
+        // A click without moving makes a dot.
+        m = this.newMarkup(def, g.page, d.make([m ? simplify(g.points, this.tolPt(0.6)) : [g.a]]));
         break;
       case "place":
         if (tooSmall(m, true)) {
@@ -756,26 +924,41 @@ export class MarkupTool {
     this.commit([...before, m]);
     this.select([m.id]);
     if (def.typed) this.startText(m.id, true, before);
+    if (toolById(this.tool)?.once) this.opts.placedOnce?.();
   }
 
   /** Finish (or with keep false, abandon) a shape being clicked out. */
   finishPoints(keep: boolean): void {
     const c = this.clicking;
     this.clicking = null;
-    if (!c || c.def.draw.gesture !== "points") return;
+    if (!c) return;
+    const d = c.def.draw;
+    if (d.gesture === "box") {
+      // A box clicked out, corner to corner.
+      if (keep && c.points.length >= 2) {
+        const [a, b] = c.points;
+        this.commitDrawn(c.def, c.page, d.make(normRect([a[0], a[1], b[0], b[1]]), this.drawContext));
+      }
+      this.viewer.requestFrame();
+      return;
+    }
+    if (d.gesture !== "points") return;
     // A double-click adds its point twice: drop repeats.
     const pts = c.points.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 1e-6);
-    if (keep && pts.length >= c.def.draw.min) {
-      let m = this.newMarkup(c.def, c.page, c.def.draw.make(pts, this.drawContext));
-      if (c.def.finish) m = c.def.finish(m);
-      if (this.keep && !this.keep(m)) return this.redraw(); // Measuring
-      const before = this.markups;
-      this.commit([...before, m]);
-      this.select([m.id]);
-      // Text markups: a callout is clicked out, then typed into.
-      if (c.def.typed) this.startText(m.id, true, before);
-    }
+    if (keep && pts.length >= d.min) this.commitDrawn(c.def, c.page, d.make(pts, this.drawContext));
     this.viewer.requestFrame();
+  }
+
+  /** A shape clicked out, made and kept (and typed into, for a callout). */
+  private commitDrawn(def: KindDef, page: number, shape: Shape<Markup>): void {
+    let m = this.newMarkup(def, page, shape);
+    if (def.finish) m = def.finish(m);
+    if (this.keep && !this.keep(m)) return this.redraw(); // Measuring
+    const before = this.markups;
+    this.commit([...before, m]);
+    this.select([m.id]);
+    // Text markups: a callout is clicked out, then typed into.
+    if (def.typed) this.startText(m.id, true, before);
   }
 
   /** Take back the last point clicked (Backspace, Ctrl+Z, the right-click menu); none left abandons the shape. */
@@ -792,7 +975,9 @@ export class MarkupTool {
   /** Whether the shape being clicked out has points enough to finish. */
   get canFinishPoints(): boolean {
     const c = this.clicking;
-    return !!c && c.def.draw.gesture === "points" && c.points.length >= c.def.draw.min;
+    if (!c) return false;
+    const d = c.def.draw;
+    return d.gesture === "box" ? c.points.length >= 2 : d.gesture === "points" && c.points.length >= d.min;
   }
 
   /** True while a shape is being clicked out (Enter finishes it, Esc abandons it). */
@@ -825,11 +1010,17 @@ export class MarkupTool {
     const g = this.gesture;
     if (g?.kind === "draw" && g.draft) return { markup: g.draft, segment: null };
     const c = this.clicking;
-    if (!c || c.def.draw.gesture !== "points") return null;
+    if (!c) return null;
     const pts = c.hover ? [...c.points, c.hover] : c.points;
     if (pts.length < 2) return null;
+    const d = c.def.draw;
+    if (d.gesture === "box") {
+      const [a, b] = pts;
+      return { markup: this.newMarkup(c.def, c.page, d.make(normRect([a[0], a[1], b[0], b[1]]), this.drawContext)), segment: null };
+    }
+    if (d.gesture !== "points") return null;
     const last = c.points[c.points.length - 1];
-    return { markup: this.newMarkup(c.def, c.page, c.def.draw.make(pts, this.drawContext)), segment: c.hover ? { from: last, to: c.hover } : null };
+    return { markup: this.newMarkup(c.def, c.page, d.make(pts, this.drawContext)), segment: c.hover ? { from: last, to: c.hover } : null };
   }
   // End measuring
 
@@ -956,6 +1147,7 @@ export class MarkupTool {
     // A "place" tool's preview, following the pointer until the click.
     const def = this.def;
     if (!g && this.placeAt?.page === page && def?.draw.gesture === "place") {
+      this.ctxPage = page;
       const s = def.draw.make(this.placeAt.p, this.drawContext);
       if (s) paintOps(ctx, opsFor(this.newMarkup(def, page, s)), m);
     }
@@ -966,7 +1158,7 @@ export class MarkupTool {
     // first point, for a closed shape).
     const c = this.clicking;
     // Dimensions (stage 5): a kind with `preview` shows itself as it would be made, not a rubber band.
-    const shown = c?.page === page && c.def.draw.gesture === "points" && c.def.draw.preview ? this.drawingShape() : null;
+    const shown = c?.page === page && ((c.def.draw.gesture === "points" && c.def.draw.preview) || c.def.draw.gesture === "box") ? this.drawingShape() : null;
     if (shown) {
       paintOps(ctx, opsFor(shown.markup), m);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1002,22 +1194,38 @@ export class MarkupTool {
       }
       // Stage 6: square grips (a box's) first, then round ones (corners on the shape) over them.
       // A shape with both shows its box as a dashed outline, so the square grips read as the box's.
-      const hs = handles(x, this.tolPt(1));
-      if (hs.some((q) => q.round) && hs.some((q) => !q.round)) {
+      // Cropping: the whole picture faint around what shows, its crop box dashed, and the crop grips.
+      const crop = x.id === this.cropId && x.kind === "stamp";
+      if (crop) {
+        const whole = uncropped(x);
+        paintOps(ctx, faded(opsFor(whole), 0.35 * x.style.opacity), m);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+      const hs = crop ? cropHandles(x) : handles(x, this.tolPt(1));
+      if (crop || (hs.some((q) => q.round) && hs.some((q) => !q.round))) {
+        // Through its corner grips, so it turns with a turned shape; snapped to whole pixels only when upright.
+        const at = (id: string) => hs.find((q) => q.id === id)?.at;
+        const corners = ["nw", "ne", "se", "sw"].map(at);
         const b = shapeBounds(x);
-        const pts = ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] as Pt[]).map(dev);
+        const pts = (corners.every(Boolean) ? (corners as Pt[]) : ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] as Pt[])).map(dev);
+        const snap = (v: number) => (turnOf(x) ? v : Math.round(v) + 0.5);
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
-        pts.forEach((q, i) => (i ? ctx.lineTo(Math.round(q[0]) + 0.5, Math.round(q[1]) + 0.5) : ctx.moveTo(Math.round(q[0]) + 0.5, Math.round(q[1]) + 0.5)));
+        pts.forEach((q, i) => (i ? ctx.lineTo(snap(q[0]), snap(q[1])) : ctx.moveTo(snap(q[0]), snap(q[1]))));
         ctx.closePath();
         ctx.stroke();
         ctx.setLineDash([]);
+      }
+      // Cropping: brackets at the corners and bars on the edges, not the resize grips.
+      if (crop) {
+        paintCropGrips(ctx, x, dev, this.viewer.dpr);
+        continue;
       }
       for (const h of [...hs.filter((q) => !q.round), ...hs.filter((q) => q.round)]) {
         const [hx, hy] = dev(h.at);
         // Stage 8: the rotate grip, round, on a stem from the middle of the top edge.
         if (h.id === "rotate") {
-          paintRotateGrip(ctx, x, dev, [hx, hy], r);
+          paintRotateGrip(ctx, x, dev, [hx, hy], r, h.stem);
           continue;
         }
         ctx.fillStyle = "#ffffff";
@@ -1053,6 +1261,8 @@ export class MarkupTool {
  * point it's locked from, and how, is the kind's per point (kinds/kind.ts, pointLock).
  */
 export function lockTo(d: Draw<Markup>, placed: Pt[], p: Pt, shift: boolean): Pt {
+  // A box clicked out: Shift squares it on its first corner.
+  if (d.gesture === "box") return shift && placed.length ? squareFrom(placed[0], p) : p;
   const rule = pointLock(d.gesture === "points" ? d.lock : undefined, placed.length);
   const from = placed[rule.from] ?? placed[placed.length - 1];
   if (rule.lock === "none") return p;
@@ -1060,16 +1270,55 @@ export function lockTo(d: Draw<Markup>, placed: Pt[], p: Pt, shift: boolean): Pt
   return shift ? snapAngle(from, p) : p;
 }
 
-// Stage 8
-/** A rotate grip: a stem from the middle of the markup's top edge (as turned), then a round grip. */
-function paintRotateGrip(ctx: CanvasRenderingContext2D, x: Markup, dev: (p: Pt) => Pt, at: Pt, r: number): void {
-  const from = "rect" in x ? dev(topMiddle(x.rect as Rect, turnOf(x))) : null;
-  if (from) {
+/**
+ * A picture's crop grips (Matt's review: they look different from the resize grips): an L at
+ * each corner along its two edges, and a bar along the middle of each edge, thick and dark with
+ * a light edge so they show on any picture, turned with it.
+ */
+function paintCropGrips(ctx: CanvasRenderingContext2D, x: Extract<Markup, { kind: "stamp" }>, dev: (p: Pt) => Pt, dpr: number): void {
+  const [x0, y0, x1, y1] = normRect(x.rect);
+  const c: Pt = [(x0 + x1) / 2, (y0 + y1) / 2];
+  const a = x.angle ?? 0;
+  const on = (p: Pt) => dev(turnPt(p, c, a));
+  // Device pixels along the box's own sides, from the corners' screen positions.
+  const tl = on([x0, y0]), tr = on([x1, y0]), bl = on([x0, y1]);
+  const unit = (p: Pt, q: Pt): Pt => {
+    const l = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+    return [(q[0] - p[0]) / l, (q[1] - p[1]) / l];
+  };
+  const ux = unit(tl, tr), uy = unit(tl, bl);
+  const L = 12 * dpr, B = 9 * dpr;
+  const at = (s: Pt, d: Pt, k: number): Pt => [s[0] + d[0] * k, s[1] + d[1] * k];
+  const paths: Pt[][] = [];
+  for (const [p, sx, sy] of [[[x0, y0], 1, 1], [[x1, y0], -1, 1], [[x1, y1], -1, -1], [[x0, y1], 1, -1]] as [Pt, number, number][]) {
+    const q = on(p);
+    paths.push([at(q, ux, sx * L), q, at(q, uy, sy * L)]);
+  }
+  for (const [p, d] of [[[c[0], y0], ux], [[x1, c[1]], uy], [[c[0], y1], ux], [[x0, c[1]], uy]] as [Pt, Pt][]) {
+    const q = on(p);
+    paths.push([at(q, d, -B), at(q, d, B)]);
+  }
+  ctx.lineCap = "square";
+  ctx.lineJoin = "miter";
+  for (const [colour, w] of [["#ffffff", 6 * dpr], ["#1f2933", 3.5 * dpr]] as [string, number][]) {
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = w;
     ctx.beginPath();
-    ctx.moveTo(from[0], from[1]);
-    ctx.lineTo(at[0], at[1]);
+    for (const ps of paths) ps.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
     ctx.stroke();
   }
+  ctx.lineCap = "butt";
+}
+
+// Stage 8
+/** A rotate grip: a stem from the middle of the markup's top edge (as turned), then a round grip. */
+function paintRotateGrip(ctx: CanvasRenderingContext2D, x: Markup, dev: (p: Pt) => Pt, at: Pt, r: number, stem?: Pt): void {
+  // Where the grip says its stem starts (a polygon, a cloud), or a turned box's own top.
+  const from = dev(stem ?? ("rect" in x ? topMiddle(x.rect as Rect, turnOf(x)) : topMiddle(shapeBounds(x), 0)));
+  ctx.beginPath();
+  ctx.moveTo(from[0], from[1]);
+  ctx.lineTo(at[0], at[1]);
+  ctx.stroke();
   ctx.fillStyle = "#ffffff";
   ctx.beginPath();
   ctx.arc(at[0], at[1], r + 0.5, 0, 2 * Math.PI);

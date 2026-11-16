@@ -13,11 +13,11 @@
 
 import type { MarkupBase, Pt, Rect } from "../base";
 import { LINE_STYLE, normRect } from "../base";
-import type { Op } from "../draw";
-import type { Handle } from "../shape";
-import { type StampContent, aspectOf, contentOps, imageResName, naturalSize, stampName } from "../stamps";
-import { CORNERS, angleTo, centreOf, insideTurned, resizeTurned, rotateGripAt, screenTopLeft, swapsSides, turnOps, turnedBounds, turnedCorners, uprightAngle } from "../turn";
-import { defineKind } from "./kind";
+import { type Op, box, path } from "../draw";
+import { type Handle, boxHandles } from "../shape";
+import { type FieldValues, type StampContent, aspectOf, cleanCrop, contentOps, filledStamp, imageResName, naturalSize, stampName } from "../stamps";
+import { CORNERS, ROTATE_GAP_PX, angleTo, centreOf, normDeg, turnPt, insideTurned, resizeTurned, rotateGripAt, screenTopLeft, swapsSides, turnOps, turnedBounds, turnedCorners, uprightAngle } from "../turn";
+import { type DrawContext, defineKind } from "./kind";
 
 const sameRgb = (a: readonly number[], b: readonly number[]) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
 
@@ -50,8 +50,7 @@ export const STAMP_WIDTH = 60 * MM;
 const MIN_DRAG = 10;
 /** Never resized smaller than this wide, points. */
 const MIN_WIDTH = 8;
-/** CSS px from the middle of the top edge to the rotate grip. */
-export const ROTATE_GAP_PX = 24;
+export { ROTATE_GAP_PX };
 
 /** What the stamp tools place next: nothing until something is chosen. */
 let armed: { content: StampContent; signature: boolean } | null = {
@@ -134,6 +133,80 @@ export function dragCorner(r: Rect, h: string, p: Pt, aspect: number, minWidth =
   return normRect([fx, fy, fx + sx * w, fy + sy * hgt]);
 }
 
+// ---------------------------------------------------------------- cropping (Matt's review)
+
+/** Whether it can be cropped: a picture (not a signature, not a text stamp). */
+export const canCrop = (m: StampMarkup): boolean => m.content.type === "image" && !m.signature;
+
+/** The whole picture's box in the stamp's own (unturned) frame: its box, grown by the crop. */
+export function wholeBox(m: StampMarkup): Rect {
+  const r = normRect(m.rect);
+  const k = (m.content.type === "image" && cleanCrop(m.content.crop)) || [0, 0, 1, 1];
+  const W = (r[2] - r[0]) / (k[2] - k[0]), H = (r[3] - r[1]) / (k[3] - k[1]);
+  const left = r[0] - k[0] * W, top = r[1] - k[1] * H;
+  return [left, top, left + W, top + H];
+}
+
+/** The crop grips: the box's eight, at its turned corners and edges. */
+export function cropHandles(m: StampMarkup): Handle[] {
+  const a = m.angle ?? 0, c = centreOf(m.rect);
+  return boxHandles(normRect(m.rect)).map((h) => ({ ...h, at: turnPt(h.at, c, a) }));
+}
+
+/**
+ * Crop grip `h` dragged to p: that edge (or both, at a corner) moves to the pointer in the
+ * stamp's own frame, no further out than the picture and leaving at least `min` points; the
+ * other edges stay where they are on the page.
+ */
+export function dragCrop(m: StampMarkup, h: string, p: Pt, min = MIN_WIDTH): StampMarkup {
+  if (m.content.type !== "image") return m;
+  const whole = wholeBox(m);
+  const a = m.angle ?? 0;
+  const rect = resizeTurned(m.rect, a, p, (own, q) => {
+    let [x0, y0, x1, y1] = own;
+    if (h.includes("w")) x0 = Math.max(whole[0], Math.min(x1 - min, q[0]));
+    if (h.includes("e")) x1 = Math.min(whole[2], Math.max(x0 + min, q[0]));
+    if (h.includes("n")) y0 = Math.max(whole[1], Math.min(y1 - min, q[1]));
+    if (h.includes("s")) y1 = Math.min(whole[3], Math.max(y0 + min, q[1]));
+    return [x0, y0, x1, y1];
+  });
+  // The new crop, from where the box now sits in the whole picture (in the own frame, about the old centre).
+  const c0 = centreOf(m.rect);
+  const own = normRect(rect);
+  const c1 = turnPt(centreOf(own), c0, -a);
+  const w = own[2] - own[0], hh = own[3] - own[1];
+  const ox0 = c1[0] - w / 2, oy0 = c1[1] - hh / 2;
+  const W = whole[2] - whole[0], H = whole[3] - whole[1];
+  const crop = cleanCrop([(ox0 - whole[0]) / W, (oy0 - whole[1]) / H, (ox0 + w - whole[0]) / W, (oy0 + hh - whole[1]) / H]);
+  const { crop: _, ...content } = m.content;
+  return { ...m, rect, content: crop ? { ...content, crop } : content };
+}
+
+/** The whole picture again (its box grows back round what showed). */
+export function uncropped(m: StampMarkup): StampMarkup {
+  if (m.content.type !== "image" || !m.content.crop) return m;
+  const whole = wholeBox(m);
+  const c = turnPt(centreOf(whole), centreOf(m.rect), m.angle ?? 0);
+  const w = whole[2] - whole[0], h = whole[3] - whole[1];
+  const { crop: _, ...content } = m.content;
+  return { ...m, rect: [c[0] - w / 2, c[1] - h / 2, c[0] + w / 2, c[1] + h / 2], content };
+}
+
+// ---------------------------------------------------------------- fields (Matt's review)
+
+/** Where a text stamp's fields get their values (the app's: the author, the file's name), by page from 1. */
+let fieldsFor: (page: number | null) => FieldValues = (page) => ({ author: "", now: new Date(), file: "", page });
+
+export function setStampFields(f: (page: number | null) => FieldValues): void {
+  fieldsFor = f;
+}
+
+/** The fields' values for a stamp placed on `page` (from 0) now. */
+export const fieldValues = (page: number | null): FieldValues => fieldsFor(page === null ? null : page + 1);
+
+/** A text stamp with its fields filled in for where it's being placed; anything else as it is. */
+const filled = (c: StampContent, ctx: DrawContext): StampContent => (c.type === "text" ? filledStamp(c, fieldValues(ctx.page ?? null)) : c);
+
 /** Operations made see-through by `o` (the stamp's opacity, stage 8). */
 export function faded(ops: Op[], o: number): Op[] {
   if (!(o < 1)) return ops;
@@ -155,8 +228,13 @@ export function withContent(m: StampMarkup, content: StampContent, signature = m
   return { ...m, style, content, signature, rect: [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2] };
 }
 
-/** What the context bar offers it: "text" (colour, date line, opacity), "signature" or "image" (opacity). */
-export const stampVariant = (c: StampContent, signature: boolean): "text" | "signature" | "image" => (signature ? "signature" : c.type === "text" ? "text" : "image");
+/**
+ * What the context bar offers it: "text" (picker, colour, date line, opacity), "signature"
+ * (picker, opacity), or for a picture placed on the page, "picture" (border and opacity, no
+ * picker: Matt's review). The Stamp tool with one of your image stamps armed is "image" (picker,
+ * opacity): App's, by tool, since a placed one can't tell where its picture came from.
+ */
+export const stampVariant = (c: StampContent, signature: boolean): "text" | "signature" | "picture" => (signature ? "signature" : c.type === "text" ? "text" : "picture");
 
 export const stamp = defineKind<StampMarkup>({
   kind: "stamp",
@@ -166,21 +244,27 @@ export const stamp = defineKind<StampMarkup>({
   controls: { fill: false, ends: false, text: false },
   // Stage 8: its own bar (rule 6): a picker, then only what its content takes. A text stamp has
   // a colour and a date line; every stamp has opacity.
-  ownBar: (variant) => ({ colour: variant === "text", dateLine: variant === "text" }),
+  // A picture has no picker (the Image tool asks for a file each time): a border and opacity.
+  // No picker in the bar (Matt's review): the grid opens from the tool's button, and "Replace…"
+  // from a placed one's right-click.
+  ownBar: (variant) => (variant === "picture" ? { colour: true, dateLine: false, picker: false, border: true } : { colour: variant === "text", dateLine: variant === "text", picker: false }),
   variantOf: (m) => stampVariant(m.content, m.signature),
   draw: {
     gesture: "place",
-    make: (at, ctx) => (armed ? placeAt(armed.content, armed.signature, at, ctx.viewRotation) : null),
+    make: (at, ctx) => (armed ? placeAt(filled(armed.content, ctx), armed.signature, at, ctx.viewRotation) : null),
     box: (r, ctx) => {
       if (!armed) return null;
-      const { content: c, signature } = armed;
+      const signature = armed.signature;
+      const c = filled(armed.content, ctx);
       const fit = fitDragged(c, r, ctx.viewRotation);
       return fit ? { ...fit, content: c, signature } : placeAt(c, signature, [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2], ctx.viewRotation);
     },
   },
   ops: (m) => {
     const r = normRect(m.rect);
-    return faded(turnOps(contentOps(m.content, r), centreOf(r), m.angle ?? 0), m.style.opacity);
+    // A picture's border (Matt's review): its weight, none at 0, centred on its edge.
+    const border = m.content.type === "image" && m.style.width > 0 ? [path(box(r[0], r[1], r[2], r[3], 0), { ...m.style, fill: null, dash: null }, null)] : [];
+    return faded(turnOps([...contentOps(m.content, r), ...border], centreOf(r), m.angle ?? 0), m.style.opacity);
   },
   spec(m, _f, spec) {
     const c = m.content;
@@ -208,6 +292,11 @@ export const stamp = defineKind<StampMarkup>({
     return [...CORNERS.map((id, i) => ({ id, at: corners[i] })), { id: "rotate", at: rotateGripAt(m.rect, a, ROTATE_GAP_PX * ptPerPx) }];
   },
   turn: (m) => m.angle ?? 0,
+  turnBy: (m, deg) => {
+    const a = normDeg((m.angle ?? 0) + deg);
+    const { angle: _, ...rest } = m;
+    return a ? { ...rest, angle: a } : rest;
+  },
   dragHandle: (m, h, p, constrain, minSize) => {
     const a = m.angle ?? 0;
     // Rule 2: Shift steps by 15 degrees.
@@ -221,5 +310,5 @@ export const stamp = defineKind<StampMarkup>({
   restyled: (before, after) =>
     after.content.type === "text" && !sameRgb(before.style.stroke, after.style.stroke) ? { ...after, content: { ...after.content, colour: after.style.stroke } } : after,
   // The private copy refers to an image by its hash: the picture is in the file once already.
-  saved: (m) => (m.content.type === "image" ? { ...m, content: { type: "image", hash: m.content.hash, w: m.content.w, h: m.content.h } } : m),
+  saved: (m) => (m.content.type === "image" ? { ...m, content: { type: "image", hash: m.content.hash, w: m.content.w, h: m.content.h, ...(m.content.crop ? { crop: m.content.crop } : {}) } } : m),
 });

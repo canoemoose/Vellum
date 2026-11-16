@@ -37,6 +37,8 @@ export interface Bar {
   dateLine: boolean;
   /** One stamp's picker ("Stamp: APPROVED"), by what it holds; none for several. */
   picker: string | null;
+  /** The colour and weight are a border, which may be none (weight from 0): a picture's. */
+  border?: boolean;
 }
 
 /** A tool's subject; `variant` (stage 8) is what a stamp tool has armed. */
@@ -54,9 +56,13 @@ export const subjectOf = (m: Markup): Subject => {
 function controlsOf(s: Subject): Bar | null {
   const d = kindOf(s.kind);
   if (d.fixed || d.noBar) return null;
-  // Stage 8: a stamp's own bar: its picker, colour only if it has one, and opacity.
+  // Stage 8: a stamp's own bar: its picker, colour only if it has one, and opacity. A picture
+  // has no picker (Matt's review): a border and opacity.
   const own = d.ownBar?.(s.variant);
-  if (own) return { colour: own.colour, weight: false, pattern: false, ends: "none", fill: false, text: false, sides: false, opacity: true, dateLine: own.dateLine, picker: s.variant ?? null };
+  if (own) {
+    const bar: Bar = { colour: own.colour, weight: !!own.border, pattern: false, ends: "none", fill: false, text: false, sides: false, opacity: true, dateLine: own.dateLine, picker: own.picker ? (s.variant ?? null) : null };
+    return own.border ? { ...bar, border: true } : bar;
+  }
   const c = d.controls;
   const lined = !d.lineless;
   return {
@@ -92,6 +98,7 @@ export function barFor(subjects: Subject[]): Bar | null {
           opacity: bar.opacity && b.opacity,
           dateLine: bar.dateLine && b.dateLine,
           picker: null,
+          ...(bar.border && b.border ? { border: true } : {}),
         }
       : b;
   }

@@ -6,7 +6,7 @@
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import StampPanel from "./StampPanel.svelte";
   import { type Rgb } from "../../markup/types";
-  import { type StampContent, type StampPrefs, BUILT_IN, STAMP_COLOURS, cleanLabel, defaultSub } from "../../markup/stamps";
+  import { type StampContent, type StampPrefs, BUILT_IN, OWN_TEXT_COLOUR, STAMP_COLOURS, cleanLabel, defaultSub, sanitiseOwnTexts } from "../../markup/stamps";
   import { type StampItem, STAMP_EXTENSIONS, addStamp, deleteStamp, listStamps, stampContent } from "../../stamps/api";
   import { pngUrl } from "../../signature/api";
   import { userMessage } from "../../shell/messages";
@@ -25,7 +25,7 @@
   // svelte-ignore state_referenced_locally
   let sub = $state(defaultSub(author, new Date()));
   // svelte-ignore state_referenced_locally
-  let custom = $state(prefs.custom);
+  let custom = $state("");
   let items = $state<StampItem[]>([]);
   let urls = new Map<string, string>();
   let confirming = $state<string | null>(null);
@@ -62,7 +62,7 @@
   function pickCustom() {
     const label = cleanLabel(custom);
     if (!label) return;
-    onPrefs({ ...prefs, custom: label });
+    onPrefs({ ...prefs, texts: sanitiseOwnTexts([...prefs.texts, { label, colour: OWN_TEXT_COLOUR }]) });
     pickText(label, [0.85, 0.1, 0.1]);
   }
 

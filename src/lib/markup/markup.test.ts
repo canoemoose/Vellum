@@ -235,7 +235,7 @@ describe("geometry", () => {
   it("offers handles and resizes boxes from them, flipping rather than turning inside out", () => {
     expect(handles(rect()).length).toBe(8);
     expect(handles(arrow()).map((h) => h.id)).toEqual(["from", "to"]);
-    expect(handles(cloud()).length).toBe(4 + 8); // its corners and its box (stage 6)
+    expect(handles(cloud()).length).toBe(4 + 8 + 1); // its corners, its box, and the rotate grip
     expect(handles(ink()).length).toBe(4);
     expect(handleAt(rect(), [201, 151], 3)).toBe("se");
     const bigger = dragHandle(rect(), "se", [260, 190], false) as Extract<Markup, { kind: "rect" }>;

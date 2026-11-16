@@ -54,7 +54,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: "Ctrl+Shift+1 / 2 / 3", action: "Single page / Continuous / Columns" },
       { keys: "Page Up / Page Down", action: "Previous / next page" },
       { keys: "Home / End", action: "First / last page" },
-      { keys: "] / [", action: "Rotate view clockwise / anticlockwise" },
+      { keys: "] / [", action: "Rotate view clockwise / anticlockwise; with a stamp, image, polygon or cloud selected, or a stamp about to be placed, turn that instead (Shift: 15 degrees)" },
       { keys: "Ctrl+B", action: "Show or hide the sidebar" },
       { keys: "Double-click the sidebar's edge", action: "Default sidebar width" },
       { keys: "F12 / Ctrl+Shift+D", action: "Performance overlay" },

@@ -183,6 +183,13 @@
     return { x, y, w: W, h: H, author: n.meta.author, pinned: !!n.pinned };
   });
 
+  /** Who wrote a note and when it was last changed, as its pinned box and hover show them ("Matt James, 15 Nov 2026, 14:32"). */
+  function byline(n: NoteMarkup): string {
+    const d = new Date(n.meta.modified);
+    const when = Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    return [n.meta.author, when].filter(Boolean).join(", ");
+  }
+
   /** The pinned notes' boxes on screen (stage 7): beside each icon, travelling with it. */
   const PIN_W = 200, PIN_H = 140;
   const pinnedBoxes = $derived.by(() => {
@@ -190,7 +197,7 @@
     void p.version;
     const doc = p.markupTool.doc;
     if (!doc) return [];
-    const out: { id: string; x: number; y: number; text: string; colour: string; live: boolean }[] = [];
+    const out: { id: string; x: number; y: number; text: string; by: string; colour: string; live: boolean }[] = [];
     for (const m of doc.markups) {
       if (m.kind !== "note" || m.id === editing || !showsPinned(m)) continue;
       const cs = iconCorners(m);
@@ -198,7 +205,7 @@
       const { x, y } = besideIcon(cs, PIN_W, PIN_H, null);
       if (x > p.areaW || y > p.areaH || x + PIN_W < 0 || y + PIN_H < 0) continue; // off screen
       const c = m.style.stroke.map((v) => Math.round(v * 255)).join(", ");
-      out.push({ id: m.id, x, y, text: m.text, colour: `rgb(${c})`, live: p.tool === "select" && doc.editable(m) });
+      out.push({ id: m.id, x, y, text: m.text, by: byline(m), colour: `rgb(${c})`, live: p.tool === "select" && doc.editable(m) });
     }
     return out;
   });
@@ -258,27 +265,31 @@
   <!-- A pinned note's text (stage 7). In Select a click opens the editor; otherwise the pointer passes through. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="note-pinned" class:live={b.live} style:left="{b.x}px" style:top="{b.y}px" style:border-left-color={b.colour} onclick={() => b.live && open(b.id)}>
-    {#if b.live}
-      <button
-        type="button"
-        class="icon-btn unpin"
-        aria-label="Unpin"
-        title="Unpin: show the text only on hover"
-        onclick={(e) => {
-          e.stopPropagation();
-          setPin(b.id, false);
-        }}
-      >
-        {@render pinIcon(true)}
-      </button>
-    {/if}
-    {#if b.text.trim()}{b.text}{:else}<span class="empty">Empty note</span>{/if}
+    <div class="by">
+      <span class="who" title={b.by}>{b.by}</span>
+      {#if b.live}
+        <button
+          type="button"
+          class="icon-btn unpin"
+          aria-label="Unpin"
+          title="Unpin: show the text only on hover"
+          onclick={(e) => {
+            e.stopPropagation();
+            setPin(b.id, false);
+          }}
+        >
+          {@render pinIcon(true)}
+        </button>
+      {/if}
+    </div>
+    <div class="body">{#if b.text.trim()}{b.text}{:else}<span class="empty">Empty note</span>{/if}</div>
   </div>
 {/each}
 
 {#if hover && hoverNote}
   <div class="note-tip" role="tooltip" style:left="{Math.min(hover.x + 14, p.areaW - 270)}px" style:top="{hover.y + 18}px">
-    {#if hoverNote.text.trim()}{hoverNote.text}{:else}<span class="empty">Empty note (double-click to write in it)</span>{/if}
+    <div class="by"><span class="who">{byline(hoverNote)}</span></div>
+    <div class="body">{#if hoverNote.text.trim()}{hoverNote.text}{:else}<span class="empty">Empty note (double-click to write in it)</span>{/if}</div>
   </div>
 {/if}
 
@@ -329,14 +340,14 @@
     position: absolute;
     z-index: 6;
     width: max-content;
+    min-width: 120px;
     max-width: 200px;
     max-height: 140px;
     overflow: hidden;
     box-sizing: border-box;
-    padding: 5px 8px;
+    padding: 4px 8px 5px;
     font-size: 12px;
     line-height: 1.4;
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
     color: var(--tx-pop);
     background: var(--ctl);
@@ -352,11 +363,25 @@
     overflow: auto;
     cursor: pointer;
   }
+  /* Who wrote it and when, above the text (pinned box and hover). */
+  .by {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 18px;
+    margin-bottom: 2px;
+  }
+  .by .who {
+    padding: 0;
+  }
+  .body {
+    white-space: pre-wrap;
+  }
   .unpin {
-    float: right;
+    flex: 0 0 auto;
     width: 20px;
     height: 18px;
-    margin: -3px -6px 0 4px;
+    margin-right: -6px;
     padding: 0;
     color: var(--tx3);
   }
@@ -384,10 +409,9 @@
     position: absolute;
     z-index: 7;
     max-width: 260px;
-    padding: 6px 8px;
+    padding: 5px 8px 6px;
     font-size: 12px;
     line-height: 1.4;
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
     color: var(--tx-pop);
     background: var(--ctl);

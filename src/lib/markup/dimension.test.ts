@@ -14,7 +14,7 @@ import { MM_PER_PT, setMeasureSource, uprightDir } from "./measure";
 import { DEFAULT_LOOK, EXT_BEYOND, EXT_GAP, barHalf, dimensionLine, faceOf, labelAlong, sanitiseLook, setDimensionLook, valueGap } from "./dimension";
 import { hasEnds, relook } from "./measurements";
 import { kindOf } from "./kinds";
-import { lengthFromPoints, lengthGeometry, lengthLabel, lengthValueAt, valueFromCaption } from "./kinds/measureLength";
+import { lengthFromPoints, lengthGeometry, lengthLabel, lengthRuns, lengthValueAt, lengthValues, valueFromCaption } from "./kinds/measureLength";
 import { pathValueAt } from "./kinds/measurePath";
 import { areaValueAt } from "./kinds/measureArea";
 import { angleVertices } from "./kinds/measureAngle";
@@ -25,6 +25,8 @@ import { fromFile } from "./fileAnnots";
 const meta = { author: "Tester", created: "2026-11-15T10:00:00Z", modified: "2026-11-15T10:00:00Z" };
 const fmt = { units: "auto" as const, decimals: 2 };
 const pt = (mm: number) => mm / MM_PER_PT;
+/** The real length, mm, of `points` on paper at the tests' 1:100. */
+const realOf = (points: number) => points * MM_PER_PT * 100;
 
 function mk<K extends MarkupKind>(kind: K, shape: Record<string, unknown>, extra: Record<string, unknown> = {}): MarkupOf<K> {
   return { id: `t-${kind}`, page: 0, kind, style: kindOf(kind).defaultStyle(), meta, scale: 100, userUnit: 1, fmt, labelSize: 8, ...shape, ...extra } as unknown as MarkupOf<K>;
@@ -87,11 +89,44 @@ describe("placed the CAD way: the offset line and its extension lines", () => {
     // Up the page is the line's normal for a rightward line.
     expect(lengthFromPoints([[0, 0], [100, 0], [40, -25]]).offset).toBeCloseTo(25);
     expect(lengthFromPoints([[0, 0], [100, 0], [40, 25]]).offset).toBeCloseTo(-25);
-    // Only its distance counts, not where along.
-    expect(lengthFromPoints([[0, 0], [100, 0], [-400, -25]]).offset).toBeCloseTo(25);
+    // Measuring straight (Shift), only its distance counts, not where along.
+    expect(lengthFromPoints([[0, 0], [100, 0], [-400, -25]], { textStyle: {} as never, free: true }).offset).toBeCloseTo(25);
     // On the points (within a grip's reach): in line.
     expect(lengthFromPoints([[0, 0], [100, 0], [100, 3]], { textStyle: {} as never, pick: 5 }).offset).toBe(0);
     expect(lengthFromPoints([[0, 0], [100, 0], [100, 6]], { textStyle: {} as never, pick: 5 }).offset).toBeCloseTo(-6);
+  });
+
+  it("measures across, up and down, or straight between, by the way it's pulled (Matt's review)", () => {
+    const from: Pt = [100, 100], to: Pt = [200, 160];
+    const ctx = (free: boolean) => ({ textStyle: {} as never, pick: 2, free });
+    // Pulled above the points: the horizontal distance, the line level above them.
+    const above = len(from, to, 0, lengthFromPoints([from, to, [150, 60]], ctx(false)));
+    expect(above.orient).toBe("level");
+    expect(lengthValues(above).realMm).toBeCloseTo(realOf(100), 6);
+    const g = lengthGeometry(above);
+    close(g.a, [100, 60]);
+    close(g.b, [200, 60]);
+    // Each point's extension line reaches the line from its own point.
+    expect(g.extensions.length).toBe(2);
+    // The value reads along the dimension line, not the slant between the points.
+    expect(lengthValueAt(above).dir).toEqual([1, 0]);
+    expect(texts(above)[0].dir).toEqual([1, 0]);
+    close(g.extensions[1][0], [200, 160 - EXT_GAP]);
+    // Pulled beside them: the vertical distance.
+    const beside = len(from, to, 0, lengthFromPoints([from, to, [260, 130]], ctx(false)));
+    expect(beside.orient).toBe("upright");
+    expect(lengthValues(beside).realMm).toBeCloseTo(realOf(60), 6);
+    expect(lengthValueAt(beside).dir).toEqual([0, -1]);
+    close(lengthGeometry(beside).a, [260, 100]);
+    close(lengthGeometry(beside).b, [260, 160]);
+    // Shift: straight between them, wherever it's pulled.
+    const straight = len(from, to, 0, lengthFromPoints([from, to, [150, 60]], ctx(true)));
+    expect(straight.orient).toBeUndefined();
+    expect(lengthValues(straight).realMm).toBeCloseTo(realOf(Math.hypot(100, 60)), 6);
+    // Its line's grip pulls the same way.
+    const k = kindOf("measureLength");
+    expect(k.dragHandle(above, "offset", [300, 130], false, 2).orient).toBe("upright");
+    expect(k.dragHandle(above, "offset", [300, 130], true, 2).orient).toBeUndefined();
   });
 
   it("is placed with three points, dragged in line, and shown as it would be made while placed", () => {
@@ -101,10 +136,10 @@ describe("placed the CAD way: the offset line and its extension lines", () => {
     expect(c.gesture === "points" && c.max).toBe(2);
   });
 
-  it("is picked on its dimension line, extension lines and value as well as between its points", () => {
+  it("is picked on its dimension line, extension lines and value, not between its points", () => {
     const m = len([100, 100], [300, 100], 40);
     const k = kindOf("measureLength");
-    expect(k.hits(m, [200, 100], 1)).toBe(true);
+    expect(k.hits(m, [200, 100], 1)).toBe(false);
     expect(k.hits(m, [200, 60], 1)).toBe(true);
     expect(k.hits(m, [100, 70], 1)).toBe(true);
     expect(k.hits(m, [200, 80], 1)).toBe(false);
@@ -128,13 +163,13 @@ describe("the value", () => {
     expect(c[1]).toBeLessThan(200 - valueGap(m.style.width));
   });
 
-  it("sits to the right of an upright line, reading from the bottom (from the right of the sheet)", () => {
+  it("sits to the left of an upright line, reading from the bottom (from the right of the sheet), as CAD does", () => {
     for (const [from, to] of [[[200, 100], [200, 300]], [[200, 300], [200, 100]]] as [Pt, Pt][]) {
       const m = len(from, to, 0);
       const t = texts(m)[0];
       expect(t.dir).toEqual([0, -1]);
       const c = centreOf(t);
-      expect(c[0]).toBeGreaterThan(200 + valueGap(m.style.width));
+      expect(c[0]).toBeLessThan(200 - valueGap(m.style.width));
       expect(c[1]).toBeCloseTo(200, 6);
     }
   });
@@ -147,7 +182,7 @@ describe("the value", () => {
       // Reads rightwards, or up the page when upright.
       expect(t.dir[0] > 1e-9 || (Math.abs(t.dir[0]) <= 1e-9 && t.dir[1] < 0)).toBe(true);
       const side = sub(centreOf(t), mul(add(from, to), 0.5));
-      if (Math.abs(t.dir[0]) <= 1e-9) expect(side[0]).toBeGreaterThan(0);
+      if (Math.abs(t.dir[0]) <= 1e-9) expect(side[0]).toBeLessThan(0);
       else expect(side[1]).toBeLessThan(0);
     }
   });
@@ -157,24 +192,46 @@ describe("the value", () => {
     close(lengthValueAt(b).centre, add(lengthValueAt(a).centre, [0, -50]));
   });
 
-  it("is moved along and off the line by its grip, in the line's frame, and put back by a double-click", () => {
+  it("slides along the line by its grip, takes the line with it off it, and goes back to the middle on a double-click (Matt's review)", () => {
     const k = kindOf("measureLength");
     for (const d of DIRS) {
       const m = len([300, 300], add([300, 300], mul(d, 200)), 25);
       const home = lengthValueAt(m).centre;
-      const target = add(home, [17, -9]);
-      const moved = k.dragHandle(m, "value", target, false, 2);
-      close(lengthValueAt(moved).centre, target);
-      expect(k.handles(moved).find((h) => h.id === "value")!.at[0]).toBeCloseTo(target[0], 6);
-      // The move turns with the line: stretched, the value keeps its place relative to it.
       const along = unit(sub(m.to, m.from));
-      expect(moved.value![0]).toBeCloseTo(dot([17, -9], along), 6);
+      const normal: Pt = [along[1], -along[0]];
+      const moved = k.dragHandle(m, "value", add(home, [17, -9]), false, 2);
+      // It goes where it's dragged: along the line by sliding, off it by moving the line.
+      close(lengthValueAt(moved).centre, add(home, [17, -9]));
+      expect(moved.value![1]).toBe(0);
+      expect(moved.offset!).toBeCloseTo(25 + dot([17, -9], normal), 6);
+      // Put back: the middle of the line, which stays where it was moved to.
       const back = k.resetHandle!(moved, "value")!;
       expect(back.value).toBeUndefined();
-      close(lengthValueAt(back).centre, home);
+      expect(back.offset).toBe(moved.offset);
+      close(lengthValueAt(back).centre, add(home, mul(normal, dot([17, -9], normal))));
       expect(k.resetHandle!(m, "value")).toBeNull();
       expect(k.resetHandle!(moved, "from")).toBeNull();
     }
+  });
+
+  it("past either end, the dimension line reaches out to it, and no further than a width and a half (Matt's review)", () => {
+    const k = kindOf("measureLength");
+    const m = len([100, 200], [300, 200], 30);
+    const { size } = lengthValueAt(m);
+    expect(lengthRuns(m).beyond).toEqual([]);
+    // Slid well past the right-hand end: the line runs on to just past it.
+    const y = lengthValueAt(m).centre[1];
+    const out = k.dragHandle(m, "value", [400, y], false, 2);
+    const runs = lengthRuns(out);
+    expect(runs.beyond.length).toBe(1);
+    const c = lengthValueAt(out).centre;
+    expect(runs.beyond[0][1][0]).toBeGreaterThan(c[0] + size[0] / 2);
+    expect(k.hits(out, [runs.beyond[0][1][0] - 1, 170], 1)).toBe(true);
+    // Miles away is held to a width and a half past the end.
+    const far = k.dragHandle(m, "value", [5000, y], false, 2);
+    expect(lengthValueAt(far).centre[0]).toBeCloseTo(200 + 100 + size[0] * 1.5, 6);
+    // And out past the left-hand end too.
+    expect(lengthRuns(k.dragHandle(m, "value", [-200, y], false, 2)).beyond[0][0]).toEqual(lengthGeometry(m).a);
   });
 
   it("is moved on a polyline length and an area too, and put back", () => {
@@ -243,9 +300,10 @@ describe("ends", () => {
     close(dir(0), dir(2));
     expect(ticks.width).toBeCloseTo(1.5);
     const arrows = at("arrow");
-    // The shaft stops short of two filled heads in the line's colour.
-    expect(arrows.filter((o) => o.fill && !o.stroke).length).toBe(2);
-    expect(arrows.filter((o) => o.fill).every((o) => o.fill === arrows[0].stroke)).toBe(true);
+    // The line and its two heads, one filled outline in the line's colour.
+    expect(arrows.length).toBe(1);
+    expect(arrows[0].stroke).toBeNull();
+    expect(arrows[0].fill).toEqual(kindOf("measureLength").defaultStyle().stroke);
   });
 
   it("save as /LE, an arrow's heads filled with the line's colour (/IC)", () => {
@@ -351,9 +409,12 @@ describe("saved with the standard keys", () => {
     // the small difference, square to the line only.
     expect(s.captionOffset![0]).toBeCloseTo(0, 3);
     expect(s.captionOffset![1]).toBeCloseTo(valueGap(m.style.width) - 2 * m.style.width, 2);
-    // An upright one's value is on the right, which other apps' top caption isn't: /CO says so.
+    // An upright one's value is on its left: where other apps' top caption is for one drawn up
+    // the page, so /CO only makes up the same small difference; drawn down, /CO moves it across.
     const up = toSpec(len([100, 300], [100, 100], 0), A3);
-    expect(Math.abs(up.captionOffset![1])).toBeGreaterThan(5);
+    expect(up.captionOffset![1]).toBeCloseTo(valueGap(m.style.width) - 2 * m.style.width, 2);
+    const down = toSpec(len([100, 100], [100, 300], 0), A3);
+    expect(Math.abs(down.captionOffset![1])).toBeGreaterThan(5);
     // A short pull, too near for extension lines, has none to draw: /LLE and /LLO 0.
     expect(toSpec(len([100, 100], [300, 100], 1.5), A3).leader).toEqual([1.5, 0, 0]);
   });
@@ -419,7 +480,7 @@ describe("tooltips say each point's lock", () => {
     expect(lockTip(["ortho", "none"], 3)).toBe("the second click stays level or upright, Shift frees it");
     expect(lockTip(["none", "ortho"], undefined)).toBe("the third click and later ones stay level or upright, Shift frees them");
     expect(gestureTip(kindOf("measureLength") as unknown as KindDef)).toBe(
-      "click each end, then where the dimension line goes (on the points to keep it in line), or drag; the second click stays level or upright, Shift frees it",
+      "click each end, then pull the dimension line out and click: above or below measures across, beside measures up and down, Shift measures straight between the points (click on the points to keep it in line), or drag; Shift snaps the second click to 15°",
     );
     expect(gestureTip(kindOf("measureCalibrate") as unknown as KindDef)).toBe("click each end, or drag; it stays level or upright, Shift frees it");
   });

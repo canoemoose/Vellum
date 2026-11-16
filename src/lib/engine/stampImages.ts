@@ -60,7 +60,9 @@ export function paintImage(ctx: CanvasRenderingContext2D, op: ImageOp): void {
     ready.set(op.hash, bmp);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(bmp, x0, y0, x1 - x0, y1 - y0);
+    const k = op.crop;
+    if (k) ctx.drawImage(bmp, k[0] * bmp.width, k[1] * bmp.height, (k[2] - k[0]) * bmp.width, (k[3] - k[1]) * bmp.height, x0, y0, x1 - x0, y1 - y0);
+    else ctx.drawImage(bmp, x0, y0, x1 - x0, y1 - y0);
     return;
   }
   preloadImage(op.hash, op.png);

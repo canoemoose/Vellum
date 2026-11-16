@@ -6,7 +6,7 @@ import { installFakes, openViewer } from "./testkit";
 import { type ClipRead, MarkupTool, type Mods } from "./markupTool";
 import { MarkupDoc } from "./markupDoc";
 import { type Markup, defaultStyle, DEFAULT_TEXT } from "../markup/types";
-import { boundsOf, centredOn, fromClip, toClip } from "../markup/clip";
+import { boundsOf, centredOn, fromClip, keptOn, toClip } from "../markup/clip";
 import type { Viewer } from "./viewer";
 
 beforeEach(installFakes);
@@ -121,6 +121,34 @@ describe("cut, select all and paste", () => {
     t.leave();
     expect(await t.paste("pointer")).toBe(true);
     expect(mid(doc.markups[3])).toEqual([expect.closeTo(view.x, 3), expect.closeTo(view.y, 3)]);
+  });
+
+  it("with the pointer beside the page, pastes on the nearest edge, all of it on the page (Matt's review)", async () => {
+    const { v, doc, t } = await setup();
+    t.addMarkups([rect("a", [100, 100, 140, 140])]);
+    t.copy();
+    // Left of page 1, level with y 200: it lands against the left edge, the right way up.
+    const [sx, sy] = scr(v, -60, 200);
+    t.move(sx, sy, none);
+    expect(await t.paste("pointer")).toBe(true);
+    const b = boundsOf([doc.markups[1]]);
+    expect(doc.markups[1].page).toBe(0);
+    expect(b[0]).toBeCloseTo(0, 3);
+    expect((b[1] + b[3]) / 2).toBeCloseTo(200, 3);
+  });
+
+  it("keeps pasted markups on the page, moved in as little as it takes", () => {
+    const page = { w: 600, h: 400 };
+    const moved = keptOn(centredOn([rect("a", [0, 0, 40, 40]), rect("b", [50, 0, 90, 40])], [590, 395]), page);
+    const b = boundsOf(moved);
+    expect([b[2], b[3]]).toEqual([600, 400]);
+    expect(b[2] - b[0]).toBeCloseTo(90, 6);
+    // Already on it: untouched.
+    const on = [rect("c", [10, 10, 50, 50])];
+    expect(keptOn(on, page)).toBe(on);
+    // Bigger than the page: its top left on the page's.
+    const big = boundsOf(keptOn([rect("d", [-100, 50, 800, 90])], page));
+    expect([big[0], big[1]]).toEqual([0, 50]);
   });
 
   it("pastes markups copied in another window, but not its signatures", async () => {

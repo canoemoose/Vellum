@@ -26,6 +26,19 @@ export interface ImageContent {
   /** Pixels. */
   w: number;
   h: number;
+  /**
+   * The part of the picture that shows, as fractions of it ([left, top, right, bottom], 0 to 1):
+   * cropped (Matt's review). None shows it all. The file holds the whole picture either way.
+   */
+  crop?: [number, number, number, number];
+}
+
+/** A crop that shows something, inside the picture, or null (all of it). */
+export function cleanCrop(c: unknown): [number, number, number, number] | null {
+  if (!Array.isArray(c) || c.length !== 4 || !c.every((v) => typeof v === "number" && Number.isFinite(v))) return null;
+  const [l, t, r, b] = c.map((v) => Math.min(1, Math.max(0, v)));
+  if (r - l < 1e-3 || b - t < 1e-3) return null;
+  return l === 0 && t === 0 && r === 1 && b === 1 ? null : [l, t, r, b];
 }
 
 /** A text stamp: APPROVED, FOR COMMENT, SUPERSEDED or your own wording. */
@@ -36,6 +49,11 @@ export interface TextContent {
   /** The second line (name and date), or none. */
   sub: string | null;
   colour: Rgb;
+  /**
+   * A placed stamp whose wording had fields: that wording, kept so its fields can be filled in
+   * again later (only ever when asked: a stamp's date is a record). Only in Vellum's own copy.
+   */
+  fields?: { label: string; sub: string | null };
 }
 
 export type StampContent = StrokesContent | ImageContent | TextContent;
@@ -69,13 +87,82 @@ export function stampDate(d: Date): string {
   return `${d.getDate()} ${m} ${d.getFullYear()}`;
 }
 
+// ---------------------------------------------------------------- fields (Matt's review)
+
+/**
+ * Fields a text stamp's wording can hold, either line: filled in when it's placed, so {page} is
+ * the page it lands on. Written {author}, {date}, {time}, {file}, {page}, any case.
+ */
+export const STAMP_FIELDS = ["author", "date", "time", "file", "page"] as const;
+export type StampField = (typeof STAMP_FIELDS)[number];
+
+/** What each field says for one placing. */
+export interface FieldValues {
+  author: string;
+  now: Date;
+  /** The file's name, as its tab shows it. */
+  file: string;
+  /** From 1; null where it isn't known yet. */
+  page: number | null;
+}
+
+/** The second line a text stamp starts with. */
+export const DEFAULT_LINE = "{author}, {date}";
+
+/** "14:32". */
+export const stampTime = (d: Date): string => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+/** Whether the wording holds a field. */
+export const hasFields = (s: string): boolean => /\{(author|date|time|file|page)\}/i.test(s);
+
+/**
+ * The wording with its fields filled in. A field that comes out empty (no author set) takes its
+ * separator with it, so "{author}, {date}" with no author reads "15 Nov 2026"; anything in braces
+ * that isn't a field is left as typed, and \{ and \} are braces as they are.
+ */
+export function fillFields(s: string, v: FieldValues): string {
+  const value: Record<StampField, string> = {
+    author: v.author.trim(),
+    date: stampDate(v.now),
+    time: stampTime(v.now),
+    file: v.file.trim(),
+    page: v.page === null ? "" : String(v.page),
+  };
+  // \{ and \} are braces as typed (held aside so the tidying below doesn't touch them).
+  const OPEN = "\u0001", CLOSE = "\u0002";
+  return s
+    .replace(/\\([{}])/g, (_, b: string) => (b === "{" ? OPEN : CLOSE))
+    .replace(/\{(\w+)\}/g, (all, k: string) => {
+      const key = k.toLowerCase() as StampField;
+      return STAMP_FIELDS.includes(key) ? value[key] : all;
+    })
+    .replace(/\s*([,;|·/-])(\s*[,;|·/-])+/g, "$1")
+    .replace(/^[\s,;|·/-]+|[\s,;|·/-]+$/g, "")
+    .replace(/\s+/g, " ")
+    .replaceAll(OPEN, "{")
+    .replaceAll(CLOSE, "}");
+}
+
+/** A text stamp as placed: its fields filled in, the main line in capitals, an empty second line dropped. */
+export function filledStamp(c: TextContent, v: FieldValues): TextContent {
+  // Filled again: from the wording it was placed with.
+  const from = c.fields ?? { label: c.label, sub: c.sub };
+  const label = fillFields(from.label, v).toUpperCase().slice(0, 60) || from.label;
+  const sub = from.sub === null ? null : fillFields(from.sub, v).slice(0, 80) || null;
+  const { fields: _, ...rest } = c;
+  return { ...rest, label, sub, ...(hasFields(from.label) || (from.sub !== null && hasFields(from.sub)) ? { fields: from } : {}) };
+}
+
+/** A second-line template as remembered: one line, trimmed, capped. */
+export const cleanLine = (s: string): string => s.replace(/\s+/g, " ").trim().slice(0, 80);
+
 /** The second line a text stamp starts with: the author and today. */
 export function defaultSub(author: string, d: Date): string {
   const a = author.trim();
   return a ? `${a}, ${stampDate(d)}` : stampDate(d);
 }
 
-/** Tidy a custom wording: one line, trimmed, capped. */
+/** Tidy a custom wording: one line, trimmed, capped, in capitals (its fields' names too, which still work). */
 export function cleanLabel(s: string): string {
   return s.replace(/\s+/g, " ").trim().slice(0, 60).toUpperCase();
 }
@@ -190,7 +277,10 @@ export function strokesOps(c: StrokesContent): Op[] {
 /** A content's natural size (any units; only the aspect matters to the box). */
 export function naturalSize(c: StampContent): [number, number] {
   if (c.type === "text") return textSize(c);
-  if (c.type === "image") return [Math.max(1, c.w), Math.max(1, c.h)];
+  if (c.type === "image") {
+    const k = cleanCrop(c.crop);
+    return k ? [Math.max(1e-3, c.w * (k[2] - k[0])), Math.max(1e-3, c.h * (k[3] - k[1]))] : [Math.max(1, c.w), Math.max(1, c.h)];
+  }
   const b = strokesBox(c);
   return [Math.max(1e-3, b[2] - b[0]), Math.max(1e-3, b[3] - b[1])];
 }
@@ -224,7 +314,10 @@ export function transformOps(ops: Op[], k: number, dx: number, dy: number): Op[]
 export function contentOps(c: StampContent, r: Rect): Op[] {
   const [w] = naturalSize(c);
   const k = (r[2] - r[0]) / w;
-  if (c.type === "image") return [{ t: "image", rect: r, png: c.png, hash: c.hash }];
+  if (c.type === "image") {
+    const crop = cleanCrop(c.crop);
+    return [{ t: "image", rect: r, png: c.png, hash: c.hash, ...(crop ? { crop } : {}) }];
+  }
   return transformOps(c.type === "text" ? textOps(c) : strokesOps(c), k, r[0], r[1]);
 }
 
@@ -286,18 +379,93 @@ export function strokesContent(stored: { strokes: { x: number; y: number }[][]; 
 
 /** What the Stamp tool's picker remembers (settings.ts). Never a signature. */
 export interface StampPrefs {
-  /** Text stamps get the second line (name and date). */
+  /** Whether a text stamp that hasn't been set either way gets the second line. */
   sub: boolean;
+  /**
+   * The default second line, with fields (Matt's review); DEFAULT_LINE to start with. A stamp
+   * whose own wording is empty takes this.
+   */
+  line: string;
+  /** The built-in stamps' own second lines, by label (Matt's review: per stamp). */
+  builtIn: Record<string, StampLine>;
   /** Text stamps' colour; null for each stamp's own. */
   colour: Rgb | null;
-  /** The last custom wording. */
-  custom: string;
+  /**
+   * Your own text stamps, in the order added (Matt's review: a list, not one remembered
+   * wording). Each its wording (fields allowed) and colour.
+   */
+  texts: OwnText[];
   /**
    * Stage 8: what the Stamp and Signature tools last placed, so picking the tool goes straight
    * to placing. By reference only: a text stamp's wording and colour, an image stamp's or a
    * signature's id in its library. A signature's picture or strokes never go here.
    */
   last: { stamp?: StampRef; signature?: string };
+}
+
+/**
+ * A text stamp's own second line (Matt's review: per stamp): on or off (absent: the default,
+ * StampPrefs.sub), and its wording (absent or empty: the default, StampPrefs.line).
+ */
+export interface StampLine {
+  sub?: boolean;
+  line?: string;
+}
+
+/** One of your own text stamps. */
+export interface OwnText extends StampLine {
+  label: string;
+  colour: Rgb;
+}
+
+/** A stamp's second line as kept: on or off only if set, its wording only if not empty. */
+function cleanStampLine(o: Record<string, unknown>): StampLine {
+  const line = typeof o.line === "string" ? cleanLine(o.line) : "";
+  return { ...(typeof o.sub === "boolean" ? { sub: o.sub } : {}), ...(line ? { line } : {}) };
+}
+
+/** A text stamp's second line: on or off, its own wording ("" for the default), and what it says. */
+export function lineOf(p: StampPrefs, label: string): { on: boolean; own: string; wording: string } {
+  const s: StampLine = p.texts.find((t) => t.label === label) ?? p.builtIn[label] ?? {};
+  const own = s.line ?? "";
+  return { on: s.sub ?? p.sub, own, wording: own || p.line };
+}
+
+/** The second line a text stamp is placed with (its fields not yet filled in), or null for none. */
+export function subFor(p: StampPrefs, label: string): string | null {
+  const l = lineOf(p, label);
+  return l.on ? l.wording : null;
+}
+
+/** The settings with one stamp's second line changed (on or off, or its wording: "" for the default). */
+export function withLine(p: StampPrefs, label: string, patch: StampLine): StampPrefs {
+  const apply = (s: StampLine): StampLine => cleanStampLine({ ...s, ...patch });
+  if (p.texts.some((t) => t.label === label)) return { ...p, texts: p.texts.map((t) => (t.label === label ? { label: t.label, colour: t.colour, ...apply(t) } : t)) };
+  if (!BUILT_IN.some((b) => b.label === label)) return p;
+  return { ...p, builtIn: { ...p.builtIn, [label]: apply(p.builtIn[label] ?? {}) } };
+}
+
+/** The most of your own text stamps kept. */
+export const MAX_OWN_TEXTS = 40;
+
+/** The colour a new one of your own starts in. */
+export const OWN_TEXT_COLOUR: Rgb = [0.85, 0.1, 0.1];
+
+/**
+ * Your own text stamps as kept: wordings tidied, none empty, none twice, none a built-in one,
+ * at most MAX_OWN_TEXTS. An old single remembered wording (`custom`) becomes the first.
+ */
+export function sanitiseOwnTexts(raw: unknown, custom?: unknown): OwnText[] {
+  const list = Array.isArray(raw) ? raw : typeof custom === "string" ? [{ label: custom, colour: OWN_TEXT_COLOUR }] : [];
+  const out: OwnText[] = [];
+  for (const r of list) {
+    const o = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
+    const label = typeof o.label === "string" ? cleanLabel(o.label) : "";
+    if (!label || BUILT_IN.some((b) => b.label === label) || out.some((t) => t.label === label)) continue;
+    out.push({ label, colour: isRgb(o.colour) ? o.colour : OWN_TEXT_COLOUR, ...cleanStampLine(o) });
+    if (out.length >= MAX_OWN_TEXTS) break;
+  }
+  return out;
 }
 
 /** A stamp by reference (stage 8): what to arm again, never the picture itself. */
@@ -320,7 +488,14 @@ export function sanitiseStampPrefs(raw: unknown): StampPrefs {
   const l = (o.last && typeof o.last === "object" ? o.last : {}) as Record<string, unknown>;
   const stamp = sanitiseRef(l.stamp);
   const last = { ...(stamp ? { stamp } : {}), ...(isId(l.signature) ? { signature: l.signature } : {}) };
-  return { sub: o.sub !== false, colour, custom: typeof o.custom === "string" ? cleanLabel(o.custom) : "", last };
+  const line = typeof o.line === "string" && cleanLine(o.line) ? cleanLine(o.line) : DEFAULT_LINE;
+  const b = (o.builtIn && typeof o.builtIn === "object" ? o.builtIn : {}) as Record<string, unknown>;
+  const builtIn: Record<string, StampLine> = {};
+  for (const { label } of BUILT_IN) {
+    const s = b[label] && typeof b[label] === "object" ? cleanStampLine(b[label] as Record<string, unknown>) : {};
+    if (Object.keys(s).length) builtIn[label] = s;
+  }
+  return { sub: o.sub !== false, line, builtIn, colour, texts: sanitiseOwnTexts(o.texts, o.custom), last };
 }
 
 /** Stage 8: the reference a picked stamp is remembered by (an image stamp needs its library id). */

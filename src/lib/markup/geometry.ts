@@ -58,6 +58,11 @@ export function handleAt(m: Markup, p: Pt, tol: number, ptPerPx?: number): Handl
   return best;
 }
 
+/** The grip a press on this part of the markup works (kinds/kind.ts, partAt), or null to move it. */
+export function partAt(m: Markup, p: Pt, tol: number): HandleId | null {
+  return defOf(m).partAt?.(m, p, tol + m.style.width / 2) ?? null;
+}
+
 export function moveBy(m: Markup, dx: number, dy: number): Markup {
   return defOf(m).moveBy(m, dx, dy);
 }

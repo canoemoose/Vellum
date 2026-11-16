@@ -15,7 +15,7 @@ import { type MeasureFormat, DEFAULT_FORMAT, DEFAULT_LABEL_SIZE, sanitiseFormat 
 import { type RememberedPages, sanitiseRememberedPages } from "./shell/pageScale";
 import { type DimensionLook, DEFAULT_LOOK, sanitiseLook } from "./markup/dimension"; // Dimensions (stage 5)
 // Stamps
-import { type StampPrefs, sanitiseStampPrefs } from "./markup/stamps";
+import { type StampPrefs, DEFAULT_LINE, sanitiseStampPrefs } from "./markup/stamps";
 
 const KEY = "vellum.settings.v1";
 
@@ -87,7 +87,7 @@ export const DEFAULTS: Settings = {
   measure: { format: { ...DEFAULT_FORMAT }, labelSize: DEFAULT_LABEL_SIZE, pageScales: {}, look: { ...DEFAULT_LOOK } },
 
   // Stamps
-  stamps: { sub: true, colour: null, custom: "", last: {} },
+  stamps: { sub: true, line: DEFAULT_LINE, builtIn: {}, colour: null, texts: [], last: {} },
 
   // Text markups
   textMarks: {},

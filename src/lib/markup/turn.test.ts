@@ -13,13 +13,14 @@ import { dragHandle, handleAt, handles, hits, insideMarquee, moveBy, shapeBounds
 import { handleCursor, ROTATE_CURSOR } from "./shape";
 import { type ImageContent, type StrokesContent, type TextContent, aspectOf, naturalSize } from "./stamps";
 import {
-  ROTATE_GAP_PX, SIGNATURE_WIDTH, type StampMarkup, armStamp, faded, fitDragged, placeAt, stamp as stampKind, withContent,
+  ROTATE_GAP_PX, SIGNATURE_WIDTH, type StampMarkup, armStamp, canCrop, cropHandles, dragCrop, faded, fitDragged, placeAt, stamp as stampKind, uncropped, wholeBox, withContent,
 } from "./kinds/stamp";
 import {
-  angleTo, centreOf, insideTurned, normDeg, resizeTurned, rotateGripAt, screenTopLeft, swapsSides, turnOps, turnPt, turnedBounds, turnedCorners, uprightAngle,
+  angleTo, centreOf, insideTurned, normDeg, snapTurn, resizeTurned, rotateGripAt, screenTopLeft, swapsSides, turnOps, turnPt, turnedBounds, turnedCorners, uprightAngle,
 } from "./turn";
 import { rotatePoint, type Rotation } from "../view/rotation";
 import { kindOf } from "./kinds";
+import { regularVertices as regularVerticesOf } from "./regular";
 
 const A4: Frame = { quarterTurns: 0, bbox: [0, 0, 595, 842] };
 const meta = { author: "Tester", created: "2026-11-15T10:00:00Z", modified: "2026-11-15T10:00:00Z" };
@@ -333,5 +334,177 @@ describe("changing what a placed stamp holds", () => {
     // A signature has no colour to change.
     const s = mk(zigzag, [0, 0, 100, 30], 0, true);
     expect(def.restyled!(s, { ...s, style: { ...s.style, stroke: [1, 0, 0] } }).content).toEqual(zigzag);
+  });
+});
+
+describe("the rotate grip's snaps, and turning polygons and clouds (Matt's review)", () => {
+  it("draws the grip to a multiple of 45 degrees within 4, and Shift steps by 15", () => {
+    expect(snapTurn(3.5, false)).toBe(0);
+    expect(snapTurn(-3, false)).toBe(0);
+    expect(snapTurn(42, false)).toBe(45);
+    expect(snapTurn(93, false)).toBe(90);
+    expect(snapTurn(30, false)).toBe(30);
+    expect(snapTurn(52, true)).toBe(45);
+    expect(snapTurn(53, true)).toBe(60);
+  });
+
+  const poly = (extra: Record<string, unknown> = {}): Markup =>
+    ({ id: "p1", page: 0, kind: "polygon", vertices: [[100, 100], [200, 100], [200, 150], [100, 150]], style: kindOf("polygon").defaultStyle(), meta, ...extra }) as Markup;
+  const cloudM = (): Markup =>
+    ({ id: "c1", page: 0, kind: "cloud", vertices: [[100, 100], [200, 100], [200, 150], [100, 150]], intensity: 1, style: kindOf("cloud").defaultStyle(), meta }) as Markup;
+
+  for (const make of [poly, cloudM]) {
+    const name = make().kind;
+    it(`${name}: turns a quarter about the middle of its box, and back`, () => {
+      const m = make();
+      const def = kindOf(m.kind);
+      const q = def.turnBy!(m as never, 90) as Markup & { vertices: Pt[] };
+      const b = shapeBounds(q);
+      // 100 by 50 becomes 50 by 100, same middle.
+      close([b[2] - b[0], b[3] - b[1]], [50, 100]);
+      close(centreOf(b), [150, 125]);
+      const back = def.turnBy!(q as never, -90) as Markup & { vertices: Pt[] };
+      back.vertices.forEach((p, i) => close(p, (m as Markup & { vertices: Pt[] }).vertices[i]));
+    });
+
+    it(`${name}: has a rotate grip above its box, and turns by it`, () => {
+      const m = make();
+      const hs = handles(m, 1);
+      const grip = hs.find((h) => h.id === "rotate")!;
+      close(grip.at, [150, 100 - ROTATE_GAP_PX]);
+      // Dragged round to the right of the middle: a quarter turn clockwise (snapped from 88).
+      const p = turnPt([150, 0], [150, 125], 88);
+      const q = dragHandle(m, "rotate", p, false) as Markup & { vertices: Pt[] };
+      const b = shapeBounds(q);
+      close([b[2] - b[0], b[3] - b[1]], [50, 100]);
+    });
+  }
+
+  for (const make of [poly, cloudM]) {
+    it(`${make().kind}: the rotate grip goes round with it, and dragging it back up undoes the turn`, () => {
+      const m = make();
+      const q = kindOf(m.kind).turnBy!(m as never, 90) as Markup & { angle?: number };
+      expect(q.angle).toBe(90);
+      // Its own top now faces right: the grip sits right of the middle, half its height (25) plus the gap away.
+      const g = handles(q, 1).find((h) => h.id === "rotate")!;
+      close(g.at, [150 + 25 + ROTATE_GAP_PX, 125]);
+      close(g.stem!, [175, 125]);
+      // Dragged straight up again: upright, as it was.
+      const back = dragHandle(q, "rotate", [150, 0], false) as Markup & { vertices: Pt[]; angle?: number };
+      expect(back.angle).toBeUndefined();
+      back.vertices.forEach((p, i) => close(p, (m as Markup & { vertices: Pt[] }).vertices[i]));
+    });
+  }
+
+  for (const make of [poly, cloudM]) {
+    it(`${make().kind}: its box grips turn with it, and resize it along its own sides`, () => {
+      const m = make();
+      const def = kindOf(m.kind);
+      // Turned 30 degrees: the east grip sits on its own right side, 50 out from the middle.
+      const q = def.turnBy!(m as never, 30) as Markup & { vertices: Pt[]; angle?: number };
+      const e = handles(q, 1).find((h) => h.id === "e")!;
+      close(e.at, turnPt([200, 125], [150, 125], 30));
+      expect(turnOf(q)).toBe(30);
+      // Dragged 20 further out along its own width: 120 by 50 in its own frame, still turned 30.
+      const r = dragHandle(q, "e", turnPt([220, 125], [150, 125], 30), false) as Markup & { vertices: Pt[]; angle?: number };
+      expect(r.angle).toBe(30);
+      const own = r.vertices.map((p) => turnPt(p, [0, 0], -30));
+      const xs = own.map((p) => p[0]), ys = own.map((p) => p[1]);
+      expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(120, 6);
+      expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(50, 6);
+    });
+  }
+
+  it("a regular polygon stays regular when turned, so Sides still works", () => {
+    const def = kindOf("polygon");
+    const reg = { centre: [150, 150] as Pt, radius: 50, angle: 0, sides: 6 };
+    const m = poly({ vertices: regularVerticesOf(reg), regular: reg });
+    const q = def.turnBy!(m as never, 30) as Markup;
+    expect(def.sides!(q as never)).toBe(6);
+    expect(def.sides!(def.withSides!(q as never, 5) as never)).toBe(5);
+  });
+});
+
+describe("a picture's border (Matt's review)", () => {
+  it("draws a border round a picture only with a weight, turned with it, and never round a signature", () => {
+    const strokes = (m: StampMarkup) => (opsFor(m).filter((o) => o.t === "path") as PathOp[]).filter((o) => o.stroke);
+    const pic = mk(picture, [100, 100, 300, 200]);
+    expect(strokes(pic)).toEqual([]);
+    const framed = { ...pic, style: { ...pic.style, width: 2, stroke: [1, 0, 0] as [number, number, number] } };
+    const [b] = strokes(framed);
+    expect(b.width).toBe(2);
+    expect(b.stroke).toEqual([1, 0, 0]);
+    // Turned a quarter, the border's corners go round with the picture.
+    const turned = strokes({ ...framed, angle: 90 })[0];
+    const first = turned.segs[0] as ["M", number, number];
+    close([first[1], first[2]], turnPt([100, 100], [200, 150], 90));
+    const sig = { ...mk(zigzag, [0, 0, 100, 30], 0, true), style: { ...framed.style } };
+    expect(strokes(sig).filter((o) => o.width === 2)).toEqual([]);
+  });
+});
+
+describe("cropping a picture (Matt's review)", () => {
+  // 200 by 100 pixels, shown 200 by 100 points.
+  const pic = () => mk(picture, [100, 100, 300, 200]);
+
+  it("trims an edge to the pointer, keeps the others where they are, and remembers which part shows", () => {
+    const m = dragCrop(pic(), "e", [250, 150]);
+    expect(m.rect).toEqual([100, 100, 250, 200].map((v) => expect.closeTo(v, 6)));
+    expect((m.content as ImageContent).crop).toEqual([0, 0, 0.75, 1].map((v) => expect.closeTo(v, 6)));
+    // Its shape follows: three quarters as wide, so a resize keeps that.
+    expect(aspectOf(m.content)).toBeCloseTo(1.5, 6);
+    // A corner trims two edges.
+    const c = dragCrop(m, "nw", [120, 125]);
+    expect((c.content as ImageContent).crop).toEqual([0.1, 0.25, 0.75, 1].map((v) => expect.closeTo(v, 6)));
+    expect(c.rect).toEqual([120, 125, 250, 200].map((v) => expect.closeTo(v, 6)));
+  });
+
+  it("goes no further out than the picture, and no smaller than its minimum", () => {
+    const m = dragCrop(pic(), "e", [250, 150]);
+    // Dragged back out past the picture's edge: all of it again, no more.
+    const back = dragCrop(m, "e", [400, 150]);
+    expect(back.rect[2]).toBeCloseTo(300, 6);
+    expect((back.content as ImageContent).crop).toBeUndefined();
+    const tiny = dragCrop(pic(), "w", [299, 150], 8);
+    expect(tiny.rect[2] - tiny.rect[0]).toBeCloseTo(8, 6);
+  });
+
+  it("crops in its own frame when turned, the far edges staying put on the page", () => {
+    const m = mk(picture, [100, 100, 300, 200], 90);
+    const before = turnedCorners(m.rect, 90);
+    // Turned a quarter, its own right-hand edge faces down the page: drag it up by 50.
+    const e = cropHandles(m).find((h) => h.id === "e")!;
+    const c = dragCrop(m, "e", [e.at[0], e.at[1] - 50]);
+    expect((c.content as ImageContent).crop![2]).toBeCloseTo(0.75, 6);
+    const after = turnedCorners(c.rect, 90);
+    // Its own left edge (top left and bottom left) hasn't moved.
+    close(after[0], before[0]);
+    close(after[3], before[3]);
+  });
+
+  it("draws only what shows, on screen and in the file (the whole picture clipped to its box), and saves the crop", () => {
+    const m = dragCrop(pic(), "w", [150, 150]);
+    const op = opsFor(m).find((o) => o.t === "image") as ImageOp;
+    expect(op.rect).toEqual(m.rect);
+    expect(op.crop).toEqual([0.25, 0, 1, 1].map((v) => expect.closeTo(v, 6)));
+    const ops = toSpec(m, A4).appearance.ops;
+    expect(ops).toContain("W n");
+    // The whole picture is 200 wide, its left edge 50 points left of the box.
+    expect(ops).toContain("200 0 0 100 100 642 cm");
+    expect(JSON.parse(reeditEntry(m)).markup.content.crop).toEqual(op.crop);
+  });
+
+  it("puts the whole picture back round what showed", () => {
+    const m = dragCrop(dragCrop(pic(), "w", [150, 150]), "s", [200, 180]);
+    const u = uncropped(m);
+    expect((u.content as ImageContent).crop).toBeUndefined();
+    expect(u.rect).toEqual([100, 100, 300, 200].map((v) => expect.closeTo(v, 6)));
+    expect(wholeBox(m)).toEqual([100, 100, 300, 200].map((v) => expect.closeTo(v, 6)));
+  });
+
+  it("isn't offered for a signature or a text stamp", () => {
+    expect(canCrop(pic())).toBe(true);
+    expect(canCrop(mk(zigzag, [0, 0, 100, 30], 0, true))).toBe(false);
+    expect(canCrop(mk(approved, [0, 0, 100, 30]))).toBe(false);
   });
 });

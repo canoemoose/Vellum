@@ -69,6 +69,8 @@ export interface ImageOp {
   angle?: number;
   /** Stage 8: 0..1; opaque without it. */
   opacity?: number;
+  /** The part of the picture drawn in `rect` (fractions: left, top, right, bottom); all of it without. */
+  crop?: [number, number, number, number];
 }
 
 export const add = (a: Pt, b: Pt): Pt => [a[0] + b[0], a[1] + b[1]];
@@ -219,6 +221,18 @@ export function arrowLength(width: number): number {
 
 export const HEAD_ANGLE = 0.4636; // about 26.6 degrees either side: a 2:1 head
 
+/** An arrowhead's shape: its angle either side of the line (radians) and its length for a weight. */
+export interface HeadShape {
+  angle: number;
+  length(width: number): number;
+}
+
+/** A markup's arrowhead: the 2:1 head, arrowLength long. */
+export const ARROW_HEAD: HeadShape = { angle: HEAD_ANGLE, length: arrowLength };
+
+/** A dimension's arrowhead (Matt's review): 20 degrees at the point, and a fifth shorter. */
+export const DIMENSION_HEAD: HeadShape = { angle: (10 * Math.PI) / 180, length: (w) => 0.8 * arrowLength(w) };
+
 /** A dot end's radius for a line weight. */
 export const dotRadius = (width: number) => 1.5 + 1.25 * width;
 
@@ -239,8 +253,9 @@ function capBite(c: Pt, d: Pt, width: number, side: Pt): Seg[] {
  * a slash), the solid shape it fills (a filled head, a dot), and how far back from `p` the line
  * should stop so it doesn't run under a filled shape (see-through lines would show it twice).
  */
-export function lineEnd(kind: LineEnd, p: Pt, d: Pt, width: number): { segs: Seg[]; solid: Seg[] | null; back: number } {
-  const len = arrowLength(width);
+export function lineEnd(kind: LineEnd, p: Pt, d: Pt, width: number, head: HeadShape = ARROW_HEAD): { segs: Seg[]; solid: Seg[] | null; back: number; plain?: Seg[]; reach?: number } {
+  const HEAD_ANGLE = head.angle;
+  const len = head.length(width);
   const back = mul(d, -len);
   const n: Pt = [-d[1], d[0]];
   const half = len * Math.sin(HEAD_ANGLE);
@@ -261,7 +276,11 @@ export function lineEnd(kind: LineEnd, p: Pt, d: Pt, width: number): { segs: Seg
       const side: Pt = (w1[0] - p[0]) * n[0] + (w1[1] - p[1]) * n[1] >= 0 ? n : mul(n, -1);
       const b1 = add(base, mul(side, stop)), b2 = add(base, mul(side, -stop));
       const solid: Seg[] = [["M", p[0], p[1]], ["L", w1[0], w1[1]], ["L", b1[0], b1[1]], ...capBite(c, d, width, side), ["L", b2[0], b2[1]], ["L", w2[0], w2[1]], ["Z"]];
-      return { segs: [], solid, back: len * Math.cos(HEAD_ANGLE) + stop };
+      // As one outline with its line (endedLine): the plain head, and how far into it from the
+      // tip the line's sides are inside it (where the head is as wide as the line).
+      const plain: Seg[] = [["M", p[0], p[1]], ["L", w1[0], w1[1]], ["L", w2[0], w2[1]], ["Z"]];
+      const reach = Math.min(len * Math.cos(HEAD_ANGLE), width / 2 / Math.tan(HEAD_ANGLE));
+      return { segs: [], solid, back: len * Math.cos(HEAD_ANGLE) + stop, plain, reach };
     }
     case "dot": {
       const r = dotRadius(width);
@@ -272,7 +291,8 @@ export function lineEnd(kind: LineEnd, p: Pt, d: Pt, width: number): { segs: Seg
       const bite = capBite(c, d, width, n);
       const hole: Seg[] = [["M", c[0], c[1]], ...bite, ["Z"]];
       const ring = circle(p, r);
-      return { segs: [], solid: [...ring, ...(windingOf(ring) === windingOf(hole) ? reversed(hole) : hole)], back };
+      // As one outline with its line: the plain disc, which the line reaches the middle of.
+      return { segs: [], solid: [...ring, ...(windingOf(ring) === windingOf(hole) ? reversed(hole) : hole)], back, plain: ring, reach: 0 };
     }
     case "bar":
       return { segs: line(add(p, mul(n, half)), add(p, mul(n, -half))), solid: null, back: 0 };
@@ -316,13 +336,19 @@ export function circle(c: Pt, r: number): Seg[] {
  * pattern and stops short of filled ends; the ends are always solid, filled ones in the line's
  * colour with no outline (so nothing is drawn twice). An arrow is the two-point case.
  */
-export function endedLine(pts: Pt[], ends: [LineEnd, LineEnd], s: Style): Op[] {
+export function endedLine(pts: Pt[], ends: [LineEnd, LineEnd], s: Style, shape: HeadShape = ARROW_HEAD): Op[] {
   if (pts.length < 2) return [];
   const n = pts.length;
   const u0 = unit(sub(pts[1], pts[0]));
   const un = unit(sub(pts[n - 1], pts[n - 2]));
-  const tail = lineEnd(ends[0], pts[0], mul(u0, -1), s.width);
-  const head = lineEnd(ends[1], pts[n - 1], un, s.width);
+  const tail = lineEnd(ends[0], pts[0], mul(u0, -1), s.width, shape);
+  const head = lineEnd(ends[1], pts[n - 1], un, s.width, shape);
+  // A solid straight line whose ends are filled (or none): one filled outline, line and ends
+  // together, so there's no edge between them to show as a seam (Matt's review of stage 4).
+  const outlined = (e: typeof tail, k: LineEnd) => k === "none" || !!e.plain;
+  if (n === 2 && !s.dash && (tail.plain || head.plain) && outlined(tail, ends[0]) && outlined(head, ends[1])) {
+    return [oneOutline(pts[0], pts[1], u0, s, tail, head)];
+  }
   let line: Pt[];
   if (n === 2) {
     // Never past each other: the room left between the ends, from the tail's side.
@@ -341,6 +367,38 @@ export function endedLine(pts: Pt[], ends: [LineEnd, LineEnd], s: Style): Op[] {
   }
   return ops;
 }
+
+/**
+ * A straight line of weight s.width from a to b (along unit u) with its filled ends, as one
+ * filled path: the line's outline (a round cap at an end with nothing on it; reaching into a
+ * filled end as far as that end covers it) and each end's plain shape, all wound the same way so
+ * they fill as one.
+ */
+function oneOutline(a: Pt, b: Pt, u: Pt, s: Style, tail: { plain?: Seg[]; reach?: number }, head: { plain?: Seg[]; reach?: number }): Op {
+  const h = s.width / 2;
+  const n: Pt = [-u[1], u[0]];
+  const total = len(sub(b, a));
+  const from = add(a, mul(u, tail.plain ? Math.min(tail.reach ?? 0, total) : 0));
+  const to = sub(b, mul(u, head.plain ? Math.min(head.reach ?? 0, total) : 0));
+  const parts: Seg[][] = [];
+  if (dotPt(sub(to, from), u) > 1e-9 || (!tail.plain && !head.plain)) {
+    const p1 = add(from, mul(n, h)), p2 = add(to, mul(n, h)), p3 = sub(to, mul(n, h)), p4 = sub(from, mul(n, h));
+    const shaft: Seg[] = [["M", p1[0], p1[1]], ["L", p2[0], p2[1]]];
+    if (head.plain) shaft.push(["L", p3[0], p3[1]]);
+    else shaft.push(...arc(to, h, n, mul(n, -1), u));
+    shaft.push(["L", p4[0], p4[1]]);
+    if (tail.plain) shaft.push(["L", p1[0], p1[1]]);
+    else shaft.push(...arc(from, h, mul(n, -1), n, mul(u, -1)));
+    shaft.push(["Z"]);
+    parts.push(shaft);
+  }
+  for (const e of [tail, head]) if (e.plain) parts.push(e.plain);
+  const w = windingOf(parts[0]);
+  const segs = parts.flatMap((q) => (windingOf(q) === w ? q : reversed(q)));
+  return { t: "path", segs, stroke: null, fill: s.stroke, width: 0, dash: null, strokeOpacity: s.opacity, fillOpacity: s.opacity };
+}
+
+const dotPt = (a: Pt, b: Pt) => a[0] * b[0] + a[1] * b[1];
 
 /** Signed area (positive for one winding, negative for the other; either works below). */
 export function signedArea(v: Pt[]): number {

@@ -7,7 +7,7 @@ import type { Op } from "./ops";
 import { baseFont, fontResource, pdfString } from "./fonts";
 // Stamps
 import { imageResName } from "./stamps";
-import { turnedCorners } from "./turn"; // Stage 8
+import { turnPt, turnedCorners } from "./turn"; // Stage 8
 
 /** A page's /Rotate (quarter turns clockwise) and visible box in user space [l, b, r, t]. */
 export interface Frame {
@@ -94,7 +94,20 @@ export function toContent(f: Frame, ops: Op[]): Content {
       // at the box's bottom left on the page (y down); worked out through toUser so a rotated
       // page keeps the picture upright as rendered.
       // Stage 8: a turned picture's corners turn about its centre first; see-through via /GS0.
-      const [tl, , br, bl] = turnedCorners(op.rect, op.angle ?? 0);
+      // Cropped: the whole picture's box (bigger, around this one) turns about this box's centre,
+      // and the drawing is clipped to this box.
+      const box = turnedCorners(op.rect, op.angle ?? 0);
+      const k = op.crop;
+      let whole = box;
+      if (k) {
+        const [x0, y0, x1, y1] = op.rect;
+        const W = (x1 - x0) / (k[2] - k[0]), H = (y1 - y0) / (k[3] - k[1]);
+        const left = x0 - k[0] * W, top = y0 - k[1] * H;
+        const c: Pt = [(x0 + x1) / 2, (y0 + y1) / 2];
+        whole = ([[left, top], [left + W, top], [left + W, top + H], [left, top + H]] as Pt[]).map((q) => turnPt(q, c, op.angle ?? 0));
+        out.push(`${pt(box[0][0], box[0][1])} m ${pt(box[1][0], box[1][1])} l ${pt(box[2][0], box[2][1])} l ${pt(box[3][0], box[3][1])} l h W n`);
+      }
+      const [tl, , br, bl] = whole;
       const o = toUser(f, bl[0], bl[1]), u = toUser(f, br[0], br[1]), v = toUser(f, tl[0], tl[1]);
       if (op.opacity !== undefined && op.opacity < 1) {
         fillOpacity = op.opacity;

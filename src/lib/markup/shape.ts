@@ -4,6 +4,7 @@
 // geometry.ts picks the right one. Pure, and a leaf: never imports a kind.
 
 import { type Pt, type Rect, normRect } from "./base";
+import { ROTATE_GAP_PX, normDeg, snapTurn, turnPoints, turnPt } from "./turn";
 
 export function pointsBounds(pts: Pt[]): Rect {
   if (!pts.length) return [0, 0, 0, 0];
@@ -49,6 +50,8 @@ export interface Handle {
   at: Pt;
   /** Stage 6: drawn round (a corner on the shape), else square (a grip on its box). */
   round?: boolean;
+  /** A rotate grip's stem starts here (the middle of the top edge, as turned). */
+  stem?: Pt;
 }
 
 /** A box's eight grips (or its four corners only). */
@@ -159,6 +162,66 @@ const BOX_GRIP = /^(nw|ne|se|sw|n|s|e|w)$/;
  * The grips of a shape of points: a round one on each corner, then its box's eight square ones.
  * Corners come first, so where one sits on a box grip (a rectangle's corner) the corner wins.
  */
+/**
+ * A shape of points that turns (a polygon, a cloud). `angle` is how far it has been turned,
+ * degrees clockwise as seen: its own frame, so the rotate grip stays above its own top and goes
+ * round with it, and the grip's angle reads from upright.
+ */
+export interface Turnable {
+  vertices: Pt[];
+  angle?: number;
+}
+
+/** Its box in its own (unturned) frame, about the page origin, and that box's middle on the page. */
+export function pointsFrame(m: Turnable): { own: Rect; centre: Pt } {
+  const a = m.angle ?? 0;
+  const own = pointsBounds(turnPoints(m.vertices, [0, 0], -a));
+  return { own, centre: turnPt([(own[0] + own[2]) / 2, (own[1] + own[3]) / 2], [0, 0], a) };
+}
+
+/** Its rotate grip: ROTATE_GAP_PX (CSS px, `ptPerPx` points each) above the middle of its own top, as turned. */
+export function turnedPointsGrip(m: Turnable, ptPerPx: number): Handle {
+  const a = m.angle ?? 0;
+  const { own } = pointsFrame(m);
+  const mid = (own[0] + own[2]) / 2;
+  return { id: "rotate", at: turnPt([mid, own[1] - ROTATE_GAP_PX * ptPerPx], [0, 0], a), stem: turnPt([mid, own[1]], [0, 0], a) };
+}
+
+/** Turned `deg` further clockwise about the middle of its own box; also gives that middle. */
+export function turnPointsBy<M extends Turnable>(m: M, deg: number): { next: M; centre: Pt } {
+  const { centre } = pointsFrame(m);
+  if (!deg) return { next: m, centre };
+  const a = normDeg((m.angle ?? 0) + deg);
+  const { angle: _, ...rest } = m;
+  const next = { ...rest, vertices: turnPoints(m.vertices, centre, deg), ...(a ? { angle: a } : {}) } as M;
+  return { next, centre };
+}
+
+/** Its grips: a round one on each corner, and its box's eight square ones, turned with it. */
+export function turnedPointGrips(m: Turnable): Handle[] {
+  const a = m.angle ?? 0;
+  if (!a) return pointGrips(m.vertices);
+  const box = boxHandles(pointsFrame(m).own).map((h) => ({ ...h, at: turnPt(h.at, [0, 0], a) }));
+  return [...vertexHandles(m.vertices).map((h) => ({ ...h, round: true })), ...box];
+}
+
+/** dragPointGrip in its own frame: a box grip resizes the box as turned, square to its own sides. */
+export function dragTurnedPointGrip<M extends Turnable>(m: M, h: HandleId, p: Pt, constrain: boolean, minSize: number, closed: boolean): M {
+  const a = m.angle ?? 0;
+  if (!a || !BOX_GRIP.test(h)) return dragPointGrip(m, h, p, constrain, minSize, closed);
+  const own = { ...m, vertices: turnPoints(m.vertices, [0, 0], -a) };
+  const next = dragPointGrip(own, h, turnPt(p, [0, 0], -a), constrain, minSize, closed);
+  return next === own ? m : { ...next, vertices: turnPoints(next.vertices, [0, 0], a) };
+}
+
+/** How much further its rotate grip, dragged to p, turns it: the grip points from the middle to the pointer (snapTurn's snaps). */
+export function turnTowards(m: Turnable, p: Pt, step: boolean): number {
+  const { centre } = pointsFrame(m);
+  if (Math.hypot(p[0] - centre[0], p[1] - centre[1]) < 1e-9) return 0;
+  const to = snapTurn((Math.atan2(p[1] - centre[1], p[0] - centre[0]) * 180) / Math.PI + 90, step);
+  return to - (m.angle ?? 0);
+}
+
 export function pointGrips(pts: Pt[]): Handle[] {
   return [...vertexHandles(pts).map((h) => ({ ...h, round: true })), ...boxHandles(pointsBounds(pts))];
 }

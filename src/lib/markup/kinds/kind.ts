@@ -24,6 +24,10 @@ export interface DrawContext {
   pick?: number;
   /** Stage 8: the view's turn, degrees clockwise (quarter turns): a new stamp starts upright as viewed. */
   viewRotation?: number;
+  /** Shift is held (rule 2: it frees what starts locked; a Length pulled out measures straight). */
+  free?: boolean;
+  /** The page it's being drawn on (from 0), where known: a stamp's {page} field. */
+  page?: number;
 }
 
 // Dimensions (stage 5)
@@ -128,10 +132,21 @@ export interface KindDef<M extends Markup = Markup> {
   /** Stage 8: degrees its own frame is turned on the page (a turned stamp), for its grips' cursors. */
   turn?(m: M): number;
   /**
+   * It can be turned: by `deg` clockwise as seen on the page, about its middle. [ and ] turn a
+   * selection of these a quarter (Shift: 15 degrees); a selection with anything else in it isn't
+   * turned. Kinds with a rotate grip turn by it with this too, or keep their own angle.
+   */
+  turnBy?(m: M, deg: number): M;
+  /**
+   * A press on this part of it (within `t` points) works that grip rather than moving the whole
+   * markup: a dimension's value and its line, which are never meant to pick it all up.
+   */
+  partAt?(m: M, p: Pt, t: number): HandleId | null;
+  /**
    * Stage 8: its context bar is its own (a stamp's: a picker, then only what its content takes)
    * rather than the line controls. `variant` is the content: "text", "signature" or "image".
    */
-  ownBar?(variant: string | undefined): { colour: boolean; dateLine: boolean };
+  ownBar?(variant: string | undefined): { colour: boolean; dateLine: boolean; picker: boolean; border?: boolean };
   /** Stage 8: which variant of its own bar a markup takes. */
   variantOf?(m: M): string;
   /** Grip `h` dragged to p; `constrain` is Shift. Stays at least minSize where that applies. */

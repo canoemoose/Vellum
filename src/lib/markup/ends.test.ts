@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type LineEnd, type Markup, type Pt, arrowEnds, defaultStyle } from "./types";
-import { arrowLength, cloudChord, dotRadius, opsBounds, opsFor, type PathOp } from "./ops";
+import { cloudChord, dotRadius, opsBounds, opsFor, type PathOp } from "./ops";
 import { toSpec } from "./spec";
 import { sanitisePrefs } from "./prefs";
 
@@ -9,7 +9,6 @@ const arrow = (ends: [LineEnd, LineEnd], width = 2): Markup => ({
   id: "a", page: 0, kind: "arrow", from: [0, 100], to: [100, 100], style: { ...defaultStyle("arrow"), width, ends }, meta,
 });
 const A4 = { quarterTurns: 0, bbox: [0, 0, 595, 842] as [number, number, number, number] };
-const shaftOf = (m: Markup) => (opsFor(m)[0] as PathOp).segs.slice(0, 2) as [["M", number, number], ["L", number, number]];
 
 describe("arrow ends", () => {
   it("defaults to an open head and no tail, as arrows always were", () => {
@@ -19,17 +18,25 @@ describe("arrow ends", () => {
     expect(sanitisePrefs({ styles: { arrow: { ends: ["dot", "slash"] } } }).styles.arrow!.ends).toEqual(["dot", "slash"]);
   });
 
-  it("fills a filled head and a dot in the line's colour, with the line stopping short of them", () => {
+  it("fills a filled head and a dot in the line's colour, as one outline with a solid line", () => {
     const m = arrow(["dot", "filled"]);
+    const ops = opsFor(m) as PathOp[];
+    expect(ops.length).toBe(1);
+    expect(ops[0].fill).toEqual(m.style.stroke);
+    expect(ops[0].stroke).toBeNull();
+  });
+
+  it("with a dashed line, stops the line short of them", () => {
+    const base = arrow(["dot", "filled"]);
+    const m = { ...base, style: { ...base.style, dash: [4, 2] } } as Markup;
     const ops = opsFor(m) as PathOp[];
     const solids = ops.filter((o) => o.fill && !o.stroke);
     expect(solids.length).toBe(2);
     for (const o of solids) expect(o.fill).toEqual(m.style.stroke);
-    const [a, b] = shaftOf(m);
-    // Tail: back to where the line's sides meet the dot. Head: its round end meets the base.
+    // Tail: back to where the line's sides meet the dot.
     const r = dotRadius(2);
-    expect(a[1]).toBeCloseTo(Math.sqrt(r * r - 1));
-    expect(b[1]).toBeCloseTo(100 - arrowLength(2) * Math.cos(0.4636) - 1, 3);
+    const first = ops[0].segs[0] as ["M", number, number];
+    expect(first[1]).toBeCloseTo(Math.sqrt(r * r - 1));
   });
 
   it("draws bars square across the end and slashes 30 degrees off", () => {

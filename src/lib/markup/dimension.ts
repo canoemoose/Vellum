@@ -5,7 +5,7 @@
 // kind. See docs/editing-phase4-scope.md and stage 5 of docs/editing-tool-consistency-brief.md.
 
 import type { Pt, Rgb, Style } from "./base";
-import { type Op, type Seg, type TextOp, add, endedLine, mul, path, rot, sub, unit } from "./draw";
+import { type Op, type Seg, type TextOp, DIMENSION_HEAD, add, endedLine, mul, path, rot, sub, unit } from "./draw";
 import { type Face, HELVETICA, textWidth } from "./fonts";
 import { type MeasureFormat, type PageMeasure, areaDecimals, formatScale, isImperial, lengthUnit, measureSource, paperMm } from "./measure";
 import { DEFAULT_FRACTION, MM_PER_FT, MM_PER_IN } from "./imperial"; // Imperial (stage 5 [A9])
@@ -127,7 +127,7 @@ const lineSegs = (pts: Pt[]): Seg[] => pts.map((p, i) => [i ? "L" : "M", p[0], p
  */
 export function dimensionLine(pts: Pt[], s: Style, ends: DimEnds = "bar"): Op[] {
   if (pts.length < 2) return [];
-  if (ends === "arrow") return endedLine(pts, ["filled", "filled"], s);
+  if (ends === "arrow") return endedLine(pts, ["filled", "filled"], s, DIMENSION_HEAD);
   const h = barHalf(s.width);
   // Square to the line, or for a tick, a further eighth of a turn: the same line at both ends.
   const turn = ends === "tick" ? Math.PI / 4 : 0;
@@ -203,12 +203,13 @@ export function onLabel(p: Pt, c: Pt, wh: [number, number], dir: Pt, t: number):
 
 /**
  * Where a value along the segment a to b goes by default: centred on its middle, `gap` clear of
- * the line, on the side "up" is for its reading direction `dir` (the side facing the top of the
- * page); with `right`, on a vertical line, to its right instead (stage 5, D6).
+ * the line, on the side "up" is for its reading direction `dir`: above a level line, and left of
+ * an upright one (which reads from the bottom), as CAD puts it. (Stage 5's D6 put it right of an
+ * upright line; Matt's review put it back.)
  */
-export function valueHome(a: Pt, b: Pt, dir: Pt, height: number, gap: number, right: boolean): Pt {
+export function valueHome(a: Pt, b: Pt, dir: Pt, height: number, gap: number): Pt {
   const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-  const side: Pt = right && Math.abs(dir[0]) <= 1e-9 ? [1, 0] : [dir[1], -dir[0]];
+  const side: Pt = [dir[1], -dir[0]];
   return add(mid, mul(side, gap + height / 2));
 }
 

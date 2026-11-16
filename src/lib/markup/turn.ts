@@ -79,10 +79,27 @@ export function angleTo(r: Rect, p: Pt, step: boolean): number {
   const c = centreOf(r);
   if (Math.hypot(p[0] - c[0], p[1] - c[1]) < 1e-9) return 0;
   // The grip sits straight up from the centre at 0: -90 degrees on the page (y down).
-  let d = (Math.atan2(p[1] - c[1], p[0] - c[0]) * 180) / Math.PI + 90;
-  if (step) d = Math.round(d / 15) * 15;
-  return normDeg(d);
+  return snapTurn((Math.atan2(p[1] - c[1], p[0] - c[0]) * 180) / Math.PI + 90, step);
 }
+
+/** Degrees either side of a multiple of 45 that the rotate grip is drawn to without Shift. */
+export const SNAP_WITHIN = 4;
+
+/**
+ * An angle from the rotate grip: with `step` (Shift, rule 2) held to 15 degree steps; without,
+ * drawn to the nearest multiple of 45 degrees when within SNAP_WITHIN of it, else as it is.
+ */
+export function snapTurn(deg: number, step: boolean): number {
+  if (step) return normDeg(Math.round(deg / 15) * 15);
+  const near = Math.round(deg / 45) * 45;
+  return normDeg(Math.abs(deg - near) <= SNAP_WITHIN ? near : deg);
+}
+
+/** CSS px from the middle of the top edge to the rotate grip. */
+export const ROTATE_GAP_PX = 24;
+
+/** Points turned by `deg` clockwise about c. */
+export const turnPoints = (pts: Pt[], c: Pt, deg: number): Pt[] => pts.map((q) => turnPt(q, c, deg));
 
 /**
  * Resize a turned box from a corner, in its own frame: corner `h` dragged to page point p, with

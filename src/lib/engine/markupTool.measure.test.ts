@@ -100,16 +100,34 @@ describe("measuring tools", () => {
     expect(t.drawingPoints).toBe(false);
   });
 
-  it("measures a length by dragging, in line, held level unless Shift frees it", async () => {
+  it("measures a length by dragging, in line, free unless Shift snaps it to 15 degrees", async () => {
     const { v, doc, t } = await setup();
     t.setTool("measureLength");
-    drag(t, v, [100, 100], [100 + pt(100), 103]);
+    drag(t, v, [100, 100], [100 + pt(100), 100]);
     const m = last(doc) as MarkupOf<"measureLength">;
-    expect(m.to[1]).toBeCloseTo(100, 6);
     expect(m.offset).toBe(0);
     expect(measurementLine(m)).toMatch(/^10\.00 m at 1:100/);
-    drag(t, v, [100, 300], [100 + pt(100), 303], shift);
+    drag(t, v, [100, 300], [100 + pt(100), 303]);
     expect((last(doc) as MarkupOf<"measureLength">).to[1]).toBeCloseTo(303, 6);
+    drag(t, v, [100, 300], [100 + pt(100), 303], shift);
+    expect((last(doc) as MarkupOf<"measureLength">).to[1]).toBeCloseTo(300, 6);
+  });
+
+  it("measures across or up and down by the way the third click pulls, straight with Shift (Matt's review)", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("measureLength");
+    click(t, v, [100, 100]);
+    click(t, v, [100 + pt(100), 100 + pt(50)]);
+    click(t, v, [150, 60]);
+    expect(measurementLine(last(doc) as MarkupOf<"measureLength">)).toMatch(/^10\.00 m at 1:100/);
+    click(t, v, [100, 300]);
+    click(t, v, [100 + pt(100), 300 + pt(50)]);
+    click(t, v, [100 + pt(100) + 40, 320]);
+    expect(measurementLine(last(doc) as MarkupOf<"measureLength">)).toMatch(/^5\.00 m at 1:100/);
+    click(t, v, [100, 500]);
+    click(t, v, [100 + pt(30), 500 + pt(40)]);
+    click(t, v, [150, 460], 1, shift);
+    expect(measurementLine(last(doc) as MarkupOf<"measureLength">)).toMatch(/^5\.00 m at 1:100/);
   });
 
   it("moves a length's value by its grip, and a double-click on the grip puts it back", async () => {
@@ -125,13 +143,50 @@ describe("measuring tools", () => {
     drag(t, v, grip, [grip[0] + 30, grip[1] - 10]);
     const moved = last(doc) as MarkupOf<"measureLength">;
     expect(moved.value![0]).toBeCloseTo(30, 6);
-    expect(moved.value![1]).toBeCloseTo(10, 6); // along the line's normal, which is up the page here
+    // Pulled up the page, it takes the dimension line with it.
+    expect(moved.value![1]).toBe(0);
+    expect(moved.offset!).toBeCloseTo(m0.offset! + 10, 6);
     const at = handles(moved).find((h) => h.id === "value")!.at;
     click(t, v, at);
     click(t, v, at, 2);
     const back = last(doc) as MarkupOf<"measureLength">;
     expect(back.value).toBeUndefined();
-    expect(handles(back).find((h) => h.id === "value")!.at).toEqual(grip);
+    // Back to the middle of the line, where the line now is.
+    const g = handles(back).find((h) => h.id === "value")!.at;
+    expect(g[0]).toBeCloseTo(grip[0], 6);
+    expect(g[1]).toBeCloseTo(grip[1] - 10, 6);
+  });
+
+  it("works the value's or the line's grip from anywhere on them, and moves whole only from an extension line (Matt's review)", async () => {
+    const { v, doc, t } = await setup();
+    t.setTool("measureLength");
+    click(t, v, [100, 200]);
+    click(t, v, [300, 200]);
+    click(t, v, [200, 160]);
+    t.setTool("select");
+    const m0 = last(doc) as MarkupOf<"measureLength">;
+    expect(m0.offset).toBeCloseTo(40, 6);
+    const g = handles(m0).find((h) => h.id === "value")!.at;
+    // On the lettering, off its grip: it slides by as much as the pointer moves, no jump.
+    drag(t, v, [g[0] + 8, g[1]], [g[0] + 38, g[1]]);
+    const slid = last(doc) as MarkupOf<"measureLength">;
+    expect(slid.value![0]).toBeCloseTo(30, 6);
+    expect(slid.from).toEqual(m0.from);
+    // On the dimension line, away from its middle grip: the line pulls out, nothing else moves.
+    drag(t, v, [130, 160], [130, 150]);
+    const pulled = last(doc) as MarkupOf<"measureLength">;
+    expect(pulled.offset).toBeCloseTo(50, 6);
+    expect(pulled.from).toEqual(m0.from);
+    // A double-click on the lettering puts the value back.
+    const c = handles(pulled).find((h) => h.id === "value")!.at;
+    click(t, v, [c[0] + 8, c[1]]);
+    click(t, v, [c[0] + 8, c[1]], 2);
+    expect((last(doc) as MarkupOf<"measureLength">).value).toBeUndefined();
+    // On an extension line: the whole dimension moves.
+    drag(t, v, [100, 175], [110, 175]);
+    const moved = last(doc) as MarkupOf<"measureLength">;
+    expect(moved.from[0]).toBeCloseTo(110, 6);
+    expect(moved.offset).toBeCloseTo(50, 6);
   });
 
   it("takes the scale of the page a measurement is pasted onto (A14: paste goes through revalue)", async () => {

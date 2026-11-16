@@ -85,12 +85,12 @@ describe("forgetting baked markups", () => {
 
 describe("the Stamp picker's settings", () => {
   it("default to a second line in each stamp's own colour", () => {
-    expect(sanitiseStampPrefs(undefined)).toEqual({ sub: true, colour: null, custom: "", last: {} });
-    expect(sanitiseSettings({}).stamps).toEqual({ sub: true, colour: null, custom: "", last: {} });
+    expect(sanitiseStampPrefs(undefined)).toEqual({ sub: true, line: "{author}, {date}", builtIn: {}, colour: null, texts: [], last: {} });
+    expect(sanitiseSettings({}).stamps).toEqual({ sub: true, line: "{author}, {date}", builtIn: {}, colour: null, texts: [], last: {} });
   });
   it("keep good values and drop odd ones", () => {
-    expect(sanitiseStampPrefs({ sub: false, colour: [0, 0.5, 1], custom: " checked  " })).toEqual({ sub: false, colour: [0, 0.5, 1], custom: "CHECKED", last: {} });
-    expect(sanitiseStampPrefs({ colour: [2, 0, 0], custom: 5 })).toEqual({ sub: true, colour: null, custom: "", last: {} });
+    expect(sanitiseStampPrefs({ sub: false, colour: [0, 0.5, 1], custom: " checked  " })).toEqual({ sub: false, line: "{author}, {date}", builtIn: {}, colour: [0, 0.5, 1], texts: [{ label: "CHECKED", colour: [0.85, 0.1, 0.1] }], last: {} });
+    expect(sanitiseStampPrefs({ colour: [2, 0, 0], custom: 5 })).toEqual({ sub: true, line: "{author}, {date}", builtIn: {}, colour: null, texts: [], last: {} });
   });
   // Stage 8: picking the tool goes straight to placing what it last placed.
   it("remember the last stamp and signature by reference only", () => {

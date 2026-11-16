@@ -72,7 +72,7 @@ export function pathValueAt(m: MeasurePathMarkup): { centre: Pt; home: Pt; dir: 
   const a = m.vertices[i], b = m.vertices[i + 1] ?? a;
   const dir = uprightDir(a, b);
   const size = labelSize([pathLabel(m)], m.labelSize, faceOf(m.font));
-  const home = valueHome(a, b, dir, size[1], valueGap(m.style.width), false);
+  const home = valueHome(a, b, dir, size[1], valueGap(m.style.width));
   return { centre: add(home, m.value ?? [0, 0]), home, dir, size };
 }
 

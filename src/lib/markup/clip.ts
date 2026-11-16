@@ -104,6 +104,19 @@ export function centredOn(ms: Markup[], at: Pt): Markup[] {
   return ms.map((m) => moveBy(m, dx, dy));
 }
 
+/**
+ * Copies moved, all together, as little as it takes to lie on a page of size w by h (a markup
+ * off its page is clipped or hidden by other apps). Bigger than the page, their top left goes
+ * to its top left.
+ */
+export function keptOn(ms: Markup[], page: { w: number; h: number }): Markup[] {
+  if (!ms.length) return ms;
+  const b = boundsOf(ms);
+  const fit = (lo: number, hi: number, size: number) => (hi - lo > size || lo < 0 ? -lo : hi > size ? size - hi : 0);
+  const dx = fit(b[0], b[2], page.w), dy = fit(b[1], b[3], page.h);
+  return dx || dy ? ms.map((m) => moveBy(m, dx, dy)) : ms;
+}
+
 /** A new id for each run of the app (what makes a held signature this run's alone). */
 export function newSession(): string {
   const a = new Uint8Array(12);

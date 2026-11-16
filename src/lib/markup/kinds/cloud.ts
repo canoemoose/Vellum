@@ -3,7 +3,7 @@
 
 import { type MarkupBase, type Pt, type Style, LINE_STYLE } from "../base";
 import { type Op, type Seg, add, arc, filled, len, mul, signedArea, sub, unit } from "../draw";
-import { distToPolyline, dragPointGrip, insidePolygon, isBoxGrip, movePt, pointGrips, pointsBounds } from "../shape";
+import { distToPolyline, insidePolygon, isBoxGrip, movePt, pointsBounds, turnPointsBy, turnTowards, turnedPointGrips, turnedPointsGrip, dragTurnedPointGrip } from "../shape";
 import { userPoints } from "../annotation";
 import { defineKind } from "./kind";
 
@@ -12,6 +12,8 @@ export interface CloudMarkup extends MarkupBase {
   vertices: Pt[];
   /** Scallop size, 1 normal. */
   intensity: number;
+  /** Degrees it has been turned clockwise (by its rotate grip, or [ and ]): its own frame. */
+  angle?: number;
 }
 
 declare module "../base" {
@@ -39,11 +41,19 @@ export const cloud = defineKind<CloudMarkup>({
     // The scallops stand out from the edges by up to half a chord.
     return distToPolyline(p, m.vertices, true) <= t + cloudChord(m.intensity, m.style.width) / 2;
   },
-  handles: (m) => pointGrips(m.vertices),
+  handles: (m, ptPerPx = 1) => [...turnedPointGrips(m), turnedPointsGrip(m, ptPerPx)],
+  // Its box grips' cursors follow its turn.
+  turn: (m) => m.angle ?? 0,
   // A corner moves freely (no Shift snap, as before); the box scales it, Shift keeping proportions.
-  dragHandle: (m, h, p, constrain, minSize) => dragPointGrip(m, h, p, constrain && isBoxGrip(h), minSize, true),
+  dragHandle: (m, h, p, constrain, minSize) =>
+    // Turned by its rotate grip, about the middle of its box (Shift: 15 degree steps).
+    h === "rotate" ? turnCloud(m, turnTowards(m, p, constrain)) : dragTurnedPointGrip(m, h, p, constrain && isBoxGrip(h), minSize, true),
+  turnBy: (m, deg) => turnCloud(m, deg),
   moveBy: (m, dx, dy) => ({ ...m, vertices: m.vertices.map((v) => movePt(v, dx, dy)) }),
 });
+
+/** Turned by `deg` clockwise about the middle of its own box. */
+const turnCloud = (m: CloudMarkup, deg: number): CloudMarkup => turnPointsBy(m, deg).next;
 
 /**
  * Scallop chord for a cloud of the given intensity and line weight: 14 pt at the default 1.5 pt,

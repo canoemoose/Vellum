@@ -41,21 +41,22 @@ describe("rule 6: only controls that do something", () => {
   });
 
   // Stage 8: a stamp's own bar, by what it holds (rule 6: only controls that do something).
-  it("gives a text stamp its picker, colour, date line and opacity; a signature or a picture its picker and opacity", () => {
+  it("gives a text stamp its colour, date line and opacity; a signature opacity; a picture a border and opacity; none a picker (it opens from the tool)", () => {
     const st = (id: string, variant: string) => barFor([subjectOfTool(toolById(id)!, variant)]);
-    expect(st("stamp", "text")).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false, sides: false, opacity: true, dateLine: true, picker: "text" } satisfies Bar);
+    expect(st("stamp", "text")).toEqual({ colour: true, weight: false, pattern: false, ends: "none", fill: false, text: false, sides: false, opacity: true, dateLine: true, picker: null } satisfies Bar);
     // The Stamp tool with one of your image stamps armed: no colour or date line.
-    expect(st("stamp", "image")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "image" });
-    expect(st("signature", "signature")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "signature" });
-    expect(st("image", "image")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "image" });
+    expect(st("stamp", "image")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: null });
+    expect(st("signature", "signature")).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: null });
+    // The Image tool (Matt's review): no picker, a border (colour and weight, from none) and opacity.
+    expect(st("image", "picture")).toMatchObject({ colour: true, weight: true, border: true, dateLine: false, opacity: true, picker: null });
     // Selected: the same bar, from what each one holds.
     const stamp = (content: object, signature = false) => ({ id: "s", page: 0, kind: "stamp", rect: [0, 0, 10, 10], content, signature, style: defaultStyle("stamp"), meta }) as unknown as Markup;
     const text = stamp({ type: "text", label: "APPROVED", sub: null, colour: [0, 1, 0] });
     const sig = stamp({ type: "image", png: "", hash: "h", w: 1, h: 1 }, true);
     const pic = stamp({ type: "image", png: "", hash: "h", w: 1, h: 1 });
-    expect(barFor([subjectOf(text)])).toMatchObject({ colour: true, dateLine: true, opacity: true, picker: "text" });
-    expect(barFor([subjectOf(sig)])).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: "signature" });
-    expect(barFor([subjectOf(pic)])).toMatchObject({ colour: false, opacity: true, picker: "image" });
+    expect(barFor([subjectOf(text)])).toMatchObject({ colour: true, dateLine: true, opacity: true, picker: null });
+    expect(barFor([subjectOf(sig)])).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: null });
+    expect(barFor([subjectOf(pic)])).toMatchObject({ colour: true, weight: true, border: true, opacity: true, picker: null });
     // Several: what they all have, and no picker (it's for one).
     expect(barFor([subjectOf(text), subjectOf(text)])).toMatchObject({ colour: true, dateLine: true, picker: null });
     expect(barFor([subjectOf(text), subjectOf(sig)])).toMatchObject({ colour: false, dateLine: false, opacity: true, picker: null });
