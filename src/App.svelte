@@ -54,7 +54,6 @@
 
   // Stamps
   import SignaturesDialog, { type SignaturesView } from "./lib/components/signature/SignaturesDialog.svelte";
-  import StampPicker from "./lib/components/signature/StampPicker.svelte";
   import { armStamp, fieldValues, placeAt, setStampFields, stampVariant, withContent } from "./lib/markup/kinds/stamp";
   import { type StampContent, BUILT_IN, cleanLine, fillFields, filledStamp, lineOf, sanitiseOwnTexts, subFor, withLine, refOf, textFromRef } from "./lib/markup/stamps";
   import { setImageReady, preloadImage } from "./lib/engine/stampImages";
@@ -692,8 +691,6 @@
   // End measuring
 
   // Stamps
-  /** The Stamp tool's old panel, open over the drawing area (VELLUM_STAMP_POPOUTS=1 only). */
-  let stampPanel = $state<"stamp" | null>(null);
   /**
    * The stamp tools' grid (Matt's review): open beside the tool's button once the tool is
    * picked, or, `replace`, at a placed one's right-click to swap what it holds.
@@ -717,21 +714,12 @@
   setStampFields((page) => ({ author: settings.markup.author ?? author, now: new Date(), file: active?.title ?? "", page }));
 
   function stampToolPicked(t: Tool) {
-    if (!isStampTool(t)) {
-      stampPanel = null;
-      return;
-    }
+    if (!isStampTool(t)) return;
     const prev = stampArmed[t];
     armStamp(prev?.content ?? null, t === "signature");
     // The Image tool asks for a picture each time it's picked (Matt's review), then places it.
     if (t === "image") {
       void choosePicture(false);
-      return;
-    }
-    // The popouts (VELLUM_STAMP_POPOUTS=1): the Stamp tool's panel opens each time it's picked.
-    // (Signatures have only the grid now: their panel went with the Signatures dialog.)
-    if (stampPopouts && t === "stamp") {
-      stampPanel = t;
       return;
     }
     // The grid opens beside the tool's button, with what the tool last placed already armed:
@@ -742,7 +730,6 @@
 
   // The tool changed some other way (Esc, a tab closing): the picker goes with it.
   $effect(() => {
-    if (toolNow !== "stamp") stampPanel = null;
     if (stampGrid && !stampGrid.replace && toolNow !== stampGrid.family) stampGrid = null;
   });
 
@@ -777,13 +764,6 @@
     }
   }
 
-  function closeStampPanel() {
-    const t = stampPanel;
-    stampPanel = null;
-    // Closed without picking anything: there's nothing to place, so back to Select.
-    if (t && !stampArmed[t]) setTool("select");
-  }
-
   /** Arm a stamp tool with what was picked, and close its picker. `id`: its library id. */
   function armFor(tool: StampTool, c: StampContent, id?: string, name?: string) {
     stampArmed = { ...stampArmed, [tool]: { content: c, id, name } };
@@ -791,7 +771,6 @@
     if (c.type === "image") preloadImage(c.hash, c.png);
     remember(tool, c, id);
     if (markupTool?.tool !== tool) setTool(tool);
-    stampPanel = null;
     stampGrid = null;
   }
 
@@ -831,8 +810,6 @@
 
   type StampTool = "stamp" | "signature" | "image";
   const isStampTool = (t: string | null | undefined): t is StampTool => t === "stamp" || t === "signature" || t === "image";
-  /** VELLUM_STAMP_POPOUTS=1: the old panels instead of the context bar's pickers, until Matt has chosen. */
-  let stampPopouts = $state(false);
 
 
   /** Remember what a tool placed, by reference only (never a signature's picture or strokes). */
@@ -2277,7 +2254,6 @@
     (async () => {
       const args: LaunchArgs = await launchArgs();
       bench = args.bench;
-      stampPopouts = !!args.stampPopouts; // Stage 8
       const win = getCurrentWindow();
       const v = new Viewer(canvas);
       v.layoutMode = settings.layoutMode;
@@ -2763,18 +2739,6 @@
       {/if}
       <!-- End measuring -->
       <!-- Stamps -->
-      {#if stampPanel === "stamp"}
-        <StampPicker
-          author={settings.markup.author ?? author}
-          prefs={settings.stamps}
-          onPrefs={(p) => {
-            settings.stamps = p;
-            save();
-          }}
-          onPick={(c, id) => armFor("stamp", c, id)}
-          onClose={closeStampPanel}
-        />
-      {/if}
       <!-- Text markups -->
       {#if chrome && selBar}
         <SelectionBar x={selBar.x} y={selBar.y} areaW={stageW} areaH={stageH} onMark={(v) => void markText(v)} onCopy={() => void copySelection()} />
@@ -2825,7 +2789,7 @@
     onClose={() => (stampsDialog = false)}
   />
 {/if}
-{#if stampGrid && !stampPopouts}
+{#if stampGrid}
   {@const g = stampGrid}
   {@const a = g.replace ? null : stampArmed[g.family]}
   {#key g}

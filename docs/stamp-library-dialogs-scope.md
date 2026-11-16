@@ -1,7 +1,7 @@
 # Stamp and signature library dialogs: scope
 
 Status: **in progress on `editing`** (15 to 16 November 2026). Steps 1 to 4 built and
-committed; step 5 built and committed; next is step 6. App-wide requests Matt raised along the way are in
+committed; step 5 built and committed; step 6 deferred (Matt, 16 November); step 7 done; next is step 8. App-wide requests Matt raised along the way are in
 [backlog.md](backlog.md) (on `main`). Part of Matt's review of the tool
 consistency brief ([editing-tool-consistency-brief.md](editing-tool-consistency-brief.md));
 follows the stamp grid (the Stamp and Signature buttons open a grid of tiles beside the
@@ -120,8 +120,30 @@ an editor for adding (and, for image stamps, editing again).
    depth in one logo or another), so the click decides. Stored as points on the framed picture
    (`holes` in `KnockOptions`, fractions so the preview and the full size agree; `regions`
    numbers the areas for the click), cleared by framing again.
-6. **Keep originals** (`<id>.orig.<ext>` beside each stamp) and "Edit" in the list.
+6. **Edit an image stamp.** **Deferred** (Matt, 16 November): make stamps without it and see
+   whether it's missed. The plan was to keep originals (`<id>.orig.<ext>` beside each stamp) and
+   the editor's settings, so "Edit" could crop again and redo the removal. Dropped in favour of a
+   smaller version, for when it's wanted, aimed at what's most likely to need fixing (Matt): a
+   letter's hole missed when the stamp was made.
+   - "Edit" in the list opens the editor on the saved stamp, past framing.
+   - A click removes the enclosed region under it, flooding from that point by the colour
+     clicked (the stamp's background is already clear, so there's no background colour to go
+     by), with the same tolerance, edge unmixing, tint and loupe; a second click restores it.
+     In `knockout.ts`: removal from points by their own colour, with tests.
+   - Save replaces the stamp's picture in place, keeping its name and its place in the list (a
+     small Rust command, `stamp_replace`). Stamps already placed don't change: they're embedded.
+   - The same click works on a picture imported with a transparent background, which today gets
+     no controls (a PNG logo with a white hole in a letter).
+   - Lost against keeping originals: cropping again and redoing the whole removal; deleting the
+     stamp and adding it again does those. Nothing extra is stored.
 7. **Retire the old panels**: StampPicker, StampPanel, SignaturePopover, `VELLUM_STAMP_POPOUTS`.
+   **Done**. StampPicker and StampPanel deleted (SignaturePopover went
+   in step 4), and `VELLUM_STAMP_POPOUTS` with them: the Rust flag and its test, the launch
+   argument, App's `stampPanel` and `stampPopouts`. The Stamp tool always opens the grid now.
+   SignatureLibrary went too, with the dev page that was its last user (`signature-pad.html`,
+   `src/dev/`, `tauri.signature-pad.conf.json`, `npm run dev:signatures`): it was only ever meant
+   to last until signatures were placed from the app. `docs/signatures-backend.md` points at the
+   app instead.
 8. Tests, the brief's notes, the README's stamp section.
 
 ## Files in play

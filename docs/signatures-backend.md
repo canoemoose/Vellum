@@ -30,8 +30,7 @@ Those are phase 5 proper, after phases 2 and 3.
 | Framing view | `src/lib/components/signature/SignatureFrame.svelte` | Turn a photo and put a crop box (which can be turned) round the signature before the paper is knocked out. |
 | Ink | `src/lib/signature/ink.ts` | Ready-made inks, hex colours, recolouring pixels, the "too pale" check. Pure. |
 | Pad | `src/lib/components/signature/SignaturePad.svelte` | Draw, undo, clear, import a picture, choose the ink, name, save. |
-| Library list | `src/lib/components/signature/SignatureLibrary.svelte` | Previews and names; pick, rename, delete; unreadable files. |
-| Dev page | `signature-pad.html`, `src/dev/`, `src-tauri/tauri.signature-pad.conf.json` | Both components in the app's window, with a preview of the picked signature. |
+| Library list | `src/lib/components/signature/SignaturesDialog.svelte` | The Signatures dialog: previews and names; rename, delete; unreadable files; the pad as its other view. (Was `SignatureLibrary.svelte` and a dev page, `npm run dev:signatures`: both gone in November 2026, once signatures were placed from the app.) |
 
 Merging into `editing` (checked against fcd5720 with `git merge-tree`): clean, no conflicts.
 Neither component is in `App.svelte`. Shared files touched: `src-tauri/src/lib.rs` (one `pub mod`
@@ -42,44 +41,9 @@ section's list), `package.json` (the `dev:signatures` script).
 
 ## How to try it (Matt)
 
-```bash
-npm run dev:signatures
-```
-
-That's `tauri dev` with the window pointed at `signature-pad.html` instead of the app (same
-toolchain set-up as `npm run tauri dev`). It's dev only: `npm run build` builds `index.html`
-alone, so the page never ships. What to look at:
-
-- **Drawing:** sign in the white box with the mouse and with a pen. Strokes should follow the pen
-  without lag, come out smooth (no polygon corners on loops), and a tap should leave a dot.
-  Undo (or Ctrl+Z) removes the last stroke; Clear empties it. Save, and it appears in the library
-  on the right.
-- **Picked signature:** click one in the library. Below the pad: the full PNG on white and on a
-  dark checkerboard (any leftover paper shows as a grey haze on the dark one), and for a drawn
-  one, the vector form beside it, which should look identical.
-- **Import:** "Import a picture…" and pick a phone photo of a signature on paper (shadowed and
-  uneven light is the point). The photo opens in the framing view first: drag a box round the
-  signature (corners and edges resize it, drag inside to move it, drag outside for a new box; while the box is still the whole photo, dragging inside it
-  draws a new one too),
-  turn the photo a quarter with the two page-and-arrow buttons, and turn the box to lie along a
-  slanted signature by dragging the round handle above it (a fine grid and the angle show
-  while you drag; it turns any way round with no snapping, and double-clicking the handle levels it). When you
-  let go of the box or the handle, the view settles on the box with room round it, turning
-  so the box is level on screen and the photo lies tilted under it. There's no
-  manual zoom or pan.
-  Enter or "Remove the paper" applies, Esc or Cancel goes back. The result should come back as
-  clean ink on the checkerboard, cropped close; "Adjust the photo…" reopens the framing as you
-  left it. Blue biro should stay blue. Try a HEIC straight off an iPhone too: **does it come in
-  the right way up?** (See "Not covered" below.)
-- **Ink:** the swatches at the right of the pad's first row. Black and Blue, and the rainbow
-  ring is a colour picker for any other colour. The whole signature changes colour, drawn or
-  imported; an import also has "Original" (its own ink, the default). A pale colour gets a
-  warning under the pad. Saved signatures keep their colour (check the picked preview).
-- **Library:** Rename (Enter saves, Esc cancels), Delete (asks inline). Close and reopen the page:
-  everything's still there.
-- **Encryption (optional):** the files are in `%APPDATA%\io.github.canoemoose.vellum\signatures\`.
-  Opening one in a text editor should show nothing readable. Copying one into another Windows
-  account's folder should make that account's library say "One signature couldn't be read".
+In the app: the Signature tool's grid ("+ New", "Manage signatures..."). The dev page this
+section used to describe (`npm run dev:signatures`) was retired once signatures were placed
+from the app (docs/stamp-library-dialogs-scope.md, step 7).
 
 ## Decisions and assumptions
 

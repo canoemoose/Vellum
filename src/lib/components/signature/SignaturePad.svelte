@@ -1,8 +1,7 @@
 <script lang="ts">
   // Make a signature: draw it with a mouse or pen, or import a photo or scan (framed first in
   // SignatureFrame, then the paper is knocked out in Rust), name it and save it to the library.
-  // Standalone: not wired into the app yet (placing a signature needs the markup foundation).
-  // Try it with `npm run dev:signatures` (docs/signatures-backend.md).
+  // It's the Signatures dialog's pad view (SignaturesDialog.svelte).
   import { onMount, untrack } from "svelte";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import SignatureFrame from "./SignatureFrame.svelte";

@@ -11,7 +11,6 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "tauri": "tauri",
-    "dev:signatures": "tauri dev --config src-tauri/tauri.signature-pad.conf.json",
     "gen:synthetic": "node tools/gen-synthetic.mjs",
     "bench": "node tools/bench.mjs"
   },
