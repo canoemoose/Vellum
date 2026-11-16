@@ -43,8 +43,10 @@
     busy?: boolean;
     onapply: (adjust: Adjust) => void;
     oncancel: () => void;
+    /** The apply button's words (a signature's paper is removed next; an image stamp goes on to its background). */
+    applyLabel?: string;
   }
-  let { image, adjust: start, busy = false, onapply, oncancel }: Props = $props();
+  let { image, adjust: start, busy = false, onapply, oncancel, applyLabel = "Remove the paper" }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let adj = $state<Adjust>({ ...start, crop: { ...start.crop } });
@@ -389,7 +391,7 @@
     <span class="spacer"></span>
     <button class="btn" onclick={reset} disabled={busy}>Reset</button>
     <button class="btn" onclick={oncancel} disabled={busy}>Cancel</button>
-    <button class="btn primary" onclick={() => onapply($state.snapshot(adj))} disabled={busy}>Remove the paper</button>
+    <button class="btn primary" onclick={() => onapply($state.snapshot(adj))} disabled={busy}>{applyLabel}</button>
   </div>
 </div>
 

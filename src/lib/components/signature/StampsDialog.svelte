@@ -12,8 +12,9 @@
   import ColourSwatches from "../ColourSwatches.svelte";
   import RowIcon from "./RowIcons.svelte";
   import FieldInput from "./FieldInput.svelte";
+  import StampEditor from "./StampEditor.svelte";
   import { type OwnText, type StampLine, type StampPrefs, BUILT_IN, DEFAULT_LINE, cleanLabel, cleanLine, lineOf, sanitiseOwnTexts, withLine } from "../../markup/stamps";
-  import { type StampItem, STAMP_EXTENSIONS, addStamp, deleteStamp, listStamps, renameStamp } from "../../stamps/api";
+  import { type StampItem, STAMP_EXTENSIONS, deleteStamp, listStamps, renameStamp } from "../../stamps/api";
   import { pngUrl } from "../../signature/api";
   import { userMessage } from "../../shell/messages";
 
@@ -33,6 +34,11 @@
   /** Which row is asking "delete?": a text stamp's wording or an image stamp's id. */
   let confirming = $state<string | null>(null);
   let urls = new Map<string, string>();
+  /** The picture being made into a stamp (the editor shows in place of the list), or null. */
+  let editing = $state<string | null>(null);
+  let editor = $state<StampEditor>();
+  let editorReady = $state(false);
+  let editorFraming = $state(true);
 
   const text = (t: { label: string; colour: OwnText["colour"] }) => ({ type: "text" as const, label: t.label, sub: null, colour: t.colour });
 
@@ -79,19 +85,20 @@
     }
   }
 
+  /** Choose a picture, then frame it and remove its background in the editor. */
   async function addImage() {
     const path = await openDialog({ title: "Add an image stamp", multiple: false, filters: [{ name: "Pictures", extensions: STAMP_EXTENSIONS }] });
     if (typeof path !== "string") return;
-    busy = true;
-    try {
-      await addStamp(path);
-      error = "";
-      await refresh();
-    } catch (e) {
-      error = userMessage(e, "add the picture");
-    } finally {
-      busy = false;
-    }
+    error = "";
+    editorReady = false;
+    editorFraming = true;
+    editing = path;
+  }
+
+  /** The editor saved one: back to the list, with it in. */
+  async function imageSaved() {
+    editing = null;
+    await refresh();
   }
 
   async function removeImage(id: string) {
@@ -146,7 +153,19 @@
   </span>
 {/snippet}
 
-<Dialog title="Manage stamps" width={880} onClose={p.onClose}>
+{#snippet footer()}
+  {#if editing}
+    <button type="button" class="btn" onclick={() => (editing = null)}>Cancel</button>
+    <button type="button" class="btn primary" disabled={!editorReady} onclick={() => void editor?.save()}>Save</button>
+  {:else}
+    <button type="button" class="btn primary" onclick={p.onClose}>Done</button>
+  {/if}
+{/snippet}
+
+<Dialog title={editing ? "New image stamp" : "Manage stamps"} width={880} onClose={p.onClose} footer={editing && editorFraming ? undefined : footer}>
+  {#if editing}
+    <StampEditor bind:this={editor} path={editing} bind:ready={editorReady} bind:framing={editorFraming} onSaved={() => void imageSaved()} onCancel={() => (editing = null)} />
+  {:else}
   <div class="default">
     <span class="k">Default second line</span>
     <FieldInput
@@ -196,17 +215,14 @@
       {@render deleteButton(i.id, i.name, () => void removeImage(i.id))}
     {/each}
     <span class="cell like"><span class="new-frame" aria-hidden="true"></span></span>
-    <span class="cell"><button type="button" class="field choose" disabled={busy} title="A PNG or JPEG" onclick={addImage}>Choose a picture…</button></span>
+    <span class="cell"><button type="button" class="field choose" disabled={busy} title="A PNG or JPEG" onclick={addImage}>Add a picture…</button></span>
     <span class="cell"></span>
     <span class="cell"></span>
     <span class="cell end"><button type="button" class="icon-btn" disabled={busy} aria-label="Add a picture" title="Add a picture" onclick={addImage}><RowIcon icon="add" /></button></span>
   </div>
 
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-
-  {#snippet footer()}
-    <button type="button" class="btn primary" onclick={p.onClose}>Done</button>
-  {/snippet}
+  {/if}
 </Dialog>
 
 <style>

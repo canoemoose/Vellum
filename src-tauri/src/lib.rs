@@ -519,6 +519,7 @@ pub fn run() {
             // Stamps
             stamps::stamp_list,
             stamps::stamp_add,
+            stamps::stamp_add_png,
             stamps::stamp_get,
             stamps::stamp_delete,
             stamps::stamp_rename,

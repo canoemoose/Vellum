@@ -21,7 +21,9 @@ export const STAMP_EXTENSIONS = ["png", "jpg", "jpeg"];
 
 export const listStamps = () => invoke<StampItem[]>("stamp_list");
 export const addStamp = (path: string) => invoke<StampItem>("stamp_add", { path });
-export const deleteStamp = (id: string) => invoke<void>("stamp_delete", { id });
+/** A picture made in the image stamp editor (PNG bytes), under the name typed for it. */
+export const addStampPng = (name: string, png: Uint8Array) => invoke<StampItem>("stamp_add_png", { name, png: Array.from(png) });
+export const deleteStamp =(id: string) => invoke<void>("stamp_delete", { id });
 export const renameStamp = (id: string, name: string) => invoke<StampItem>("stamp_rename", { id, name });
 
 export async function getStamp(id: string): Promise<Uint8Array> {

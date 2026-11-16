@@ -69,6 +69,15 @@ pub fn name_from_path(path: &Path) -> String {
     if s.trim().is_empty() { "Stamp".into() } else { s.trim().to_string() }
 }
 
+/// A name as typed, made fit to keep: whitespace runs to one space, capped; empty is refused.
+fn clean_name(name: &str) -> Result<String, String> {
+    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_NAME_CHARS).collect();
+    if name.is_empty() {
+        return Err(errcode::coded("stamp_name_empty", "a stamp needs a name".to_string()));
+    }
+    Ok(name)
+}
+
 fn encode_png(img: &image::DynamicImage) -> Result<Vec<u8>, String> {
     let mut out = std::io::Cursor::new(Vec::new());
     img.write_to(&mut out, image::ImageFormat::Png).map_err(|e| format!("encode png: {e}"))?;
@@ -164,10 +173,7 @@ impl StampLibrary {
         if !valid_id(id) {
             return Err(bad_id(id));
         }
-        let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect();
-        if name.is_empty() {
-            return Err(errcode::coded("stamp_name_empty", "a stamp needs a name".to_string()));
-        }
+        let name = clean_name(name)?;
         let path = self.file(id, "json");
         let bytes = std::fs::read(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound { errcode::coded("stamp_not_found", format!("stamp {id}")) } else { errcode::io(&e, format!("stamp {id}: {e}")) }
@@ -227,6 +233,19 @@ pub async fn stamp_add(app: tauri::AppHandle, path: String) -> Result<StampItem,
     match &r {
         Ok(i) => eprintln!("[stamps] added {} ({}x{})", i.meta.id, i.meta.width, i.meta.height),
         Err(e) => eprintln!("[stamps] add failed: {e}"),
+    }
+    r
+}
+
+/// Add a picture made in the image stamp editor (framed, background removed): PNG bytes and
+/// the name typed for it.
+#[tauri::command]
+pub async fn stamp_add_png(app: tauri::AppHandle, name: String, png: Vec<u8>) -> Result<StampItem, String> {
+    let lib = library(&app)?;
+    let r = blocking(move || lib.add(&clean_name(&name)?, &png)).await;
+    match &r {
+        Ok(i) => eprintln!("[stamps] added {} from the editor ({}x{})", i.meta.id, i.meta.width, i.meta.height),
+        Err(e) => eprintln!("[stamps] add from the editor failed: {e}"),
     }
     r
 }

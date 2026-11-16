@@ -1,7 +1,7 @@
 # Stamp and signature library dialogs: scope
 
-Status: **in progress on `editing`** (15 to 16 November 2026). Steps 1 to 3b built and
-committed; step 4 built, not committed, waiting for Matt's check; next is step 5. App-wide requests Matt raised along the way are in
+Status: **in progress on `editing`** (15 to 16 November 2026). Steps 1 to 4 built and
+committed; step 5 built and committed; next is step 6. App-wide requests Matt raised along the way are in
 [backlog.md](backlog.md) (on `main`). Part of Matt's review of the tool
 consistency brief ([editing-tool-consistency-brief.md](editing-tool-consistency-brief.md));
 follows the stamp grid (the Stamp and Signature buttons open a grid of tiles beside the
@@ -83,6 +83,32 @@ an editor for adding (and, for image stamps, editing again).
    the dev demo (`src/dev/SignaturePadDemo.svelte`) until step 7.
 5. **The image stamp editor**: SignatureFrame for framing; background removal that keeps
    colour (Rust, beside `prepare` in `stamps.rs`); a name. "Add a picture…" opens it.
+   **Done** (`components/signature/StampEditor.svelte`). Manage
+   stamps shows it in place of its list, titled "New image stamp": first SignatureFrame (its
+   button says "Next"), then the background view: the framed picture on a checkerboard,
+   "Remove the background" (on; for a picture that already has a transparent background,
+   none of this, just a line saying so: `hasTransparency`, judged before framing as a turned crop
+   has clear corners), which (Matt: both, as options, the app's button group, .seg) "From the edges" (only
+   background joined to the border; white inside a logo stays) or "Everywhere", a tolerance
+   slider (on a curve, fine near zero, for logos on solid colour: Matt; 20, the default, is 5
+   of 255, the far end 128), the colour removed (a wide chip
+   labelled Colour: a square one looked like a checkbox, a round one a radio; the border's median to start; clicking it (Matt) picks another from the
+   picture only (the screen eyedropper can't be limited to it): crosshair and a loupe (11 x 11
+   of the full-size framed pixels, the picked one ringed), the chip showing the colour under it, a
+   click takes it, Esc gives up), the name (the file's), "Back to framing", and Save and Cancel in the footer.
+   Changed from the plan: the removal is TypeScript (`src/lib/stamps/knockout.ts`, tested), not
+   Rust, so the live preview needs no round trip and runs the same code as the saved stamp
+   (on a smaller copy). The framing is drawn full size on a canvas (`stamps/framed.ts`); beyond
+   the photo is transparent, where a signature import repeats its edge. Edges are unmixed (Matt: a soft band by
+   distance left them hairy): each anti-aliased pixel round the removed background, up to two
+   deep while it's still a blend, takes the strongest colour near it as its foreground, its
+   share of that as its alpha and that colour as its own, so no pale fringe and smooth edges; a
+   solid outline stops it, so white inside a shape is safe. Before that, lone specks either way
+   (a pixel 7 of its 8 neighbours disagree with) are overruled, so JPEG noise or a shadow's
+   gradient at the tolerance doesn't leave a hairy line (Matt's test: an icon with a drop shadow
+   on dark grey, deliberately unfair; a shadow has no edge to find). Rust gets the finished PNG:
+   `stamp_add_png` (the library's size cap and preview as before; names cleaned as a rename).
+   The signature import's knock-out didn't fit: it paints every pixel one ink colour.
 6. **Keep originals** (`<id>.orig.<ext>` beside each stamp) and "Edit" in the list.
 7. **Retire the old panels**: StampPicker, StampPanel, SignaturePopover, `VELLUM_STAMP_POPOUTS`.
 8. Tests, the brief's notes, the README's stamp section.
@@ -102,5 +128,4 @@ and frame), `src/lib/stamps/api.ts`, `src-tauri/src/stamps.rs`, `src-tauri/src/l
 
 ## Open questions
 
-- Whether the background removal also needs a "pick the background colour" eyedropper, or
-  white paper is enough to start.
+- None open. (Picking the background colour: answered in step 5, a click on the preview.)
