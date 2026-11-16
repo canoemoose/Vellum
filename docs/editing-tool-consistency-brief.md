@@ -1,7 +1,8 @@
 # Tool consistency and behaviour: modification brief
 
-Status: **built on `editing`, all ten stages, 15 November 2026; waiting for Matt's checks by
-eye** (the list in "For Matt to check", below).
+Status: **built on `editing`, all ten stages, 15 November 2026; Matt's review (15 to 16
+November) worked through, see "Matt's review", below**. The stamp and signature libraries
+carry on in [stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md).
 Parent:
 [editing-scope.md](editing-scope.md). The markup tools were built by four sessions in
 parallel (groundwork, phases 4, 5, 7a, then 7b), so the same gesture behaves differently
@@ -227,7 +228,8 @@ Where: `markup/kinds/measure*.ts`, `markup/measure.ts`, `markup/dimension.ts`,
 - **Placed the CAD way** [D6]: click, click, then a third click sets how far the dimension
   line sits from its points, with extension lines back to them. A third click on the
   points leaves it in line.
-- **The value** [D6] sits above the line, or to its right on a vertical one, and reads
+- **The value** [D6] sits above the line, or to its right on a vertical one *(Matt's review:
+  to its left, as CAD puts it)*, and reads
   from the bottom or the right of the page in its own orientation, so the saved file is
   right for the next reader. Its grip moves it along and off the line; double-click the
   grip puts it back. On polyline length and area the value moves; there's no line to pull
@@ -504,6 +506,64 @@ a proper home, and would move there:
 
 Until it exists, each of these is remembered from last use or fixed, and nothing new goes
 in a menu just to give it somewhere to live.
+
+## Matt's review (15 to 16 November)
+
+What changed after Matt used the build. Where it differs from a stage above, this wins.
+
+- **Gestures.** Rectangle and Ellipse also click out corner to corner (the box gesture: a
+  click starts it, the next click is the opposite corner, Shift squares, Backspace or Esc takes
+  it back). A click with Pen or Highlighter makes a dot.
+- **Turning.** [ and ] turn a selected stamp, signature, image, polygon or cloud a quarter
+  (Shift: 15 degrees), or with a stamp tool out what it places next; a selection with
+  anything else in it stays put; otherwise the view turns. The rotate grip draws to multiples
+  of 45 degrees within 4 (Shift: 15 degree steps). Polygons and clouds turn too: a rotate
+  grip, their own angle (so the grip, the eight box grips and the dashed box go round with
+  them, resizing in their own frame); a regular polygon stays regular. Lines, polylines and
+  pen don't turn (Matt: they don't need to).
+- **Dimensions (Length).** The two points are free (Shift: 15 degrees); the third click picks
+  what's measured by the way it's pulled: above or below the points, the horizontal distance;
+  beside them, the vertical; Shift, straight between (`orient`). The value reads along the
+  dimension line, slides along it (dragged past an end, the line runs on to it), and dragged
+  off the line takes the line with it; no further than a width and a half past an end. The
+  value and the line are their own grips from anywhere on them; only an extension line (or the
+  arrow keys) moves the whole dimension, and the lines pick with less reach. A vertical
+  dimension's value is on the left, reading from the bottom (overrides D6). A dimension's
+  arrowhead is 20 degrees and a fifth shorter. The font picker shows "Aa". The Weight slider
+  once made a dimension vanish in the release build; not reproduced, parked.
+- **Arrowheads.** A solid straight line with filled or dot ends is one filled outline, so there's
+  no seam (dashed lines and polylines still draw apart).
+- **Notes.** A pinned note and a note's hover show who wrote it and when.
+- **Paste.** With the pointer beside a page, a paste goes to the nearest point on it; anything
+  pasted is moved in as little as it takes to lie on the page.
+- **Image tool.** Asks for a picture each time it's picked, places one, then Select comes back
+  with it selected (`ToolDef.once`). A picture's bar: a border (colour and weight, from none),
+  opacity, and Crop (its grips crop until Enter, Esc or a click elsewhere; brackets and bars
+  in crop mode; the whole picture back; the file holds the whole picture, clipped).
+  "Replace picture…" on its right-click.
+- **Stamps and signatures.** The Stamp and Signature buttons open a grid of tiles beside the
+  toolbar, the last one placed already armed: a click on the page places it, a tile arms
+  another. The bar appears only once one is placed (colour, opacity, its second line), with a
+  button showing the stamp that opens the grid to swap it ("Replace…" on its right-click too).
+  Text stamps take fields ({author}, {date}, {time}, {file}, {page}, filled in when placed,
+  kept for a later "Update fields"; `\{` for a brace), shown as chips in a wording box; each
+  stamp has its own second line (on or off, its wording; empty takes the default). Your own
+  text stamps are a list. Manage stamps edits all of it. The details are in
+  [stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md).
+- **Colours.** Text stamps offer the bar's palette and a custom colour (one palette,
+  `markup/palette.ts`).
+
+## Later: asked for during Matt's review (not built)
+
+The markup tools' own. Everything else Matt asked for along the way is app-wide and lives in
+the backlog, [backlog.md](backlog.md) (on `main`).
+
+- Fields ({author}, {date}...) in text boxes and callouts, filled in when typing ends (the
+  chip box, `FieldInput`, is ready for it).
+- "Update fields": fill a placed stamp's fields in again, only when asked (a stamp's date is a
+  record). Placed stamps already keep their wording with its fields for this.
+- The dimension that vanished when its Weight slider was dragged (release build only, not
+  reproduced): watch for it, and take the console's first error if it happens again.
 
 ## Testing
 
