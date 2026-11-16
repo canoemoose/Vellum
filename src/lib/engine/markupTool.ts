@@ -569,6 +569,13 @@ export class MarkupTool {
       return true;
     }
     if (this.tool !== "select") return this.drawDown(sx, sy, clicks, mods);
+    // A locked markup's padlock: ask to unlock the file (brief, 2). First, as it may stand
+    // off the page's edge.
+    const badge = this.lockBadgeHit(sx, sy);
+    if (badge) {
+      this.opts.onUnlockAsk?.(badge.id);
+      return true;
+    }
     const at = this.pointOn(sx, sy);
     if (!at) {
       if (!mods.shift) this.clearSelection();
@@ -586,12 +593,6 @@ export class MarkupTool {
       }
     }
     if (this.cropId) this.setCropping(false);
-    // A locked markup's padlock: ask to unlock the file (brief, 2).
-    const badge = this.lockBadgeHit(sx, sy);
-    if (badge) {
-      this.opts.onUnlockAsk?.(badge.id);
-      return true;
-    }
     // A handle of a selected markup first (the lock keeps a locked one's: it shows a padlock).
     for (const m of this.selected()) {
       if (m.page !== page || this.isLocked(m)) continue;

@@ -178,11 +178,20 @@ describe("the lock", () => {
     t.up(at[0], at[1], none);
     expect(asked).toEqual(["theirs"]);
     expect([...doc.selection]).toEqual(["theirs"]);
+    // Off the page's edge, it's still there to click.
+    doc.adoptFile(read([annot(rect("edge", "Pat", 560), 2)]));
+    t.select(["edge"]);
+    const off = t.lockBadgeAt(doc.byId("edge")!)!;
+    expect(off[0]).toBeGreaterThan(scr(v, 600, 0)[0]);
+    t.down(off[0], off[1], 1, none);
+    t.up(off[0], off[1], none);
+    expect(asked).toEqual(["theirs", "edge"]);
+    t.select(["theirs"]);
     // Unlocked, there's no padlock: the same click is on nothing.
     doc.unlocked = true;
     t.down(at[0], at[1], 1, none);
     t.up(at[0], at[1], none);
-    expect(asked).toEqual(["theirs"]);
+    expect(asked).toEqual(["theirs", "edge"]);
   });
 
   it("never covers what you made in this session, even once it's saved", async () => {
