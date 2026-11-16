@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Pixels, type Rgb8, guessBackground, hardLimit, hasTransparency, knockOut } from "./knockout";
+import { type Pixels, type Rgb8, guessBackground, hardLimit, hasTransparency, knockOut, regionAt, regions } from "./knockout";
 
 const WHITE: Rgb8 = [255, 255, 255];
 const BLACK: Rgb8 = [0, 0, 0];
@@ -145,5 +145,51 @@ describe("hasTransparency", () => {
     const rows = Array.from({ length: 40 }, () => ".".repeat(40));
     rows[0] = " " + rows[0].slice(1);
     expect(hasTransparency(pic(rows, KEY))).toBe(false);
+  });
+});
+
+// Two black rings on white: each has a white hole inside.
+const TWO = pic([
+  "...........",
+  ".####.####.",
+  ".#..#.#..#.",
+  ".#..#.#..#.",
+  ".####.####.",
+  "...........",
+], KEY);
+/** A point at a pixel's centre, as fractions of the picture. */
+const at = (p: Pixels, x: number, y: number): [number, number] => [(x + 0.5) / p.width, (y + 0.5) / p.height];
+
+describe("holes", () => {
+  it("removes only the holes chosen, outside only", () => {
+    const out = knockOut(TWO, { bg: WHITE, tolerance: 10, mode: "edges", holes: [at(TWO, 2, 2)] });
+    expect(alphaAt(out, TWO, 2, 2)).toBe(0);
+    expect(alphaAt(out, TWO, 3, 3)).toBe(0);
+    // The other ring's hole stays.
+    expect(alphaAt(out, TWO, 7, 2)).toBe(255);
+    expect(alphaAt(out, TWO, 1, 1)).toBe(255);
+  });
+
+  it("ignores a hole point that isn't the background's colour", () => {
+    const out = knockOut(TWO, { bg: WHITE, tolerance: 10, mode: "edges", holes: [at(TWO, 1, 1)] });
+    expect(alphaAt(out, TWO, 1, 1)).toBe(255);
+    expect(alphaAt(out, TWO, 2, 2)).toBe(255);
+  });
+});
+
+describe("regions", () => {
+  it("numbers each background-coloured area, and knows which are outside", () => {
+    const r = regions(TWO, { bg: WHITE, tolerance: 10 });
+    const outside = regionAt(r, at(TWO, 0, 0));
+    const holeA = regionAt(r, at(TWO, 2, 2));
+    const holeB = regionAt(r, at(TWO, 7, 2));
+    expect(r.outside.has(outside)).toBe(true);
+    expect(holeA).toBeGreaterThan(0);
+    expect(holeB).toBeGreaterThan(0);
+    expect(holeA).not.toBe(holeB);
+    expect(r.outside.has(holeA)).toBe(false);
+    expect(regionAt(r, at(TWO, 3, 3))).toBe(holeA);
+    // The ring itself isn't an area.
+    expect(regionAt(r, at(TWO, 1, 1))).toBe(0);
   });
 });

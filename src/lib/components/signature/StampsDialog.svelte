@@ -155,6 +155,7 @@
 
 {#snippet footer()}
   {#if editing}
+    <button type="button" class="btn back" onclick={() => editor?.backToFraming()}>Back to framing</button>
     <button type="button" class="btn" onclick={() => (editing = null)}>Cancel</button>
     <button type="button" class="btn primary" disabled={!editorReady} onclick={() => void editor?.save()}>Save</button>
   {:else}
@@ -226,6 +227,10 @@
 </Dialog>
 
 <style>
+  /* The editor's way back, on the footer's left, apart from Cancel and Save. */
+  .back {
+    margin-right: auto;
+  }
   .default {
     display: flex;
     align-items: center;

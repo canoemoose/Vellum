@@ -24,6 +24,11 @@ export interface KnockOptions {
   /** 0 (only the exact colour) to 100 (very loose). */
   tolerance: number;
   mode: KnockMode;
+  /**
+   * "edges" only: enclosed areas to remove as well (the hole in an e), each a point inside it as
+   * fractions of the picture (0 to 1), so the same points serve the preview and the full size.
+   */
+  holes?: [number, number][];
 }
 
 /** Source pixels more transparent than this count as background already. */
@@ -107,6 +112,95 @@ export function tidy(raw: Uint8Array, w: number, h: number): Uint8Array {
   return out;
 }
 
+/** Each pixel's distance from the background colour (clear pixels count as background). */
+function distances(p: Pixels, bg: Rgb8): Float32Array {
+  const n = p.width * p.height;
+  const dist = new Float32Array(n);
+  for (let k = 0; k < n; k++) dist[k] = p.data[k * 4 + 3] < CLEAR ? 0 : distance(p.data, k * 4, bg);
+  return dist;
+}
+
+/** What's the background's colour: within the tolerance, lone specks either way overruled (tidy). 1 where it is. */
+function backgroundColoured(dist: Float32Array, w: number, h: number, tolerance: number): Uint8Array {
+  const t = hardLimit(tolerance);
+  const raw = new Uint8Array(dist.length);
+  for (let k = 0; k < dist.length; k++) raw[k] = dist[k] <= t ? 1 : 0;
+  return tidy(raw, w, h);
+}
+
+/** A point given as fractions of the picture, as a pixel index (null outside it). */
+function pointIndex(pt: [number, number], w: number, h: number): number | null {
+  const x = Math.floor(pt[0] * w);
+  const y = Math.floor(pt[1] * h);
+  return x < 0 || y < 0 || x >= w || y >= h ? null : y * w + x;
+}
+
+/**
+ * Flood through background-coloured pixels (4-connected, so a one-pixel diagonal outline still
+ * walls in what's inside it) from `starts`, marking `into` with `mark`. Already marked pixels are
+ * left alone.
+ */
+function flood(bgc: Uint8Array, w: number, starts: Iterable<number>, into: Uint8Array | Int32Array, mark: number, queue: Int32Array) {
+  const n = bgc.length;
+  let head = 0;
+  let tail = 0;
+  const seed = (k: number) => {
+    if (!into[k] && bgc[k]) {
+      into[k] = mark;
+      queue[tail++] = k;
+    }
+  };
+  for (const k of starts) seed(k);
+  while (head < tail) {
+    const k = queue[head++];
+    const x = k % w;
+    if (x > 0) seed(k - 1);
+    if (x < w - 1) seed(k + 1);
+    if (k >= w) seed(k - w);
+    if (k < n - w) seed(k + w);
+  }
+}
+
+function* border(w: number, h: number): Generator<number> {
+  for (let x = 0; x < w; x++) {
+    yield x;
+    yield (h - 1) * w + x;
+  }
+  for (let y = 0; y < h; y++) {
+    yield y * w;
+    yield y * w + w - 1;
+  }
+}
+
+/** The background-coloured areas of a picture, each numbered, for clicking holes on and off. */
+export interface Regions {
+  /** Each pixel's area (0: not the background's colour). */
+  label: Int32Array;
+  /** The areas joined to the border ("Outside only" removes these anyway). */
+  outside: Set<number>;
+  width: number;
+  height: number;
+}
+
+/** Number the background-coloured areas (as `knockOut` sees them, so its holes are these areas). */
+export function regions(p: Pixels, o: Pick<KnockOptions, "bg" | "tolerance">): Regions {
+  const { width: w, height: h } = p;
+  const bgc = backgroundColoured(distances(p, o.bg), w, h, o.tolerance);
+  const label = new Int32Array(w * h);
+  const queue = new Int32Array(w * h);
+  let next = 0;
+  for (let k = 0; k < label.length; k++) if (bgc[k] && !label[k]) flood(bgc, w, [k], label, ++next, queue);
+  const outside = new Set<number>();
+  for (const k of border(w, h)) if (label[k]) outside.add(label[k]);
+  return { label, outside, width: w, height: h };
+}
+
+/** The area a point (fractions of the picture) is in: 0 if it isn't the background's colour. */
+export function regionAt(r: Regions, pt: [number, number]): number {
+  const k = pointIndex(pt, r.width, r.height);
+  return k === null ? 0 : r.label[k];
+}
+
 /** How far round the removed background an edge pixel may be and still be unmixed. */
 const EDGE_REACH = 2;
 
@@ -123,47 +217,16 @@ const EDGE_REACH = 2;
 export function knockOut(p: Pixels, o: KnockOptions): Uint8ClampedArray {
   const { data, width: w, height: h } = p;
   const n = w * h;
-  const t = hardLimit(o.tolerance);
-  const dist = new Float32Array(n);
-  for (let k = 0; k < n; k++) dist[k] = data[k * 4 + 3] < CLEAR ? 0 : distance(data, k * 4, o.bg);
-
-  // What's background: within the tolerance, with lone specks either way overruled (tidy).
-  const raw = new Uint8Array(n);
-  for (let k = 0; k < n; k++) raw[k] = dist[k] <= t ? 1 : 0;
-  const bgMask = tidy(raw, w, h);
-  const isBg = (k: number) => bgMask[k] === 1;
+  const dist = distances(p, o.bg);
+  const coloured = backgroundColoured(dist, w, h, o.tolerance);
   // The background: 1 where removed.
-  const gone = new Uint8Array(n);
-  if (o.mode === "everywhere") {
-    for (let k = 0; k < n; k++) if (isBg(k)) gone[k] = 1;
-  } else {
-    // Flood from the border through background pixels (4-connected, so a one-pixel diagonal
-    // outline still walls in what's inside it).
-    const queue = new Int32Array(n);
-    let head = 0;
-    let tail = 0;
-    const seed = (k: number) => {
-      if (!gone[k] && isBg(k)) {
-        gone[k] = 1;
-        queue[tail++] = k;
-      }
-    };
-    for (let x = 0; x < w; x++) {
-      seed(x);
-      seed((h - 1) * w + x);
-    }
-    for (let y = 0; y < h; y++) {
-      seed(y * w);
-      seed(y * w + w - 1);
-    }
-    while (head < tail) {
-      const k = queue[head++];
-      const x = k % w;
-      if (x > 0) seed(k - 1);
-      if (x < w - 1) seed(k + 1);
-      if (k >= w) seed(k - w);
-      if (k < n - w) seed(k + w);
-    }
+  let gone: Uint8Array;
+  if (o.mode === "everywhere") gone = coloured;
+  else {
+    // From the border, and from any holes chosen.
+    gone = new Uint8Array(n);
+    const holes = (o.holes ?? []).map((pt) => pointIndex(pt, w, h)).filter((k): k is number => k !== null);
+    flood(coloured, w, [...border(w, h), ...holes], gone, 1, new Int32Array(n));
   }
 
   // The edge: kept pixels touching the background (8-connected), and, up to EDGE_REACH deep,

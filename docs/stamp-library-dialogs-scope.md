@@ -109,6 +109,17 @@ an editor for adding (and, for image stamps, editing again).
    on dark grey, deliberately unfair; a shadow has no edge to find). Rust gets the finished PNG:
    `stamp_add_png` (the library's size cap and preview as before; names cleaned as a rename).
    The signature import's knock-out didn't fit: it paints every pixel one ink colour.
+   Layout after Matt's review of it: one row "Remove background" with the button group Off / Outside
+   only / Everywhere (the checkbox folded in; Matt chose the words), "Pick colour" (eyedropper icon, the colour as a
+   small sample in it), and the tolerance filling the rest of the row with its value; all 32 px
+   high. Then "Name" and its field. "Back to framing" is on the footer's left, apart from Cancel
+   and Save.
+   Holes (Matt): with "Outside only", a click on an enclosed area of the background's colour
+   removes it too (the hole in an e), a click on a removed one keeps it again. The picture can't
+   tell a hole from a fill of the same colour (counting boundary crossings puts both at the same
+   depth in one logo or another), so the click decides. Stored as points on the framed picture
+   (`holes` in `KnockOptions`, fractions so the preview and the full size agree; `regions`
+   numbers the areas for the click), cleared by framing again.
 6. **Keep originals** (`<id>.orig.<ext>` beside each stamp) and "Edit" in the list.
 7. **Retire the old panels**: StampPicker, StampPanel, SignaturePopover, `VELLUM_STAMP_POPOUTS`.
 8. Tests, the brief's notes, the README's stamp section.

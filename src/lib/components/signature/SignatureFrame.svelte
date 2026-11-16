@@ -387,7 +387,7 @@
   </div>
 
   <div class="row">
-    <span class="hint">Drag to crop. Drag the top handle to rotate, double-click it to level. Enter applies, Esc cancels.</span>
+    <span class="hint">Drag to crop. Drag the top handle to rotate; double-click to level. Enter to apply; Esc to cancel.</span>
     <span class="spacer"></span>
     <button class="btn" onclick={reset} disabled={busy}>Reset</button>
     <button class="btn" onclick={oncancel} disabled={busy}>Cancel</button>
