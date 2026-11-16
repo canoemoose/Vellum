@@ -538,6 +538,29 @@ zoom, touchpad scrolls pan. Touchpad pinch arrives as ctrl+wheel only if the win
 handlers cancel the browser's own page zoom so the setting only serves to let the gesture through. Ctrl+wheel always zooms (pinch arrives as ctrl+wheel). Middle button
 pans with pointer capture; its mousedown is cancelled to stop Windows autoscroll.
 
+## WebView2 switches
+
+The window sets `additionalBrowserArgs` in `tauri.conf.json`. Setting it replaces wry's
+defaults, so the first part repeats them (`--disable-features=msWebOOUI,msPdfOOUI,
+msSmartScreenProtection`: no mini menu, no SmartScreen). The second, `--enable-benchmarking`,
+makes WebView2 ignore the feature experiments Microsoft downloads into each profile (the
+`Variations*` files in `EBWebView`) and run every feature at its built-in default.
+
+Why: in November 2026 an experiment that reached Matt's profile made the eyedropper
+(`EyeDropper.open()`, in the colour picker) close 2 ms after opening with an `AbortError`, in
+dev and release. A fresh profile, or the same profile without its `Variations*` files, worked;
+Edge (its own profile) worked. The seeds are encrypted, so the feature couldn't be named and
+switched off on its own. Costs: Vellum gets Microsoft's trial changes only once they're
+standard in a runtime update (security fixes come in runtime updates regardless), and
+`--enable-benchmarking` is a testing switch Microsoft could change. Every speed measurement
+was taken on fresh profiles, which have no experiments either, so none of the numbers move.
+Worth trying without it after a runtime update: if the eyedropper works on a profile that has
+experiments, drop the switch. The colour picker logs a `[colour] eyedropper closed...` warning
+whenever it closes without a colour, so a return shows up in the log.
+
+Only the main window uses WebView2. A second window would need the same switches, or its own
+data directory (WebView2 refuses different switches on one data directory).
+
 ## Instrumentation
 
 - **F12** (or Ctrl+Shift+D, or `--debug`) toggles the overlay: live and last-active fps, draw
