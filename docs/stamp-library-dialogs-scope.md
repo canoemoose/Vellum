@@ -1,7 +1,7 @@
 # Stamp and signature library dialogs: scope
 
 Status: **in progress on `editing`** (15 to 16 November 2026). Steps 1 to 4 built and
-committed; step 5 built and committed; step 6 deferred (Matt, 16 November); step 7 done; next is step 8. App-wide requests Matt raised along the way are in
+committed; step 5 built and committed; step 6 deferred (Matt, 16 November); steps 7 and 8 done. The work this scope set out is finished, step 6 aside. App-wide requests Matt raised along the way are in
 [backlog.md](backlog.md) (on `main`). Part of Matt's review of the tool
 consistency brief ([editing-tool-consistency-brief.md](editing-tool-consistency-brief.md));
 follows the stamp grid (the Stamp and Signature buttons open a grid of tiles beside the
@@ -145,6 +145,12 @@ an editor for adding (and, for image stamps, editing again).
    to last until signatures were placed from the app. `docs/signatures-backend.md` points at the
    app instead.
 8. Tests, the brief's notes, the README's stamp section.
+   **Done**. Tests: the name an editor-made stamp is saved under (`clean_name`) and an
+   editor-made PNG kept as it is (`tests/stamps_library.rs`); the TypeScript side was tested as
+   it was built (`stamps/knockout.test.ts`, `stamps/framed.test.ts`, `markup/fields.test.ts`).
+   The brief's stage 8 notes and its test list say what replaced the popouts. The README:
+   left for the editing merge (Matt): on this branch it still says Vellum isn't an editor, so
+   it wants rewriting for markup as a whole, not a stamp section added.
 
 ## Files in play
 

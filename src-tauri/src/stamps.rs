@@ -70,7 +70,7 @@ pub fn name_from_path(path: &Path) -> String {
 }
 
 /// A name as typed, made fit to keep: whitespace runs to one space, capped; empty is refused.
-fn clean_name(name: &str) -> Result<String, String> {
+pub fn clean_name(name: &str) -> Result<String, String> {
     let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_NAME_CHARS).collect();
     if name.is_empty() {
         return Err(errcode::coded("stamp_name_empty", "a stamp needs a name".to_string()));

@@ -393,6 +393,12 @@ Signature panel opens when no signature is remembered. `VELLUM_STAMP_POPOUTS=1` 
 the old panels for choosing. A selected image stamp from the library shows the Image picker
 (a placed image doesn't record where it came from).
 
+Since (November, [stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md)): Matt chose
+the grid over both the bar's dropdown and the popouts, so the old panels (StampPicker,
+StampPanel, SignaturePopover, SignatureLibrary) and `VELLUM_STAMP_POPOUTS` are gone. Choosing
+is the grid's; looking after the libraries is Manage stamps and the Signatures dialog;
+adding an image stamp goes through the image stamp editor.
+
 ## Stage 9: selecting, copying and pasting ✓
 
 Where: `engine/markupTool.ts` (`clipboard`), the key handler and menus in `App.svelte`.
@@ -474,7 +480,8 @@ completeness is also tested from the letter table.
 7. Notes: the pinned box, upright and beside its icon at every view turn; how Acrobat and
    Edge show the pop-ups.
 8. Stamps: the rotate grip and cursor, a turned stamp saved and baked, upright as viewed
-   when placed, the Image tool, the pickers in the bar (and `VELLUM_STAMP_POPOUTS=1`).
+   when placed, the Image tool, the grid, Manage stamps, the Signatures dialog (list and pad)
+   and the image stamp editor (framing, removing the background, enclosed regions).
 9. Clipboard: Win+V not keeping copied markups, pasting between two Vellum windows (a
    signature skipped with a message), a screenshot pasted as an image.
 
@@ -548,7 +555,10 @@ What changed after Matt used the build. Where it differs from a stage above, thi
   Text stamps take fields ({author}, {date}, {time}, {file}, {page}, filled in when placed,
   kept for a later "Update fields"; `\{` for a brace), shown as chips in a wording box; each
   stamp has its own second line (on or off, its wording; empty takes the default). Your own
-  text stamps are a list. Manage stamps edits all of it. The details are in
+  text stamps are a list. Manage stamps edits all of it, and adds an image stamp through an
+  editor: frame the picture, remove its background (outside only or everywhere, a tolerance,
+  the colour picked from the picture, enclosed regions clicked out), name it. The Signatures
+  dialog lists signatures and holds the pad for a new one. The details are in
   [stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md).
 - **Colours.** Text stamps offer the bar's palette and a custom colour (one palette,
   `markup/palette.ts`).

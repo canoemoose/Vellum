@@ -2,7 +2,7 @@
 //! preview each, listed, fetched and removed. Pictures are synthetic, made here.
 
 use std::path::{Path, PathBuf};
-use vellum_lib::stamps::{MAX_SIDE, StampLibrary, name_from_path, prepare, valid_id};
+use vellum_lib::stamps::{MAX_SIDE, StampLibrary, clean_name, name_from_path, prepare, valid_id};
 
 fn dir(tag: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("vellum-stamps-test-{}-{tag}", std::process::id()));
@@ -95,4 +95,24 @@ fn renames_a_stamp_keeping_its_picture_and_place() {
     assert!(lib.rename(&b.meta.id, "   ").unwrap_err().starts_with("[stamp_name_empty]"));
     assert!(lib.rename("missing0000", "x").is_err());
     assert!(lib.rename("../x", "x").is_err());
+}
+
+/// A name typed in the image stamp editor (stamp_add_png) or a rename: tidied, capped, never empty.
+#[test]
+fn typed_names_are_tidied_and_an_empty_one_refused() {
+    assert_eq!(clean_name("  EE   logo	vertical ").unwrap(), "EE logo vertical");
+    assert_eq!(clean_name(&"x".repeat(200)).unwrap().chars().count(), 80);
+    assert!(clean_name("   ").unwrap_err().contains("stamp_name_empty"));
+    assert!(clean_name("").is_err());
+}
+
+/// What the editor sends: a PNG with a clear background is kept as it is, transparency and all.
+#[test]
+fn an_editor_png_is_added_under_its_typed_name() {
+    let lib = StampLibrary::new(dir("editor"));
+    let item = lib.add(&clean_name(" Logo ").unwrap(), &png(40, 20, 255)).unwrap();
+    assert_eq!(item.meta.name, "Logo");
+    let back = image::load_from_memory(&lib.get(&item.meta.id).unwrap()).unwrap().to_rgba8();
+    assert_eq!(back.get_pixel(1, 0)[3], 0);
+    assert_eq!(back.get_pixel(0, 0)[3], 255);
 }
