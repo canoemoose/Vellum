@@ -13,7 +13,7 @@
   import { sameColour as same } from "../markup/colour";
   import ColourPicker from "./ColourPicker.svelte";
   import WeightControl from "./WeightControl.svelte";
-  import { LINE_COLOURS } from "../markup/palette";
+  import { FILL_COLOURS, LINE_COLOURS } from "../markup/palette";
   import StampLikeness from "./signature/StampLikeness.svelte";
   import PopChoice from "./PopChoice.svelte";
   import { DASHES, dashOption } from "../markup/dash";
@@ -79,7 +79,7 @@
     kinds: MarkupKind[];
     style: Style;
     text: TextStyle | null;
-    /** "Arrow tool" or "2 markups selected". */
+    /** The kind's name, "Arrow", with its tool out or one selected; "2 markups" for several. */
     label: string;
     /**
      * A stamp or signature selected (or just placed): a button with its likeness, after the label,
@@ -118,14 +118,8 @@
   let p: Props = $props();
 
   const COLOURS = LINE_COLOURS;
-  const FILLS: { name: string; c: Rgb }[] = [
-    { name: "White", c: [1, 1, 1] },
-    { name: "Pale yellow", c: [1, 0.97, 0.7] },
-    { name: "Pale red", c: [1, 0.85, 0.85] },
-    { name: "Pale blue", c: [0.85, 0.92, 1] },
-    { name: "Pale green", c: [0.85, 0.96, 0.85] },
-    { name: "Pale grey", c: [0.9, 0.9, 0.9] },
-  ];
+  // Slot for slot under the line colours, None seventh (under Black): markup/palette.ts.
+  const FILLS = FILL_COLOURS;
   const SIZES = [6, 8, 10, 12, 14, 18, 24, 36];
   const SIZE_OPTS = SIZES.map((v) => ({ key: String(v), name: `${v} pt` }));
   const ENDS: { key: LineEnd; name: string }[] = [
@@ -344,10 +338,10 @@
       <span class="k">{isText ? "Background" : "Fill"}</span>
       <div class="pal">
         <div class="swatches" role="radiogroup" aria-label={isText ? "Background colour" : "Fill colour"}>
-          <button type="button" role="radio" class="sw none" class:on={!p.style.fill} aria-checked={!p.style.fill} aria-label="None" title="None" onclick={() => p.onStyle({ fill: null })}></button>
           {#each FILLS as col (col.name)}
             <button type="button" role="radio" class="sw" class:on={same(p.style.fill, col.c)} aria-checked={same(p.style.fill, col.c)} aria-label={col.name} title={col.name} style:--c={css(col.c)} onclick={() => p.onStyle({ fill: col.c })}></button>
           {/each}
+          <button type="button" role="radio" class="sw none" class:on={!p.style.fill} aria-checked={!p.style.fill} aria-label="None" title="None" onclick={() => p.onStyle({ fill: null })}></button>
           {@render custom("fill", p.style.fill, FILLS)}
         </div>
         {@render opacity(isText ? "Background opacity" : "Fill opacity", fillOpacity(p.style), p.style.fill, !p.style.fill, (o, live) => p.onStyle({ fillOpacity: o }, live))}
@@ -624,7 +618,8 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 10px;
-    padding: 5px 10px 5px 4px;
+    /* Room for the current swatch's ring (4 px outside it): a few pixels clear of the edge. */
+    padding: 8px 10px 8px 4px;
     background: var(--app);
     border: 1px solid var(--bd-strong);
     border-radius: 10px;
@@ -647,7 +642,7 @@
   .strip.column {
     align-items: center;
     width: auto;
-    padding: 4px 6px 8px;
+    padding: 4px 8px 8px;
     gap: 7px;
   }
   .strip.measure {
@@ -753,6 +748,10 @@
     display: flex;
     align-items: center;
     gap: 5px;
+  }
+  /* The current swatch's ring stands 4 px out: 7 px between swatches leaves 3 px to the next. */
+  .swatches {
+    gap: 7px;
   }
   .vertical:not(.column) .swatches {
     flex-wrap: wrap;
