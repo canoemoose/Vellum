@@ -50,9 +50,11 @@ describe("rows", () => {
   });
 
   it("show a kind's own words where one is registered (a measurement's values)", () => {
-    LIST_TEXT.rect = (m: Markup) => `${m.kind}: 2.40 m x 1.20 m`;
+    LIST_TEXT.rect = (m: Markup) => ({ value: "2.40 m", text: `${m.kind}, 1.20 m deep` });
     try {
-      expect(listText(rect(0, 0, 0))).toBe("rect: 2.40 m x 1.20 m");
+      expect(listText(rect(0, 0, 0))).toBe("rect, 1.20 m deep");
+      expect(rowFor(rect(0, 0, 0)).value).toBe("2.40 m");
+      expect(rowFor(rect(0, 0, 0)).tip).toBe("Rectangle: 2.40 m, rect, 1.20 m deep");
     } finally {
       delete LIST_TEXT.rect;
     }
@@ -68,12 +70,48 @@ describe("listDate", () => {
     expect(listDate("nonsense", now)).toBe("");
   });
 
-  // Measuring
-  it("show a measurement's two values", () => {
-    const m = mk("measureLength", 0, { from: [100, 100], to: [200, 100], scale: 100, userUnit: 1, fmt: { units: "auto", decimals: 2 }, labelSize: 8 });
-    const text = listText(m);
-    expect(text).toContain("at 1:100");
-    expect(text).toContain("on paper");
+});
+
+// Measuring: a row in lines (docs/edit-lock-brief.md, 5). The value beside the kind, what
+// qualifies it under, the on-paper value only in the tooltip.
+describe("a measurement's row", () => {
+  const fmt = { units: "auto", decimals: 2 };
+  const length = (scale: number | null) => mk("measureLength", 0, { from: [100, 100], to: [200, 100], scale, userUnit: 1, fmt, labelSize: 8 });
+
+  it("puts the value beside the kind and the scale under it, paper only in the tooltip", () => {
+    const r = rowFor(length(100));
+    expect(r.label).toBe("Length");
+    expect(r.value).toMatch(/^\d+\.\d\d m$/);
+    expect(r.text).toBe("at 1:100");
+    expect(r.text).not.toContain("on paper");
+    expect(r.tip).toContain("at 1:100");
+    expect(r.tip).toContain("on paper");
+  });
+
+  it("puts an area's perimeter on the second line", () => {
+    const sq = mk("measureArea", 0, { vertices: [[0, 0], [100, 0], [100, 100], [0, 100]], scale: 100, userUnit: 1, fmt, labelSize: 8 });
+    const r = rowFor(sq);
+    expect(r.value).toMatch(/ m²$/);
+    expect(r.text).toMatch(/^Perimeter .+ m, at 1:100$/);
+  });
+
+  it("gives an angle its value and no second line", () => {
+    const a = mk("measureAngle", 0, { vertices: [[100, 0], [0, 0], [0, -100]], fmt, labelSize: 8 });
+    const r = rowFor(a);
+    expect(r.value).toBe("90.0°");
+    expect(r.text).toBe("");
+  });
+
+  it("says when there's no scale, with the value on paper", () => {
+    const r = rowFor(length(null));
+    expect(r.value).toMatch(/ mm$/);
+    expect(r.text).toBe("on paper, no scale set");
+  });
+
+  it("has one value at 1:1, with no on-paper value in the tooltip", () => {
+    const r = rowFor(length(1));
+    expect(r.text).toBe("at 1:1");
+    expect(r.tip).not.toContain("on paper");
   });
 });
 

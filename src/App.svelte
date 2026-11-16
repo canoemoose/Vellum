@@ -1061,6 +1061,17 @@
   });
 
   /** A row in the Markups tab clicked: back to Select, select it and bring it into view. */
+  /**
+   * A right-click on a Markups list row (docs/edit-lock-brief.md, 5): the row's markup picked, and
+   * a menu with Delete. A row the file's lock keeps offers no Delete, so no menu.
+   */
+  function markupRowMenu(id: string, x: number, y: number) {
+    pickMarkup(id);
+    const m = markupTool?.doc?.byId(id);
+    if (!m || markupTool?.isLocked(m)) return;
+    contextMenu = { x, y, items: [{ label: "Delete", shortcut: "Delete", action: () => markupTool?.removeMarkup(id) }] };
+  }
+
   function pickMarkup(id: string) {
     const mt = markupTool;
     const m = mt?.doc?.byId(id);
@@ -2646,7 +2657,7 @@
         onGotoPoint={(p, y) => viewer?.gotoPagePoint(p, y)}
         markups={markupsTab}
         onPickMarkup={pickMarkup}
-        onDeleteMarkup={(id) => markupTool?.removeMarkup(id)}
+        onMarkupMenu={markupRowMenu}
       />
     {/if}
 

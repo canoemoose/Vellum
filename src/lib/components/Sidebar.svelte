@@ -30,7 +30,8 @@
     /** The Markups tab: the tab's markups by page, which are selected, their colours; editable is false for images. */
     markups?: { pages: MarkupPage[]; selected: ReadonlySet<string>; colours: ReadonlyMap<string, string>; editable: boolean };
     onPickMarkup?: (id: string) => void;
-    onDeleteMarkup?: (id: string) => void;
+    /** A right-click on a markup's row: its menu (Delete), at screen (x, y). */
+    onMarkupMenu?: (id: string, x: number, y: number) => void;
   }
   let p: Props = $props();
 
@@ -67,7 +68,7 @@
     {#if !p.markups?.editable}
       <p class="empty">Markups can be made on PDFs only.</p>
     {:else if p.markups.pages.length}
-      <MarkupsList pages={p.markups.pages} selected={p.markups.selected} colours={p.markups.colours} onPick={(id) => p.onPickMarkup?.(id)} onDelete={(id) => p.onDeleteMarkup?.(id)} />
+      <MarkupsList pages={p.markups.pages} selected={p.markups.selected} colours={p.markups.colours} onPick={(id) => p.onPickMarkup?.(id)} onMenu={(id, x, y) => p.onMarkupMenu?.(id, x, y)} />
     {:else}
       <p class="empty">No markups yet. Draw with the tools in the toolbar, or select text to highlight it.</p>
     {/if}

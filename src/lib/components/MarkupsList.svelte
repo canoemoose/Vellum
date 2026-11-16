@@ -1,11 +1,13 @@
 <script lang="ts">
-  // The sidebar's Markups tab: the tab's markups by page (markup/listing.ts), each with an icon
-  // for its type, its text, author and date. Click a row to jump there and select it; its
-  // delete button (or Delete, once it's selected) removes it. Selecting on the canvas
-  // highlights the row and scrolls it into view. Annotations that came with the file are listed
-  // too; while the document is locked they can be found but not deleted (no delete button).
-  // Rows are keyed by markup id and styled by
-  // what they are, never by position (no striping): rows come and go as markups do.
+  // The sidebar's Markups tab: the tab's markups by page (markup/listing.ts). Each row is laid
+  // out as lines, each one line that shortens with an ellipsis (docs/edit-lock-brief.md, 5):
+  // the kind with a measurement's value; what it says (a text box's or note's words may take two
+  // lines) or what qualifies the value; author and date, muted. A row does one thing: a click
+  // jumps to the markup and selects it. Delete is the Delete key once it's selected, or the row's
+  // right-click menu; there's no delete button on the row. Annotations that came with the file
+  // are listed too, and picked the same way, locked or not. Selecting on the canvas highlights
+  // the row and scrolls it into view. Rows are keyed by markup id and styled by what they are,
+  // never by position (no striping): rows come and go as markups do.
   import { type MarkupPage, listDate } from "../markup/listing";
 
   interface Props {
@@ -14,7 +16,8 @@
     /** Colour for each markup's icon, by id ("rgb(...)"). */
     colours: ReadonlyMap<string, string>;
     onPick: (id: string) => void;
-    onDelete: (id: string) => void;
+    /** A right-click on a row, at screen (x, y). */
+    onMenu: (id: string, x: number, y: number) => void;
   }
   let p: Props = $props();
   let list = $state<HTMLDivElement>();
@@ -35,20 +38,26 @@
     <section aria-label="Page {g.page + 1}">
       <h3>Page {g.page + 1} <span class="n">{g.rows.length}</span></h3>
       {#each g.rows as r (r.id)}
+        {@const when = listDate(r.modified, now)}
         <div class="row" class:on={p.selected.has(r.id)} data-id={r.id}>
-          <button type="button" class="pick" title={(r.text ? `${r.label}: ${r.text}` : r.label) + (r.locked ? " (in the file: switch on Edit file to change it)" : "")} aria-current={p.selected.has(r.id)} onclick={() => p.onPick(r.id)}>
+          <button
+            type="button"
+            class="pick"
+            title={r.tip + (r.locked ? " (in the file: switch on Edit file to change it)" : "")}
+            aria-current={p.selected.has(r.id)}
+            onclick={() => p.onPick(r.id)}
+            oncontextmenu={(e) => {
+              e.preventDefault();
+              p.onMenu(r.id, e.clientX, e.clientY);
+            }}
+          >
             <svg class="icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style:color={p.colours.get(r.id)}>{@html r.icon}</svg>
             <span class="body">
-              <span class="top"><span class="label">{r.label}</span><span class="date">{listDate(r.modified, now)}</span></span>
-              {#if r.text}<span class="text">{r.text}</span>{/if}
-              {#if r.author}<span class="who">{r.author}</span>{/if}
+              <span class="line top"><span class="label">{r.label}</span>{#if r.value}<span class="value num">{r.value}</span>{/if}</span>
+              {#if r.text}<span class="text" class:one={!!r.value}>{r.text}</span>{/if}
+              {#if r.author || when}<span class="line who">{[r.author, when].filter(Boolean).join(" · ")}</span>{/if}
             </span>
           </button>
-          {#if !r.locked}
-            <button type="button" class="del" title="Delete" aria-label="Delete {r.label}" onclick={() => p.onDelete(r.id)}>
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /></svg>
-            </button>
-          {/if}
         </div>
       {/each}
     </section>
@@ -77,13 +86,10 @@
     font-weight: normal;
   }
   .row {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
     border-radius: 5px;
-    /* Paint only what's on screen, remembering each row's height once seen. */
+    /* Paint only what's on screen, remembering each row's height once seen (about three lines). */
     content-visibility: auto;
-    contain-intrinsic-size: auto 46px;
+    contain-intrinsic-size: auto 58px;
   }
   .row:hover {
     background: var(--hover);
@@ -92,12 +98,12 @@
     background: var(--accent-soft);
   }
   .pick {
-    flex: 1 1 auto;
+    width: 100%;
     min-width: 0;
     display: flex;
     align-items: flex-start;
     gap: 7px;
-    padding: 5px 4px 5px 5px;
+    padding: 5px 6px 5px 5px;
     border: none;
     background: none;
     text-align: left;
@@ -115,34 +121,29 @@
     display: flex;
     flex-direction: column;
   }
-  .top {
-    display: flex;
-    gap: 6px;
-  }
-  .label {
-    flex: 1 1 auto;
-    min-width: 0;
+  /* Each line is one line, shortened with an ellipsis. */
+  .line {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .label {
     color: var(--tx);
   }
-  .row.on .label {
+  .value {
+    margin-left: 6px;
+    color: var(--tx);
+    font-weight: 600;
+  }
+  .row.on .label,
+  .row.on .value {
     color: var(--accent-text);
   }
-  .date,
   .who {
     color: var(--tx3);
     font-size: 11px;
   }
-  .date {
-    flex-shrink: 0;
-  }
-  .who {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  /* What it says: up to two lines. A measurement's qualifier: one. */
   .text {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -151,30 +152,9 @@
     overflow: hidden;
     overflow-wrap: anywhere;
   }
-  .del {
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    margin: 4px 3px 0 0;
-    display: grid;
-    place-items: center;
-    padding: 0;
-    border: none;
-    border-radius: 4px;
-    background: none;
-    color: var(--tx3);
-    opacity: 0;
-  }
-  .row:hover .del,
-  .row.on .del,
-  .del:focus-visible {
-    opacity: 1;
-  }
-  .del:hover {
-    background: var(--hover);
-    color: var(--danger);
-  }
-  .del:active {
-    background: var(--press-soft);
+  .text.one {
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 </style>
