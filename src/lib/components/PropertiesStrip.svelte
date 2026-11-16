@@ -25,7 +25,8 @@
   // Each choice's sample shows its effect on a value; its name says what it is (not the same
   // thing twice).
   const UNIT_OPTS: { key: UnitMode; name: string }[] = [
-    { key: "auto", name: "Auto: metres from 1 m, else millimetres" },
+    // docs/edit-lock-brief.md, 6: Auto is Vellum's fixed rule, so it has no decimals control.
+    { key: "auto", name: "Auto: millimetres to three figures below a metre, metres to two decimals from a metre up" },
     { key: "mm", name: "Millimetres" },
     { key: "m", name: "Metres" },
     // Imperial (stage 5 [A9])
@@ -37,7 +38,7 @@
   // In an imperial view Auto is feet and inches (inches under a foot).
   const UNIT_OPTS_IMPERIAL = UNIT_OPTS.map((o) => (o.key === "auto" ? { ...o, name: "Auto: feet and inches, else inches" } : o));
   const UNIT_SAMPLE: Record<string, [string, string]> = {
-    auto: ["Auto", "mm / m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"],
+    auto: ["Auto", "2.40 mm · 12.44 m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"],
     "auto-imperial": ["Auto", "ft-in"], "ft-in": ["ft-in", `12' 4 1/2"`], "in-frac": ["in ½", `148 1/2"`], ft: ["ft", "12.38 ft"], in: ["in", "148.50 in"],
   };
   const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 0 ? "Whole numbers" : i === 1 ? "1 decimal place" : `${i} decimal places` }));
@@ -405,7 +406,9 @@
       <div class="controls">
         <PopChoice label="Label size" options={SIZE_OPTS} value={SIZES.includes(ms.labelSize) ? String(ms.labelSize) : null} compact={narrow} {out} sample={labelSizeSample} onChange={(k) => on({ labelSize: Number(k) })} />
         <PopChoice label="Units" options={ms.format.system === "imperial" ? UNIT_OPTS_IMPERIAL : UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
-        {#if isFractional(ms.format)}
+        {#if ms.format.units === "auto" && !isFractional(ms.format)}
+          <!-- Metric Auto writes to its own rule: no decimals to choose. -->
+        {:else if isFractional(ms.format)}
           <PopChoice label="Precision" options={PRECISION_OPTS} value={String(ms.format.fraction ?? DEFAULT_FRACTION)} compact={narrow} {out} sample={precisionSample} onChange={(k) => on({ format: { ...ms.format, fraction: Number(k) } })} />
         {:else}
           <PopChoice label="Decimal places" options={DECIMAL_OPTS} value={String(ms.format.decimals)} compact={narrow} {out} sample={decimalSample} onChange={(k) => on({ format: { ...ms.format, decimals: Number(k) } })} />
@@ -442,7 +445,9 @@
 {#snippet unitSample(k: string | null, w: number)}
   {@const key = k ?? p.measure?.format.units ?? "auto"}
   {@const s = UNIT_SAMPLE[key === "auto" && p.measure?.format.system === "imperial" ? "auto-imperial" : key] ?? ["", ""]}
-  <span class="num sz">{w < 60 ? s[0] : s[1]}</span>
+  {@const d = p.measure?.format.decimals ?? 2}
+  <!-- An explicit metric unit shows the current decimals, so the sample is what it writes. -->
+  <span class="num sz">{w < 60 ? s[0] : key === "mm" ? `${(1240).toFixed(d)} mm` : key === "m" ? `${(1.24).toFixed(d)} m` : s[1]}</span>
 {/snippet}
 <!-- Precision (a fractional unit): the box shows 1/16, the list a length rounded that way. -->
 {#snippet precisionSample(k: string | null, w: number)}

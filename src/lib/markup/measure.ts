@@ -152,6 +152,11 @@ export const realMm2 = (units2: number, pm: PageMeasure): number | null => (pm.r
  * inches with a fraction (12' 4 1/2"), inches with a fraction (148 1/2"), decimal feet
  * (12.38 ft), decimal inches (148.50 in). Automatic follows View > Units: metric is m from
  * 1 m up and mm below; imperial is feet and inches from a foot up and inches below.
+ *
+ * An explicit unit honours the decimals (or fraction) exactly, mm included. Metric Auto is
+ * Vellum's own fixed rule and ignores the decimals (docs/edit-lock-brief.md, 6): below a metre,
+ * millimetres to three significant figures (2.40 mm, 24.4 mm, 244 mm); from a metre up, metres
+ * to two decimals. Areas alike in mm² and m².
  */
 export type UnitMode = "auto" | "mm" | "m" | "ft-in" | "in-frac" | "ft" | "in";
 /** The unit a length is actually written in: a mode with Auto resolved. */
@@ -163,7 +168,7 @@ const UNIT_MODES: UnitMode[] = ["auto", "mm", "m", "ft-in", "in-frac", "ft", "in
 
 export interface MeasureFormat {
   units: UnitMode;
-  /** Decimal places for metres, square metres, decimal feet and inches, and square feet. Millimetres are always whole. */
+  /** Decimal places for an explicit unit: mm, m, their squares, decimal feet and inches, square feet. Metric Auto ignores it. */
   decimals: number;
   /** Feet and inches, and inches, with a fraction: to the nearest 1/fraction of an inch (2 to 64). 16 when absent. */
   fraction?: number;
@@ -221,15 +226,31 @@ export function lengthUnit(mm: number, f: MeasureFormat): LengthUnit {
     return Math.round((Math.abs(mm) / MM_PER_IN) * den) >= 12 * den ? "ft-in" : "in-frac";
   }
   // Decided on the rounded value, so 999.6 mm reads "1.00 m", not "1000 mm".
-  return Math.abs(Math.round(mm)) >= 1000 ? "m" : "mm";
+  return Math.abs(sig3(mm)) >= 1000 ? "m" : "mm";
 }
+
+/** Metric Auto's decimals for metres and square metres. */
+export const AUTO_DECIMALS = 2;
+
+/** A value rounded to three significant figures. */
+const sig3 = (v: number): number => (v === 0 || !Number.isFinite(v) ? v : Number(v.toPrecision(3)));
+
+/** The decimal places three significant figures take for v (after rounding: 9.996 is 10.0, one place). */
+export function sig3Decimals(v: number): number {
+  const r = Math.abs(sig3(v));
+  if (r === 0 || !Number.isFinite(r)) return 2;
+  return Math.max(0, 2 - Math.floor(Math.log10(r) + 1e-9));
+}
+
+/** v to three significant figures, trailing zeros kept: 2.40, 24.4, 244, 850, 125000. */
+const fixed3 = (v: number): string => fixed(sig3(v), sig3Decimals(v));
 
 /** A real-world length: "12.40 m", "850 mm", 12' 4 1/2", 148 1/2", "12.38 ft", "148.50 in". */
 export function formatLength(mm: number, f: MeasureFormat = DEFAULT_FORMAT): string {
   const den = f.fraction ?? DEFAULT_FRACTION;
   switch (lengthUnit(mm, f)) {
-    case "m": return `${fixed(mm / 1000, f.decimals)} m`;
-    case "mm": return `${fixed(Math.round(mm), 0)} mm`;
+    case "m": return `${fixed(mm / 1000, f.units === "auto" ? AUTO_DECIMALS : f.decimals)} m`;
+    case "mm": return f.units === "auto" ? `${fixed3(mm)} mm` : `${fixed(mm, f.decimals)} mm`;
     case "ft-in": return formatFeetInches(mm / MM_PER_IN, den);
     case "in-frac": return formatFracInches(mm / MM_PER_IN, den);
     case "ft": return `${fixed(mm / MM_PER_FT, f.decimals)} ft`;
@@ -240,10 +261,21 @@ export function formatLength(mm: number, f: MeasureFormat = DEFAULT_FORMAT): str
 /** Decimal places for square feet: the format's, or two where its decimals control is a precision. */
 const ft2Decimals = (f: MeasureFormat) => (isFractional(f) ? 2 : f.decimals);
 
-/** A real-world area: "12.40 m²" (or "125000 mm²" with always mm); "133.47 ft²" in any imperial unit. */
+/** The unit a real-world area is written in, metric: Auto decides on the rounded value, as lengths. */
+export function areaUnit(mm2: number, f: MeasureFormat): "mm" | "m" {
+  if (f.units === "mm" || f.units === "m") return f.units;
+  return Math.abs(sig3(mm2)) >= 1e6 ? "m" : "mm";
+}
+
+/**
+ * A real-world area: "12.40 m²", "125000 mm²" with always mm (at its decimals), Auto's "0.244 m²"
+ * as "244000 mm²" below a square metre; "133.47 ft²" in any imperial unit.
+ */
 export function formatArea(mm2: number, f: MeasureFormat = DEFAULT_FORMAT): string {
   if (isImperial(f)) return `${fixed(mm2 / MM2_PER_FT2, ft2Decimals(f))} ft²`;
-  return f.units === "mm" ? `${fixed(Math.round(mm2), 0)} mm²` : `${fixed(mm2 / 1e6, f.decimals)} m²`;
+  const auto = f.units === "auto";
+  if (areaUnit(mm2, f) === "mm") return `${auto ? fixed3(mm2) : fixed(mm2, f.decimals)} mm²`;
+  return `${fixed(mm2 / 1e6, auto ? AUTO_DECIMALS : f.decimals)} m²`;
 }
 
 /** Decimal places square feet are written with in this format (for the saved /Measure). */

@@ -7,7 +7,7 @@
 import type { Pt, Rgb, Style } from "./base";
 import { type Op, type Seg, type TextOp, DIMENSION_HEAD, add, endedLine, mul, path, rot, sub, unit } from "./draw";
 import { type Face, HELVETICA, textWidth } from "./fonts";
-import { type MeasureFormat, type PageMeasure, areaDecimals, formatScale, isImperial, lengthUnit, measureSource, paperMm } from "./measure";
+import { type MeasureFormat, type PageMeasure, AUTO_DECIMALS, areaDecimals, formatScale, isImperial, lengthUnit, measureSource, paperMm, sig3Decimals } from "./measure";
 import { DEFAULT_FRACTION, MM_PER_FT, MM_PER_IN } from "./imperial"; // Imperial (stage 5 [A9])
 
 /** A dimension's ends (stage 5, D15): bars square to the line, 45 degree ticks, or filled arrows. */
@@ -250,7 +250,10 @@ export function measureSpec(pm: PageMeasure, fmt: MeasureFormat, typicalMm: numb
       ratio: r,
       unit: u,
       factor: u === "m" ? mmPerUnit / 1000 : mmPerUnit,
-      precision: u === "m" ? 10 ** fmt.decimals : pm.ratio === null ? 10 : 1,
+      // An explicit unit's decimals; Auto's fixed rule (two decimals in metres, three
+      // significant figures of the typical value in millimetres); paper mm to one decimal.
+      precision:
+        pm.ratio === null ? 10 : fmt.units !== "auto" ? 10 ** fmt.decimals : u === "m" ? 10 ** AUTO_DECIMALS : 10 ** sig3Decimals(typicalMm),
     };
   }
   // Imperial: distances in feet or inches, areas always in square feet.

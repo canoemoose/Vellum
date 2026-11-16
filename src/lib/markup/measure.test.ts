@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { Pt } from "./base";
 import {
   MM_PER_PT, angleAt, calibrate, formatAngle, formatArea, formatLength, formatPaper, formatPaperArea, formatScale, labelPoint, paperMm, paperMm2,
-  parseDistance, pathLength, polygonArea, realMm, realMm2, sanitiseFormat, selfCrossing, uprightDir,
+  type MeasureFormat, parseDistance, pathLength, polygonArea, realMm, realMm2, sanitiseFormat, selfCrossing, uprightDir,
 } from "./measure";
+import { measureSpec } from "./dimension";
 
 /** Page points for a length on paper in mm. */
 const pt = (mm: number) => mm / MM_PER_PT;
@@ -96,27 +97,57 @@ describe("angles", () => {
 
 describe("formatting", () => {
   const f = { units: "auto" as const, decimals: 2 };
-  it("writes metres from 1 m up and whole millimetres below", () => {
+  // docs/edit-lock-brief.md, 6: metric Auto is mm to three significant figures below a metre,
+  // metres to two decimals from a metre up, whatever the decimals setting says.
+  it("writes Auto as mm to three significant figures below a metre and m to two decimals above", () => {
+    for (const decimals of [0, 2, 4]) {
+      const g: MeasureFormat = { units: "auto", decimals };
+      expect(formatLength(2.4, g)).toBe("2.40 mm");
+      expect(formatLength(24.4, g)).toBe("24.4 mm");
+      expect(formatLength(244, g)).toBe("244 mm");
+      expect(formatLength(850, g)).toBe("850 mm");
+      expect(formatLength(1240, g)).toBe("1.24 m");
+      expect(formatLength(12440, g)).toBe("12.44 m");
+    }
     expect(formatLength(12400, f)).toBe("12.40 m");
     expect(formatLength(1000, f)).toBe("1.00 m");
     expect(formatLength(999, f)).toBe("999 mm");
     expect(formatLength(999.4, f)).toBe("999 mm");
-    // Rounds up to 1000: written in metres, never "1000 mm".
-    expect(formatLength(999.6, f)).toBe("1.00 m");
-    expect(formatLength(0.3, f)).toBe("0 mm");
-    expect(formatLength(850.5, f)).toBe("851 mm");
+    expect(formatLength(0.3, f)).toBe("0.300 mm");
+    expect(formatLength(850.5, f)).toBe("851 mm"); // 850.5 to three figures
+    expect(formatLength(9.996, f)).toBe("10.0 mm"); // rounds up a digit: still three figures
+    expect(formatLength(0, f)).toBe("0.00 mm");
   });
 
-  it("keeps to always mm or always m", () => {
-    expect(formatLength(12400, { units: "mm", decimals: 2 })).toBe("12400 mm");
+  it("decides Auto's unit at the metre on the rounded value", () => {
+    // 999.6 rounds to 1000 at three figures: written in metres, never "1000 mm".
+    expect(formatLength(999.6, f)).toBe("1.00 m");
+    expect(formatLength(999.49, f)).toBe("999 mm");
+    expect(formatLength(-999.6, f)).toBe("-1.00 m");
+  });
+
+  it("keeps to always mm or always m, honouring the decimals in both", () => {
+    // Matt's case: a 2.4 mm length at 1:1 read "2 mm" when millimetres were always whole.
+    expect(formatLength(2.4, { units: "mm", decimals: 1 })).toBe("2.4 mm");
+    expect(formatLength(2.4, { units: "mm", decimals: 2 })).toBe("2.40 mm");
+    expect(formatLength(2.4, { units: "mm", decimals: 0 })).toBe("2 mm");
+    expect(formatLength(12400, { units: "mm", decimals: 2 })).toBe("12400.00 mm");
     expect(formatLength(850, { units: "m", decimals: 3 })).toBe("0.850 m");
     expect(formatLength(12400, { units: "m", decimals: 0 })).toBe("12 m");
   });
 
   it("writes areas, angles and paper values", () => {
     expect(formatArea(12.4e6, f)).toBe("12.40 m²");
-    expect(formatArea(250000, f)).toBe("0.25 m²");
-    expect(formatArea(250000, { units: "mm", decimals: 2 })).toBe("250000 mm²");
+    // Auto below a square metre: mm² to three figures; from one up, m² to two decimals.
+    expect(formatArea(250000, f)).toBe("250000 mm²");
+    expect(formatArea(123456, f)).toBe("123000 mm²");
+    expect(formatArea(2.44, f)).toBe("2.44 mm²");
+    expect(formatArea(999600, f)).toBe("1.00 m²");
+    expect(formatArea(1e6, { units: "auto", decimals: 0 })).toBe("1.00 m²");
+    // An explicit unit honours the decimals, mm² included.
+    expect(formatArea(250000, { units: "mm", decimals: 2 })).toBe("250000.00 mm²");
+    expect(formatArea(2.4, { units: "mm", decimals: 1 })).toBe("2.4 mm²");
+    expect(formatArea(250000, { units: "m", decimals: 3 })).toBe("0.250 m²");
     expect(formatAngle(45)).toBe("45.0°");
     expect(formatAngle(89.96)).toBe("90.0°");
     expect(formatPaper(124)).toBe("124.0 mm");
@@ -174,5 +205,22 @@ describe("calibration", () => {
     expect(calibrate(10, 20)).toBe(0.5);
     expect(calibrate(4200, 0)).toBeNull();
     expect(calibrate(1e9, 1)).toBeNull();
+  });
+});
+
+// docs/edit-lock-brief.md, 6: the saved /Measure writes numbers as the label does.
+describe("the saved number format", () => {
+  const pm = { ratio: 100, userUnit: 1 };
+  it("honours an explicit unit's decimals, millimetres included", () => {
+    expect(measureSpec(pm, { units: "mm", decimals: 1 }, 2.4)).toMatchObject({ unit: "mm", precision: 10 });
+    expect(measureSpec(pm, { units: "m", decimals: 3 }, 2.4)).toMatchObject({ unit: "m", precision: 1000 });
+  });
+  it("follows Auto's rule whatever the decimals say", () => {
+    expect(measureSpec(pm, { units: "auto", decimals: 0 }, 12400)).toMatchObject({ unit: "m", precision: 100 });
+    expect(measureSpec(pm, { units: "auto", decimals: 4 }, 2.4)).toMatchObject({ unit: "mm", precision: 100 });
+    expect(measureSpec(pm, { units: "auto", decimals: 4 }, 244)).toMatchObject({ unit: "mm", precision: 1 });
+  });
+  it("writes paper millimetres to one decimal with no scale", () => {
+    expect(measureSpec({ ratio: null, userUnit: 1 }, { units: "auto", decimals: 2 }, 12)).toMatchObject({ unit: "mm", precision: 10 });
   });
 });
