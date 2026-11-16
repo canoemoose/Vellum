@@ -1475,7 +1475,7 @@
     const info = await invoke<FileInfo>("annot_inspect", { path: t.path, password: t.password }).catch(() => null);
     const warnings = unlockWarnings(t.title, info);
     if (warnings.length) {
-      const a = await ask("Edit document", "Unlock to move, restyle and delete the annotations that came with the file?", ["Unlock", "Cancel"], { warnings });
+      const a = await ask("Edit file", "Unlock to move, restyle and delete the annotations that came with the file?", ["Unlock", "Cancel"], { warnings });
       if (a !== "Unlock") return;
     }
     if (active !== t) return;
@@ -1922,7 +1922,7 @@
           { label: "Paste", shortcut: "Ctrl+V", disabled: !pdfDoc || !markupTool?.canPaste, action: () => void markupTool?.paste("centre") },
           { label: "Delete markups", shortcut: "Delete", disabled: !markupTool?.hasSelection, action: () => markupTool?.deleteSelection() },
           // Existing annotations
-          { label: unlockedNow ? "Lock document" : "Unlock document…", disabled: !pdfDoc, action: () => void toggleEditLock() },
+          { label: unlockedNow ? "Lock file" : "Unlock file…", disabled: !pdfDoc, action: () => void toggleEditLock() },
           { separator: true },
           { label: "Select all markups on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? "Ctrl+A" : undefined, disabled: !pdfDoc, action: selectAllMarkups },
           { label: "Select all text on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? undefined : "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
@@ -2575,6 +2575,8 @@
           lastInGroup={settings.markup.lastInGroup}
           onTool={setTool}
         />
+      {/snippet}
+      {#snippet lock()}
         <EditLock unlocked={unlockedNow} disabled={!pdfDoc} onToggle={() => void toggleEditLock()} />
       {/snippet}
       {#snippet searchBox()}

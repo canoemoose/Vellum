@@ -33,6 +33,8 @@
     searchBox?: Snippet;
     /** The markup tools, in the centre. */
     centre?: Snippet;
+    /** The file's edit lock: its own block, after the document's controls on the left. */
+    lock?: Snippet;
   }
   let p: Props = $props();
 
@@ -152,6 +154,7 @@
       </button>
     {/each}
   </div>
+  {@render p.lock?.()}
   <div class="centre">{@render p.centre?.()}</div>
   <!-- Automatic, or a fixed choice. While automatic, the mode it picked has a hairline round
        it; clicking that fixes the choice, and Auto goes back. -->

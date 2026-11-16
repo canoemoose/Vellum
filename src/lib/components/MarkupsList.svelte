@@ -36,7 +36,7 @@
       <h3>Page {g.page + 1} <span class="n">{g.rows.length}</span></h3>
       {#each g.rows as r (r.id)}
         <div class="row" class:on={p.selected.has(r.id)} data-id={r.id}>
-          <button type="button" class="pick" title={(r.text ? `${r.label}: ${r.text}` : r.label) + (r.locked ? " (in the file: unlock Edit document to change it)" : "")} aria-current={p.selected.has(r.id)} onclick={() => p.onPick(r.id)}>
+          <button type="button" class="pick" title={(r.text ? `${r.label}: ${r.text}` : r.label) + (r.locked ? " (in the file: switch on Edit file to change it)" : "")} aria-current={p.selected.has(r.id)} onclick={() => p.onPick(r.id)}>
             <svg class="icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style:color={p.colours.get(r.id)}>{@html r.icon}</svg>
             <span class="body">
               <span class="top"><span class="label">{r.label}</span><span class="date">{listDate(r.modified, now)}</span></span>
