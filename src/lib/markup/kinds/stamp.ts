@@ -274,13 +274,10 @@ export const stamp = defineKind<StampMarkup>({
     delete spec.borderWidth;
     delete spec.dash;
     delete spec.interior;
-    if (c.type === "text") {
-      spec.colour = c.colour;
-      spec.contents = c.sub ? `${c.label.toUpperCase()}\n${c.sub}` : c.label.toUpperCase();
-    } else {
-      delete spec.colour;
-      spec.contents = m.signature ? "Signature" : "Image";
-    }
+    // No /Contents: Acrobat shows a comment icon on anything with note text, and its own
+    // stamps carry none. The wording is in the appearance and in Vellum's own copy.
+    if (c.type === "text") spec.colour = c.colour;
+    else delete spec.colour;
     if (c.type === "image") spec.appearance.images = { [imageResName(c.hash)]: { hash: c.hash, png: c.png } };
   },
   bounds: (m) => turnedBounds(m.rect, m.angle ?? 0),

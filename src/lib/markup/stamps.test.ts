@@ -199,11 +199,12 @@ describe("the stamp kind", () => {
     expect(text.flags).toBe(4);
     expect(text.borderWidth).toBeUndefined();
     expect(text.colour).toEqual(approved.colour);
-    expect(text.contents).toBe("APPROVED\nTester, 15 Nov 2026");
+    // No note text: Acrobat would show a comment icon on the stamp.
+    expect(text.contents).toBeUndefined();
     expect(text.appearance.fonts).toEqual({ HeBo: "Helvetica-Bold", Helv: "Helvetica" });
     const sig = toSpec(mk(zigzag, [100, 100, 184, 142], true), A4);
     expect(sig.stampName).toBe("Signature");
-    expect(sig.contents).toBe("Signature");
+    expect(sig.contents).toBeUndefined();
     expect(sig.colour).toBeUndefined();
   });
 
