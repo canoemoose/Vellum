@@ -171,7 +171,6 @@
             aria-label={armed ? `Click again to delete ${i.name}` : `Delete ${i.name}`}
             title={armed ? "Click again to delete" : "Delete"}
             onclick={() => (armed ? void remove(i.id) : (confirming = i.id))}
-            onpointerleave={() => armed && (confirming = null)}
             onblur={() => armed && (confirming = null)}
           >
             <RowIcon icon="delete" />

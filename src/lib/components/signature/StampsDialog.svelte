@@ -134,7 +134,7 @@
   </span>
 {/snippet}
 
-<!-- Delete: a bin; the first click arms it (red, "Click again to delete"), moving off disarms it. -->
+<!-- Delete: a bin; the first click arms it (red, "Click again to delete") until something else is used. -->
 {#snippet deleteButton(key: string, what: string, remove: () => void)}
   {@const armed = confirming === key}
   <span class="cell end">
@@ -145,7 +145,6 @@
       aria-label={armed ? `Click again to delete ${what}` : `Delete ${what}`}
       title={armed ? "Click again to delete" : "Delete"}
       onclick={() => (armed ? ((confirming = null), remove()) : (confirming = key))}
-      onpointerleave={() => armed && (confirming = null)}
       onblur={() => armed && (confirming = null)}
     >
       <RowIcon icon="delete" />
