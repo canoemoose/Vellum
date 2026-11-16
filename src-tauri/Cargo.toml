@@ -88,6 +88,12 @@ default-features = false
 features = ["pdfium_latest", "pdfium_use_win32"]
 # End WP-Print
 
+# Dev builds (`tauri dev`) optimise the dependencies but not Vellum itself: unoptimised, the
+# image crate (decoding photos, encoding PNGs, scaling) runs many times slower, so opening a
+# signature photo or saving a stamp dragged in dev. Vellum's own code still builds quickly.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 lto = true
