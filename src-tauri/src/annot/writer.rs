@@ -329,6 +329,11 @@ impl Writer {
                 d.set(k, text(v));
             }
         }
+        // A note says it's open itself, as well as its pop-up (write_popup): both are in the
+        // standard, and Acrobat has been seen to close a note whose pop-up alone said so.
+        if let Some(p) = &s.popup {
+            d.set("Open", p.open);
+        }
         if let Some(c) = s.colour {
             d.set("C", reals(&c));
         }

@@ -80,6 +80,8 @@ fn a_pinned_note_writes_an_open_popup_beside_it_that_does_not_print() {
     assert_eq!(name(&list[0].1, b"Subtype"), b"Text");
     let (_, _, pd) = pair(&list, "n1");
     assert_eq!(pd.get(b"Open").unwrap().as_bool().unwrap(), true);
+    // The note says so itself too.
+    assert_eq!(list[0].1.get(b"Open").unwrap().as_bool().unwrap(), true);
     let f = pd.get(b"F").unwrap().as_i64().unwrap();
     assert_eq!(f & 4, 0, "a pop-up doesn't print");
     let r: Vec<f64> = pd.get(b"Rect").unwrap().as_array().unwrap().iter().map(num).collect();
@@ -97,6 +99,7 @@ fn an_unpinned_note_writes_a_closed_popup() {
     assert_eq!(list.len(), 2);
     let (_, _, pd) = pair(&list, "n1");
     assert_eq!(pd.get(b"Open").unwrap().as_bool().unwrap(), false);
+    assert_eq!(list[0].1.get(b"Open").unwrap().as_bool().unwrap(), false);
 }
 
 #[test]
