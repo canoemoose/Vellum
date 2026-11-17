@@ -12,7 +12,8 @@
     "test": "vitest run",
     "tauri": "tauri",
     "gen:synthetic": "node tools/gen-synthetic.mjs",
-    "bench": "node tools/bench.mjs"
+    "bench": "node tools/bench.mjs",
+    "site": "node tools/build-site.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

@@ -3,6 +3,7 @@ node_modules
 /public/pdfjs
 /test-files
 /bench-output
+/site-dist
 /src-tauri/pdfium
 # Generated at build by tools/make-notices.mjs
 /src-tauri/licenses/THIRD-PARTY-NOTICES.txt
