@@ -24,6 +24,11 @@ installed copies update themselves: see Releasing below and
   as `[swap]` lines on stderr.
 - Speed work: start from [docs/speed-handoff.md](docs/speed-handoff.md) (state, numbers,
   ideas ranked, how to measure).
+- `node tools/screenshots.mjs [--only name] [--theme dark|light|both]`: homepage screenshots,
+  unattended, into `bench-output/screenshots/`. Drives the release exe through WebView2's
+  DevTools port with a throwaway profile (your own settings untouched) and captures with
+  CaptureGraphicsWin2D (Microsoft Store). Needs `test-files/fieldwork-festival-drawing-set.pdf`,
+  made by `test-files/drawing-set.mjs` (both gitignored). Windows open on screen while it runs.
 - `node tools/fetch-pdfium.mjs`: download `pdfium.dll` into `src-tauri/pdfium/`.
 - `node tools/make-notices.mjs`: write `src-tauri/licenses/THIRD-PARTY-NOTICES.txt` (every
   shipped crate, front-end package and PDFium library with its licence). `tauri build` runs it;
