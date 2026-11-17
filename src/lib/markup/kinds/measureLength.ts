@@ -6,8 +6,8 @@
 // leaves it in line. The real-world length sits above the line (to its right on a vertical one)
 // and reads from the bottom or the right of the page; its grip slides it along the line, the
 // line reaching out to it past either end, and a double-click on the grip puts it back. Where it
-// doesn't fit between the points it goes beyond the second by itself, arrows turning outside
-// (docs/edit-lock-brief.md, 7). Saved as a Line
+// doesn't fit between the points it goes beyond the second by itself, and wherever it's beyond
+// an end, arrows turn outside (docs/edit-lock-brief.md, 7). Saved as a Line
 // annotation with the LineDimension intent, a /Measure dictionary and the standard keys for the
 // pulled-out line (/LL, /LLE, /LLO) and the moved value (/CO), so other apps treat it as a
 // dimension and draw it alike.
@@ -26,7 +26,6 @@ import {
   dimensionEndsSpec,
   dimensionLine,
   endReach,
-  extensionLines,
   faceOf,
   labelAt,
   labelSize,
@@ -140,7 +139,9 @@ const REACH_PAST = 2;
 /**
  * The dimension line as drawn: a to b, and where the value has been slid past either end, a
  * plain run on from that end to just past it (the CAD way of putting a value outside). With
- * arrows turned outside (`outside`), a run past the first point carries its arrow too.
+ * arrow ends and the value beyond an end, moved there by itself or by hand (Matt's review: the
+ * same either way), the arrows turn outside (`outside`), and an end with no run of its own gets
+ * one to carry its arrow.
  */
 export function lengthRuns(m: MeasureLengthMarkup): { a: Pt; b: Pt; beyond: [Pt, Pt][]; outside: boolean } {
   const { a, b } = lengthGeometry(m);
@@ -152,9 +153,13 @@ export function lengthRuns(m: MeasureLengthMarkup): { a: Pt; b: Pt; beyond: [Pt,
   const beyond: [Pt, Pt][] = [];
   if (s + half > L) beyond.push([b, add(a, mul(u, s + half + REACH_PAST))]);
   if (s - half < 0) beyond.push([a, add(a, mul(u, s - half - REACH_PAST))]);
-  const outside = out && m.ends === "arrow";
-  // The first point's arrow, outside: a tail as long again as the head behind it.
-  if (outside && s - half >= 0) beyond.push([a, sub(a, mul(u, 2 * endReach("arrow", m.style.width)))]);
+  const outside = m.ends === "arrow" && (out || beyond.length > 0);
+  if (outside) {
+    // An arrow outside with no run carrying it: a tail as long again as the head behind it.
+    const tail = 2 * endReach("arrow", m.style.width);
+    if (s - half >= 0) beyond.push([a, sub(a, mul(u, tail))]);
+    if (s + half <= L) beyond.push([b, add(b, mul(u, tail))]);
+  }
   return { a, b, beyond, outside };
 }
 
@@ -246,8 +251,7 @@ export const measureLength = defineKind<MeasureLengthMarkup>({
     const { a, b, beyond, outside } = lengthRuns(m);
     const { centre, dir } = lengthValueAt(m);
     return [
-      ...extensionLines(extensions, m.style),
-      ...dimensionLine([a, b], m.style, m.ends ?? "bar", outside),
+      ...dimensionLine([a, b], m.style, m.ends ?? "bar", outside, extensions),
       ...(beyond.length ? [path(beyond.flatMap(([x, y]) => [["M", x[0], x[1]], ["L", y[0], y[1]]] as Seg[]), m.style, null)] : []),
       labelAt([lengthLabel(m)], centre, m.labelSize, m.style.stroke, faceOf(m.font), dir),
     ];

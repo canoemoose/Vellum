@@ -230,8 +230,12 @@ export interface HeadShape {
 /** A markup's arrowhead: the 2:1 head, arrowLength long. */
 export const ARROW_HEAD: HeadShape = { angle: HEAD_ANGLE, length: arrowLength };
 
-/** A dimension's arrowhead (Matt's review): 20 degrees at the point, and a fifth shorter. */
-export const DIMENSION_HEAD: HeadShape = { angle: (10 * Math.PI) / 180, length: (w) => 0.8 * arrowLength(w) };
+/**
+ * A dimension's arrowhead (Matt's review): 20 degrees at the point, and a fifth shorter. Above
+ * the default weight (0.75 pt) it grows in step with the line, keeping its shape (Matt's review:
+ * a heavier line's head looked no bigger, being so narrow), so it's 9.6 times the weight long.
+ */
+export const DIMENSION_HEAD: HeadShape = { angle: (10 * Math.PI) / 180, length: (w) => Math.max(0.8 * arrowLength(w), 9.6 * w) };
 
 /** A dot end's radius for a line weight. */
 export const dotRadius = (width: number) => 1.5 + 1.25 * width;

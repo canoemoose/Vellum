@@ -166,3 +166,44 @@ describe("saved as drawn", () => {
     expect(back[1]).toBeCloseTo(0, 2);
   });
 });
+
+// Matt's review of the build: the ends' weight and size, and a value slid out by hand.
+describe("dimension ends at any weight", () => {
+  it("draw arrowheads that keep their shape as the line gets heavier", () => {
+    expect(DIMENSION_HEAD.length(0.75)).toBeCloseTo(7.2, 9); // the default, as it was
+    expect(DIMENSION_HEAD.length(2) / DIMENSION_HEAD.length(1)).toBeCloseTo(2, 9);
+  });
+
+  it("draw bars and ticks at the line's weight, in one path with the extension lines", () => {
+    for (const ends of ["bar", "tick"]) {
+      const m = length([100, 300], [400, 300], { ends, style: { ...kindOf("measureLength").defaultStyle(), width: 2 } });
+      const ps = opsFor(m).filter((o): o is PathOp => o.t === "path");
+      expect(ps).toHaveLength(2); // the dimension line; the ends with the extension lines
+      expect(ps[1].width).toBe(2);
+      expect(ps[1].segs).toHaveLength(8); // two extension lines and two ends, a move and a line each
+    }
+  });
+});
+
+describe("a value slid past an end by hand", () => {
+  it("turns arrows outside, each end carried by a run", () => {
+    const m = length([100, 300], [400, 300], { ends: "arrow", value: [250, 0] });
+    const r = lengthRuns(m);
+    expect(r.outside).toBe(true);
+    const { a, b } = lengthGeometry(m);
+    expect(r.beyond.some(([p, q]) => p[0] === a[0] && q[0] < a[0])).toBe(true);
+    expect(r.beyond.some(([p, q]) => p[0] === b[0] && q[0] > b[0])).toBe(true);
+  });
+
+  it("past the first point, carries the second point's arrow on a run of its own", () => {
+    const m = length([100, 300], [400, 300], { ends: "arrow", value: [-250, 0] });
+    const r = lengthRuns(m);
+    expect(r.outside).toBe(true);
+    const { b } = lengthGeometry(m);
+    expect(r.beyond.some(([p, q]) => p[0] === b[0] && q[0] > b[0])).toBe(true);
+  });
+
+  it("leaves arrows inside while the value stays between the ends", () => {
+    expect(lengthRuns(length([100, 300], [400, 300], { ends: "arrow", value: [60, 0] })).outside).toBe(false);
+  });
+});
