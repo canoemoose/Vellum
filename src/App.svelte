@@ -19,7 +19,7 @@
   import { type ClipRead, MarkupTool, type Tool } from "./lib/engine/markupTool";
   import { labelOf } from "./lib/markup/kinds";
   import { toolById, toolForKey } from "./lib/markup/tools";
-  import { type Bar, barFor, subjectOf, subjectOfTool } from "./lib/markup/bar";
+  import { barFor, subjectOf, subjectOfTool } from "./lib/markup/bar";
   import { MarkupDoc } from "./lib/engine/markupDoc";
   import { confirm as confirmSave, styleFor, textFor, sidesFor } from "./lib/markup/prefs";
   import type { Frame } from "./lib/markup/pdf";
@@ -301,9 +301,6 @@
    * also sets (rule 7: with a tool out, the selection is only what it just drew; in Select,
    * restyling a markup changes that markup only).
    */
-  /** The bar for a selection the file's lock keeps: no controls, only its label. */
-  const LOCKED_BAR: Bar = { colour: false, weight: false, pattern: false, ends: "none", fill: false, text: false, sides: false, opacity: false, dateLine: false, picker: null };
-
   const strip = $derived.by(() => {
     void markVersion;
     const mt = markupTool;
@@ -330,13 +327,9 @@
       return { bar, kinds: [tool.kind], tool: tool.id, style, text: bar.text ? textFor(settings.markup, tool.id) : null, label: tool.label, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
     }
     // docs/edit-lock-brief.md, 2: what the file's lock keeps is selected but offers nothing to
-    // change; the bar only says it came with the file. Mixed in, the bar is the others'.
-    const all = mt.selected();
+    // change, so it has no bar (Matt's review: not even a label; the padlock says it). Mixed in,
+    // the bar is the others'.
     const sel = mt.selectedChangeable();
-    if (all.length && !sel.length) {
-      const what = all.length === 1 ? labelOf(all[0]) : `${all.length} markups`;
-      return { bar: LOCKED_BAR, kinds: [...new Set(all.map((m) => m.kind))], tool: null, style: all[0].style, text: null, label: `${what}, in the file: locked`, sides: null };
-    }
     // Several kinds: only the controls they all have; none (a stamp, an annotation Vellum can't redraw), no bar.
     const bar = barFor(sel.map(subjectOf));
     if (!bar) return null;
