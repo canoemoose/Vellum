@@ -69,7 +69,7 @@ export interface Settings {
 // and a measurement's row. A remembered width below the minimum is pulled up to it.
 export const SIDEBAR_MIN = 220;
 export const SIDEBAR_MAX = 420;
-export const SIDEBAR_DEFAULT = 240;
+export const SIDEBAR_DEFAULT = 260;
 
 export const DEFAULTS: Settings = {
   layoutMode: "continuous",

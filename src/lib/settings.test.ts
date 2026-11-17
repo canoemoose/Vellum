@@ -30,7 +30,7 @@ describe("sanitiseSettings", () => {
   });
   // docs/edit-lock-brief.md, 5: the sidebar is wider, for its three word tabs.
   it("pulls a remembered sidebar width below the new minimum up to it", () => {
-    expect(SIDEBAR_DEFAULT).toBe(240);
+    expect(SIDEBAR_DEFAULT).toBe(260);
     expect(SIDEBAR_MIN).toBe(220);
     expect(DEFAULTS.sidebarWidth).toBe(SIDEBAR_DEFAULT);
     expect(sanitiseSettings({ sidebarWidth: 196 }).sidebarWidth).toBe(SIDEBAR_MIN);

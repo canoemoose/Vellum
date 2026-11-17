@@ -130,10 +130,10 @@
   .label {
     color: var(--tx);
   }
+  /* Regular weight: the monospaced face ships one weight, and a synthesised bold read too heavy. */
   .value {
     margin-left: 6px;
     color: var(--tx);
-    font-weight: 600;
   }
   .row.on .label,
   .row.on .value {
