@@ -26,7 +26,8 @@
   // thing twice).
   const UNIT_OPTS: { key: UnitMode; name: string }[] = [
     // docs/edit-lock-brief.md, 6: Auto is Vellum's fixed rule, so it has no decimals control.
-    { key: "auto", name: "Auto: millimetres to three figures below a metre, metres to two decimals from a metre up" },
+    // Its name is just "Auto" (Matt's review): the sample beside it shows the rule.
+    { key: "auto", name: "Auto" },
     { key: "mm", name: "Millimetres" },
     { key: "m", name: "Metres" },
     // Imperial (stage 5 [A9])
@@ -36,10 +37,9 @@
     { key: "in", name: "Decimal inches" },
   ];
   // In an imperial view Auto is feet and inches (inches under a foot).
-  const UNIT_OPTS_IMPERIAL = UNIT_OPTS.map((o) => (o.key === "auto" ? { ...o, name: "Auto: feet and inches, else inches" } : o));
   const UNIT_SAMPLE: Record<string, [string, string]> = {
     auto: ["Auto", "2.40 mm · 12.44 m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"],
-    "auto-imperial": ["Auto", "ft-in"], "ft-in": ["ft-in", `12' 4 1/2"`], "in-frac": ["in ½", `148 1/2"`], ft: ["ft", "12.38 ft"], in: ["in", "148.50 in"],
+    "auto-imperial": ["Auto", `8 1/2" · 12' 4 1/2"`], "ft-in": ["ft-in", `12' 4 1/2"`], "in-frac": ["in ½", `148 1/2"`], ft: ["ft", "12.38 ft"], in: ["in", "148.50 in"],
   };
   const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 0 ? "Whole numbers" : i === 1 ? "1 decimal place" : `${i} decimal places` }));
   // With a fraction, decimals become precision: to the nearest 1/2" to 1/64".
@@ -118,7 +118,7 @@
   let p: Props = $props();
 
   const COLOURS = LINE_COLOURS;
-  // Slot for slot under the line colours, None seventh (under Black): markup/palette.ts.
+  // None first, then markup/palette.ts's fills (Matt's review).
   const FILLS = FILL_COLOURS;
   const SIZES = [6, 8, 10, 12, 14, 18, 24, 36];
   const SIZE_OPTS = SIZES.map((v) => ({ key: String(v), name: `${v} pt` }));
@@ -338,10 +338,10 @@
       <span class="k">{isText ? "Background" : "Fill"}</span>
       <div class="pal">
         <div class="swatches" role="radiogroup" aria-label={isText ? "Background colour" : "Fill colour"}>
+          <button type="button" role="radio" class="sw none" class:on={!p.style.fill} aria-checked={!p.style.fill} aria-label="None" title="None" onclick={() => p.onStyle({ fill: null })}></button>
           {#each FILLS as col (col.name)}
             <button type="button" role="radio" class="sw" class:on={same(p.style.fill, col.c)} aria-checked={same(p.style.fill, col.c)} aria-label={col.name} title={col.name} style:--c={css(col.c)} onclick={() => p.onStyle({ fill: col.c })}></button>
           {/each}
-          <button type="button" role="radio" class="sw none" class:on={!p.style.fill} aria-checked={!p.style.fill} aria-label="None" title="None" onclick={() => p.onStyle({ fill: null })}></button>
           {@render custom("fill", p.style.fill, FILLS)}
         </div>
         {@render opacity(isText ? "Background opacity" : "Fill opacity", fillOpacity(p.style), p.style.fill, !p.style.fill, (o, live) => p.onStyle({ fillOpacity: o }, live))}
@@ -399,7 +399,7 @@
       <span class="k">Value</span>
       <div class="controls">
         <PopChoice label="Label size" options={SIZE_OPTS} value={SIZES.includes(ms.labelSize) ? String(ms.labelSize) : null} compact={narrow} {out} sample={labelSizeSample} onChange={(k) => on({ labelSize: Number(k) })} />
-        <PopChoice label="Units" options={ms.format.system === "imperial" ? UNIT_OPTS_IMPERIAL : UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
+        <PopChoice label="Units" options={UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
         {#if ms.format.units === "auto" && !isFractional(ms.format)}
           <!-- Metric Auto writes to its own rule: no decimals to choose. -->
         {:else if isFractional(ms.format)}
