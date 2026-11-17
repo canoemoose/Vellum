@@ -116,7 +116,21 @@
   });
 </script>
 
-<span bind:this={box} class="box num" class:compact={p.compact} class:open>
+<!-- A press anywhere in the box (the "pt" too, Matt's review) goes to the field: it focuses,
+     selects and drops the slider out, as a press on the number does. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<span
+  bind:this={box}
+  class="box num"
+  class:compact={p.compact}
+  class:open
+  onpointerdown={(e) => {
+    if (e.target === field) return;
+    e.preventDefault();
+    field.focus();
+    show();
+  }}
+>
   <input
     bind:this={field}
     id={p.id}
