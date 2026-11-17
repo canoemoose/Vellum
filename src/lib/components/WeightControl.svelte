@@ -177,9 +177,10 @@
 
 <style>
   /* The field: the box, with "pt" inside it after the number. */
+  /* Wide enough for four characters ("0.75", Matt's review) and "pt" in the monospaced face. */
   .box {
     height: 24px;
-    width: 52px;
+    width: 60px;
     padding: 0 6px 0 4px;
     display: inline-flex;
     align-items: center;
@@ -208,7 +209,7 @@
     user-select: text;
   }
   .box.compact {
-    width: 36px;
+    width: 40px;
     padding: 0 3px;
   }
   .box.compact input {
