@@ -51,6 +51,18 @@ export function versionFromTag(tag) {
   return m ? m[1] : null;
 }
 
+/** The line under the download button. The size is left out when it can't be read. */
+const metaLine = (size) => ["Free", "Windows 10 and 11", size, "keeps itself up to date"].filter(Boolean).join(" · ");
+
+/**
+ * "0.2.1" -> "0.2": the hero pill names the feature release, so its text ("markup, measuring
+ * and signatures") stays true through patch releases and changes only with the next feature one.
+ */
+export function featureVersion(version) {
+  const m = /^(\d+)\.(\d+)\./.exec(version ?? "");
+  return m ? `${m[1]}.${m[2]}` : version;
+}
+
 /**
  * What the download section says, from a release (the API's JSON) or null when the call failed.
  * Returns { ok, warning?, values } where values fills the page's {{placeholders}}.
@@ -62,9 +74,11 @@ export function downloadInfo(release) {
     values: {
       downloadUrl: RELEASES_URL,
       downloadLabel: "Download from GitHub",
-      downloadMeta: "Windows 10 and 11, 64-bit",
+      downloadMeta: metaLine(null),
       notesUrl: RELEASES_URL,
       notesLabel: "Release notes",
+      pillTag: "What's new",
+      installerSize: "",
       version: "",
     },
   });
@@ -80,9 +94,11 @@ export function downloadInfo(release) {
     values: {
       downloadUrl: installer.browser_download_url,
       downloadLabel: `Download Vellum ${version}`,
-      downloadMeta: ["Windows 10 and 11, 64-bit", size].filter(Boolean).join(" · "),
+      downloadMeta: metaLine(size),
       notesUrl: typeof release.html_url === "string" ? release.html_url : RELEASES_URL,
       notesLabel: date ? `What's new in ${version}, released ${date}` : `What's new in ${version}`,
+      pillTag: `New in ${featureVersion(version)}`,
+      installerSize: size ?? "",
       version,
     },
   };
@@ -153,7 +169,7 @@ async function main() {
   const html = fillTemplate(readFileSync(page, "utf8"), { ...info.values, siteUrl: base || "./", ogImage: `${base}img/og.png` });
   writeFileSync(page, html);
 
-  const what = info.ok ? `Vellum ${info.values.version}, ${info.values.downloadMeta.split(" · ")[1] ?? "size unknown"}` : "fallback link";
+  const what = info.ok ? `Vellum ${info.values.version}, ${info.values.installerSize || "size unknown"}` : "fallback link";
   console.log(`build-site: wrote ${out} (${what})`);
 }
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { RELEASES_URL, downloadInfo, escapeHtml, fillTemplate, formatDate, formatSize, pickInstaller, siteBase, versionFromTag } from "./build-site.mjs";
+import { RELEASES_URL, downloadInfo, featureVersion, escapeHtml, fillTemplate, formatDate, formatSize, pickInstaller, siteBase, versionFromTag } from "./build-site.mjs";
 
 const read = (p) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 
@@ -72,9 +72,11 @@ describe("downloadInfo", () => {
     expect(info.values).toEqual({
       downloadUrl: exe.browser_download_url,
       downloadLabel: "Download Vellum 0.2.0",
-      downloadMeta: "Windows 10 and 11, 64-bit · 6.7 MB",
+      downloadMeta: "Free · Windows 10 and 11 · 6.7 MB · keeps itself up to date",
       notesUrl: "https://github.com/canoemoose/Vellum/releases/tag/v0.2.0",
       notesLabel: "What's new in 0.2.0, released 20 November 2026",
+      pillTag: "New in 0.2",
+      installerSize: "6.7 MB",
       version: "0.2.0",
     });
   });
@@ -82,7 +84,7 @@ describe("downloadInfo", () => {
   it("leaves out a size or date it can't read rather than failing", () => {
     const info = downloadInfo(release([{ ...exe, size: undefined }], { published_at: undefined }));
     expect(info.ok).toBe(true);
-    expect(info.values.downloadMeta).toBe("Windows 10 and 11, 64-bit");
+    expect(info.values.downloadMeta).toBe("Free · Windows 10 and 11 · keeps itself up to date");
     expect(info.values.notesLabel).toBe("What's new in 0.2.0");
   });
 
@@ -96,6 +98,7 @@ describe("downloadInfo", () => {
     expect(info.values.downloadUrl).toBe(RELEASES_URL);
     expect(info.values.downloadLabel).toBe("Download from GitHub");
     expect(info.values.notesUrl).toBe(RELEASES_URL);
+    expect(info.values.pillTag).toBe("What's new");
   };
   it("falls back to the releases page when the API call failed", () => isFallback(downloadInfo(null)));
   it("falls back when the release has no assets", () => isFallback(downloadInfo(release([]))));
@@ -112,6 +115,14 @@ describe("fillTemplate", () => {
   });
   it("escapes quotes and apostrophes", () => {
     expect(escapeHtml(`What's "new"`)).toBe("What&#39;s &quot;new&quot;");
+  });
+});
+
+describe("featureVersion", () => {
+  it("keeps major and minor, so a patch release doesn't change the pill", () => {
+    expect(featureVersion("0.2.0")).toBe("0.2");
+    expect(featureVersion("0.2.1")).toBe("0.2");
+    expect(featureVersion("1.10.3-rc1")).toBe("1.10");
   });
 });
 
