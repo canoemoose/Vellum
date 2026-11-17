@@ -1,0 +1,339 @@
+/* The Vellum homepage. Colours and fonts are the app's own (src/app.css): the same tokens in a
+   light and a dark set, chosen by the visitor's system theme. Text contrast checked with APCA. */
+
+:root {
+  --app: #f6f6f4; /* page background */
+  --ctl: #ffffff;
+  --bd: #dcdcd7;
+  --tx: #1d1e21;
+  --tx2: #3d3f45;
+  --tx3: #5f6269;
+  /* Links: the accent darkened, as #0d9488 is short of body-text contrast on this background. */
+  --link: #0a6f66;
+  --accent: #0d9488;
+  --accent-bd: #0a6f66; /* filled buttons' visible border, as in the app */
+  --accent-hover: #0f9f92;
+  --font-ui: "Inter", system-ui, "Segoe UI", sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app: #1b1c1f;
+    --ctl: #232428;
+    --bd: #2a2c31;
+    --tx: #e6e7ea;
+    --tx2: #c9cbd1;
+    /* Lighter than the app's #9a9da5 (APCA Lc 48 here): this page sets small grey text in
+       paragraphs, so it needs about Lc 60. */
+    --tx3: #b1b4bb;
+    --link: #2dd4bf;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--app);
+  color: var(--tx2);
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow-wrap: break-word;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--tx);
+  line-height: 1.2;
+  margin: 0;
+}
+
+h2 {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-bottom: 18px;
+}
+
+h3 {
+  font-size: 18px;
+  font-weight: 620;
+  margin: 14px 0 6px;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+a {
+  color: var(--link);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+figure {
+  margin: 0;
+}
+
+.num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Columns: text at a readable measure, screenshots wider. 16 px gutters on a phone. */
+.wrap,
+.wrap-wide {
+  margin-inline: auto;
+  padding-inline: 16px;
+}
+.wrap {
+  max-width: 1040px;
+}
+.wrap-wide {
+  max-width: 1200px;
+}
+
+main > section {
+  padding-block: 56px;
+}
+
+/* Header and download */
+
+.intro {
+  text-align: center;
+  padding-top: 56px;
+  padding-bottom: 32px;
+}
+
+.logo {
+  margin: 0 auto 14px;
+  width: 72px;
+  height: 72px;
+}
+
+h1 {
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  font-size: 20px;
+  max-width: 34ch;
+  margin: 10px auto 28px;
+  color: var(--tx2);
+}
+
+.download p {
+  margin: 0 0 4px;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 10px 26px;
+  border: 1px solid var(--accent-bd);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  text-decoration: none;
+  margin-bottom: 10px;
+}
+.btn-primary:hover {
+  background: var(--accent-hover);
+  text-decoration: none;
+}
+.btn-primary:active {
+  background: var(--accent-bd);
+}
+
+.meta {
+  color: var(--tx2);
+}
+
+.notes {
+  margin-top: 8px !important;
+}
+
+.small {
+  color: var(--tx3);
+  font-size: 15px;
+}
+
+/* Only where there's no mouse: phones and tablets, where the installer is no use. */
+.phone-only {
+  display: none;
+  color: var(--tx);
+  font-weight: 550;
+  max-width: 32ch;
+  margin-inline: auto !important;
+}
+@media (hover: none) and (pointer: coarse) {
+  .phone-only {
+    display: block;
+  }
+}
+
+/* Screenshots are shown as captured: their own transparent corners and shadow, no frame. */
+
+.hero {
+  padding-bottom: 8px;
+}
+.hero img {
+  margin-inline: auto;
+}
+
+/* Why it exists */
+
+.why-body {
+  display: grid;
+  gap: 24px 48px;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: center;
+}
+
+.figure {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+  padding-left: 18px;
+  color: var(--tx3);
+}
+.figure .num {
+  display: block;
+  font-size: 46px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--tx);
+}
+
+/* What it does */
+
+.tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 40px 36px;
+}
+
+.tiles p {
+  color: var(--tx2);
+  margin: 0;
+}
+
+.credit {
+  margin-top: 36px;
+  font-size: 13px;
+  color: var(--tx3);
+}
+
+/* First install */
+
+.install-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+  gap: 24px 48px;
+  align-items: start;
+}
+
+.install ol {
+  margin: 0 0 14px;
+  padding-left: 1.4em;
+}
+.install li {
+  margin-bottom: 4px;
+}
+
+q {
+  quotes: "\201C" "\201D";
+}
+
+/* Who made it */
+
+.maker p {
+  max-width: 62ch;
+}
+
+/* Footer */
+
+footer {
+  border-top: 1px solid var(--bd);
+  padding-top: 28px;
+  padding-bottom: 48px;
+  font-size: 15px;
+  color: var(--tx3);
+}
+
+footer .links {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 28px;
+}
+
+/* Phone width */
+
+@media (max-width: 720px) {
+  body {
+    font-size: 16px;
+  }
+  .intro {
+    padding-top: 36px;
+  }
+  h1 {
+    font-size: 36px;
+  }
+  .tagline {
+    font-size: 18px;
+  }
+  h2 {
+    font-size: 22px;
+  }
+  main > section {
+    padding-block: 40px;
+  }
+  .why-body,
+  .install-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .figure .num {
+    font-size: 38px;
+  }
+  .btn-primary {
+    width: 100%;
+    max-width: 360px;
+  }
+}
