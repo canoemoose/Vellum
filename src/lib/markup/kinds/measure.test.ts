@@ -233,7 +233,7 @@ describe("the scale it's valued at", () => {
     const a = mk("measureLength", { from: [0, 0], to: [pt(100), 0] });
     const r = reformat([a], { units: "mm", decimals: 2 });
     expect(r.changed).toBe(1);
-    expect(label(r.markups[0])).toEqual(["10000 mm"]);
+    expect(label(r.markups[0])).toEqual(["10000.00 mm"]);
     const big = resizeLabels([a], new Set([a.id]), 14)[0];
     expect(texts(big)[0].size).toBe(14);
   });

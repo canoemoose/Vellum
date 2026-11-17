@@ -45,7 +45,7 @@
   .swatches {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 7px; /* as the context bar's: clear of the current one's ring */
   }
   /* As the context bar's. */
   .sw {

@@ -5,7 +5,9 @@
 // point to the line; a third click on the points (or a double-click on the second, or a drag)
 // leaves it in line. The real-world length sits above the line (to its right on a vertical one)
 // and reads from the bottom or the right of the page; its grip slides it along the line, the
-// line reaching out to it past either end, and a double-click on the grip puts it back. Saved as a Line
+// line reaching out to it past either end, and a double-click on the grip puts it back. Where it
+// doesn't fit between the points it goes beyond the second by itself, and wherever it's beyond
+// an end, arrows turn outside (docs/edit-lock-brief.md, 7). Saved as a Line
 // annotation with the LineDimension intent, a /Measure dictionary and the standard keys for the
 // pulled-out line (/LL, /LLE, /LLO) and the moved value (/CO), so other apps treat it as a
 // dimension and draw it alike.
@@ -23,7 +25,7 @@ import {
   MEASURE_STYLE,
   dimensionEndsSpec,
   dimensionLine,
-  extensionLines,
+  endReach,
   faceOf,
   labelAt,
   labelSize,
@@ -32,6 +34,8 @@ import {
   onLabel,
   pageMeasureOf,
   settleMeasure,
+  VALUE_CLEAR,
+  valueFits,
   valueGap,
   valueHome,
 } from "../dimension";
@@ -134,31 +138,57 @@ const REACH_PAST = 2;
 
 /**
  * The dimension line as drawn: a to b, and where the value has been slid past either end, a
- * plain run on from that end to just past it (the CAD way of putting a value outside).
+ * plain run on from that end to just past it (the CAD way of putting a value outside). With
+ * arrow ends and the value beyond an end, moved there by itself or by hand (Matt's review: the
+ * same either way), the arrows turn outside (`outside`), and an end with no run of its own gets
+ * one to carry its arrow.
  */
-export function lengthRuns(m: MeasureLengthMarkup): { a: Pt; b: Pt; beyond: [Pt, Pt][] } {
+export function lengthRuns(m: MeasureLengthMarkup): { a: Pt; b: Pt; beyond: [Pt, Pt][]; outside: boolean } {
   const { a, b } = lengthGeometry(m);
   const L = len(sub(b, a));
-  if (L < 1e-9) return { a, b, beyond: [] };
+  if (L < 1e-9) return { a, b, beyond: [], outside: false };
   const u = mul(sub(b, a), 1 / L);
-  const { centre, size } = lengthValueAt(m);
+  const { centre, size, out } = lengthValueAt(m);
   const s = dot(sub(centre, a), u), half = size[0] / 2;
   const beyond: [Pt, Pt][] = [];
   if (s + half > L) beyond.push([b, add(a, mul(u, s + half + REACH_PAST))]);
   if (s - half < 0) beyond.push([a, add(a, mul(u, s - half - REACH_PAST))]);
-  return { a, b, beyond };
+  const outside = m.ends === "arrow" && (out || beyond.length > 0);
+  if (outside) {
+    // An arrow outside with no run carrying it: a tail as long again as the head behind it.
+    const tail = 2 * endReach("arrow", m.style.width);
+    if (s - half >= 0) beyond.push([a, sub(a, mul(u, tail))]);
+    if (s + half <= L) beyond.push([b, add(b, mul(u, tail))]);
+  }
+  return { a, b, beyond, outside };
 }
 
-/** Where its value is: its centre, reading direction and size. */
-export function lengthValueAt(m: MeasureLengthMarkup): { centre: Pt; home: Pt; dir: Pt; size: [number, number] } {
+/**
+ * Where the value goes by itself (docs/edit-lock-brief.md, 7), as a move along the line from its
+ * place, or null where it fits between the ends. Out of room, it sits beyond the second point
+ * clicked (as AutoCAD puts it by the second extension line), clear of that end (an arrow being
+ * turned outside, its head). Measurements from before stage 5 (no offset) are left as they were.
+ */
+function autoSlide(m: MeasureLengthMarkup, length: number, width: number): number | null {
+  if (m.value !== undefined || m.offset === undefined) return null;
+  if (valueFits(length, width, m.ends, m.style.width)) return null;
+  return length / 2 + endReach(m.ends, m.style.width) + VALUE_CLEAR + width / 2;
+}
+
+/**
+ * Where its value is: its centre, reading direction and size, and whether it was moved out by
+ * itself for want of room (`out`).
+ */
+export function lengthValueAt(m: MeasureLengthMarkup): { centre: Pt; home: Pt; dir: Pt; size: [number, number]; out: boolean } {
   const { a, b } = lengthGeometry(m);
   // It reads along the dimension line (level or upright when it measures so), not the points.
   const dir = uprightDir(a, b);
   const size = labelSize([lengthLabel(m)], m.labelSize, faceOf(m.font));
   const home = valueHome(a, b, dir, size[1], valueGap(m.style.width));
   const { along, normal } = lengthFrame(m);
-  const v = m.value ?? [0, 0];
-  return { centre: add(home, add(mul(along, v[0]), mul(normal, v[1]))), home, dir, size };
+  const slide = autoSlide(m, len(sub(b, a)), size[0]);
+  const v = m.value ?? [slide ?? 0, 0];
+  return { centre: add(home, add(mul(along, v[0]), mul(normal, v[1]))), home, dir, size, out: slide !== null };
 }
 
 /**
@@ -218,11 +248,10 @@ export const measureLength = defineKind<MeasureLengthMarkup>({
   },
   ops(m) {
     const { extensions } = lengthGeometry(m);
-    const { a, b, beyond } = lengthRuns(m);
+    const { a, b, beyond, outside } = lengthRuns(m);
     const { centre, dir } = lengthValueAt(m);
     return [
-      ...extensionLines(extensions, m.style),
-      ...dimensionLine([a, b], m.style, m.ends ?? "bar"),
+      ...dimensionLine([a, b], m.style, m.ends ?? "bar", outside, extensions),
       ...(beyond.length ? [path(beyond.flatMap(([x, y]) => [["M", x[0], x[1]], ["L", y[0], y[1]]] as Seg[]), m.style, null)] : []),
       labelAt([lengthLabel(m)], centre, m.labelSize, m.style.stroke, faceOf(m.font), dir),
     ];

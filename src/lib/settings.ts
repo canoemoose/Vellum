@@ -65,9 +65,11 @@ export interface Settings {
   textMarks: Partial<Record<TextMarkVariant, Style>>;
 }
 
-export const SIDEBAR_MIN = 160;
+// docs/edit-lock-brief.md, 5: wide enough for its three word tabs (Pages, Bookmarks, Markups)
+// and a measurement's row. A remembered width below the minimum is pulled up to it.
+export const SIDEBAR_MIN = 220;
 export const SIDEBAR_MAX = 420;
-export const SIDEBAR_DEFAULT = 196;
+export const SIDEBAR_DEFAULT = 260;
 
 export const DEFAULTS: Settings = {
   layoutMode: "continuous",

@@ -42,7 +42,7 @@ export function forbidsChanges(info: FileInfo): boolean {
 }
 
 /**
- * What to say before "Edit document" is unlocked, if anything (docs/editing-scope.md, "The edit
+ * What to say before "Edit file" is switched on, if anything (docs/editing-scope.md, "The edit
  * lock"): the file is signed or certified, or its permissions ask for no changes. Empty when
  * there's nothing to say; unlocking then goes ahead without asking.
  */

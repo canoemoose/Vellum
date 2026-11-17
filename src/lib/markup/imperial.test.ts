@@ -192,7 +192,7 @@ describe("imperial areas", () => {
 
   it("leave metric areas alone", () => {
     expect(formatArea(12.4e6, f("auto"))).toBe("12.40 m²");
-    expect(formatArea(250000, f("mm"))).toBe("250000 mm²");
+    expect(formatArea(250000, f("mm"))).toBe("250000.00 mm²");
     expect(formatArea(0, autoImperial())).toBe("0.00 ft²");
   });
 });

@@ -324,15 +324,18 @@
       if (!bar) return null;
       const own = styleFor(settings.markup, tool.id);
       const style = armed?.content.type === "text" ? { ...own, stroke: armed.content.colour } : own;
-      return { bar, kinds: [tool.kind], tool: tool.id, style, text: bar.text ? textFor(settings.markup, tool.id) : null, label: `${tool.label} tool`, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
+      return { bar, kinds: [tool.kind], tool: tool.id, style, text: bar.text ? textFor(settings.markup, tool.id) : null, label: tool.label, sides: bar.sides ? sidesFor(settings.markup, tool.id) : null };
     }
-    const sel = mt.selected();
+    // docs/edit-lock-brief.md, 2: what the file's lock keeps is selected but offers nothing to
+    // change, so it has no bar (Matt's review: not even a label; the padlock says it). Mixed in,
+    // the bar is the others'.
+    const sel = mt.selectedChangeable();
     // Several kinds: only the controls they all have; none (a stamp, an annotation Vellum can't redraw), no bar.
     const bar = barFor(sel.map(subjectOf));
     if (!bar) return null;
     const kinds = [...new Set(sel.map((m) => m.kind))];
     const t = sel.find((m) => "textStyle" in m) as Extract<Markup, { textStyle: TextStyle }> | undefined;
-    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups selected`, sides: bar.sides ? mt.selectedSides() : null };
+    return { bar, kinds, tool: null, style: sel[0].style, text: t ? t.textStyle : null, label: sel.length === 1 ? labelOf(sel[0]) : `${sel.length} markups`, sides: bar.sides ? mt.selectedSides() : null };
   });
 
   /**
@@ -343,7 +346,7 @@
   const swapStrip = $derived.by(() => {
     void markVersion;
     const mt = markupTool;
-    const sel = mt?.selected() ?? [];
+    const sel = mt?.selectedChangeable() ?? [];
     const m = sel.length === 1 && sel[0].kind === "stamp" ? sel[0] : null;
     const toolOut = strip?.tool === "stamp" || strip?.tool === "signature";
     if (!m || (m.content.type === "image" && !m.signature && !toolOut)) return null;
@@ -579,7 +582,7 @@
       save();
     }
     if (t && mt) {
-      const ids = new Set(mt.selected().map((m) => m.id));
+      const ids = new Set(mt.selectedChangeable().map((m) => m.id));
       let next = t.marks.markups;
       if (patch.labelSize) next = resizeLabels(next, ids, patch.labelSize);
       if (patch.format) next = reformat(next, patch.format, ids).markups;
@@ -610,7 +613,7 @@
     const tool = toolById(mt.tool);
     const ms = { labelSize: settings.measure.labelSize, format: viewFormat(settings.measure.format) };
     if (tool?.kind) return tool.group === "measure" && tool.kind !== "measureCalibrate" ? { measure: ms, onMeasure } : {};
-    const sel = mt.selected();
+    const sel = mt.selectedChangeable();
     if (!sel.length || !sel.every(isMeasurement)) return {};
     return { measure: { labelSize: sel[0].labelSize, format: sel[0].fmt }, onMeasure };
   });
@@ -629,7 +632,7 @@
       save();
     }
     if (t && mt) {
-      const next = relook(t.marks.markups, new Set(mt.selected().map((m) => m.id)), patch);
+      const next = relook(t.marks.markups, new Set(mt.selectedChangeable().map((m) => m.id)), patch);
       if (next !== t.marks.markups) {
         t.marks.history.push(next);
         viewer?.requestFrame();
@@ -648,7 +651,7 @@
       if (tool.group !== "measure" || tool.kind === "measureCalibrate") return {};
       return { dimension: { ends: hasEnds({ kind: tool.kind }) ? look.ends : null, font: look.font }, onDimension };
     }
-    const sel = mt.selected();
+    const sel = mt.selectedChangeable();
     if (!sel.length || !sel.every(isMeasurement)) return {};
     const m = sel[0] as Measurement;
     return { dimension: { ends: sel.every(hasEnds) ? (m.ends ?? "bar") : null, font: m.font ?? "helvetica" }, onDimension };
@@ -873,7 +876,7 @@
     const now = new Date().toISOString();
     let changed = false;
     const next = t.marks.markups.map((m) => {
-      if (m.kind !== "stamp" || !t.marks.selection.has(m.id)) return m;
+      if (m.kind !== "stamp" || !t.marks.selection.has(m.id) || !t.marks.editable(m)) return m;
       const n = f(m);
       if (n === m) return m;
       changed = true;
@@ -1051,6 +1054,17 @@
   });
 
   /** A row in the Markups tab clicked: back to Select, select it and bring it into view. */
+  /**
+   * A right-click on a Markups list row (docs/edit-lock-brief.md, 5): the row's markup picked, and
+   * a menu with Delete. A row the file's lock keeps offers no Delete, so no menu.
+   */
+  function markupRowMenu(id: string, x: number, y: number) {
+    pickMarkup(id);
+    const m = markupTool?.doc?.byId(id);
+    if (!m || markupTool?.isLocked(m)) return;
+    contextMenu = { x, y, items: [{ label: "Delete", shortcut: "Delete", action: () => markupTool?.removeMarkup(id) }] };
+  }
+
   function pickMarkup(id: string) {
     const mt = markupTool;
     const m = mt?.doc?.byId(id);
@@ -1457,29 +1471,42 @@
     });
   }
 
-  /** The padlock: unlock "Edit document" (saying so first if the file is signed or asks not to be changed), or lock it again. */
+  /**
+   * The "Edit file" switch (docs/edit-lock-brief.md): unlock the file (saying so first if it's
+   * signed or asks not to be changed), or lock it again. The switch is the one place to lock.
+   * What stays selected once locked shows a padlock on its selection.
+   */
   async function toggleEditLock() {
     const t = active;
     if (!t || t.status !== "open" || t.kind !== "pdf") return;
-    const marks = t.marks;
-    if (marks.unlocked) {
-      marks.unlocked = false;
-      for (const id of [...marks.selection]) {
-        const m = marks.byId(id);
-        if (m && !marks.editable(m)) marks.selection.delete(id);
-      }
+    if (t.marks.unlocked) {
+      t.marks.unlocked = false;
       markVersion++;
       viewer?.requestFrame();
       return;
     }
+    await unlockFile(t, false);
+  }
+
+  /**
+   * Unlock tab `t`'s file. From the switch, it asks only when there's something to warn of; from
+   * a markup that came with the file (its padlock, or a drag: `fromMarkup`), it always asks,
+   * briefly, since the user didn't go to the switch on purpose (brief, 2). The markup stays
+   * selected, ready to change.
+   */
+  async function unlockFile(t: Tab, fromMarkup: boolean) {
+    if (t.status !== "open" || t.kind !== "pdf" || t.marks.unlocked) return;
     const info = await invoke<FileInfo>("annot_inspect", { path: t.path, password: t.password }).catch(() => null);
     const warnings = unlockWarnings(t.title, info);
-    if (warnings.length) {
-      const a = await ask("Edit document", "Unlock to move, restyle and delete the annotations that came with the file?", ["Unlock", "Cancel"], { warnings });
+    if (fromMarkup || warnings.length) {
+      const question = fromMarkup
+        ? "This markup came with the file. Unlock the file to change it?"
+        : "Unlock to move, restyle and delete the annotations that came with the file?";
+      const a = await ask("Edit file", question, ["Unlock", "Cancel"], { warnings });
       if (a !== "Unlock") return;
     }
     if (active !== t) return;
-    marks.unlocked = true;
+    t.marks.unlocked = true;
     markVersion++;
     viewer?.requestFrame();
   }
@@ -1922,7 +1949,7 @@
           { label: "Paste", shortcut: "Ctrl+V", disabled: !pdfDoc || !markupTool?.canPaste, action: () => void markupTool?.paste("centre") },
           { label: "Delete markups", shortcut: "Delete", disabled: !markupTool?.hasSelection, action: () => markupTool?.deleteSelection() },
           // Existing annotations
-          { label: unlockedNow ? "Lock document" : "Unlock document…", disabled: !pdfDoc, action: () => void toggleEditLock() },
+          { label: unlockedNow ? "Lock file" : "Unlock file…", disabled: !pdfDoc, action: () => void toggleEditLock() },
           { separator: true },
           { label: "Select all markups on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? "Ctrl+A" : undefined, disabled: !pdfDoc, action: selectAllMarkups },
           { label: "Select all text on the page", shortcut: markupTool?.hasSelection || toolNow !== "select" ? undefined : "Ctrl+A", disabled: !textDoc, action: () => textTool?.selectPage(ui.page) },
@@ -2278,6 +2305,7 @@
         author: () => settings.markup.author ?? author,
         onChange: onMarkupsChanged,
         onLift: (ids) => liftNow(ids), // Existing annotations
+        onUnlockAsk: () => { if (active) void unlockFile(active, true); }, // docs/edit-lock-brief.md, 2
         // Stage 9: markups go on the system clipboard in Vellum's own format (src-tauri/src/clipboard.rs).
         clipboard: {
           write: (json) => invoke<void>("clipboard_put_markups", { json }),
@@ -2476,6 +2504,7 @@
       detail: tabDetail(t),
       snapshot: t.view?.snapshot ?? null,
       dirty: (void markVersion, t.marks.dirty),
+      unlocked: t.status === "open" && t.kind === "pdf" && t.marks.unlocked,
     })),
   );
   const sizes = $derived(hasDoc && active?.info ? active.info.sizes : []);
@@ -2575,6 +2604,8 @@
           lastInGroup={settings.markup.lastInGroup}
           onTool={setTool}
         />
+      {/snippet}
+      {#snippet lock()}
         <EditLock unlocked={unlockedNow} disabled={!pdfDoc} onToggle={() => void toggleEditLock()} />
       {/snippet}
       {#snippet searchBox()}
@@ -2619,7 +2650,7 @@
         onGotoPoint={(p, y) => viewer?.gotoPagePoint(p, y)}
         markups={markupsTab}
         onPickMarkup={pickMarkup}
-        onDeleteMarkup={(id) => markupTool?.removeMarkup(id)}
+        onMarkupMenu={markupRowMenu}
       />
     {/if}
 
@@ -2767,6 +2798,7 @@
       pageSize={pageSizeLabel}
       onScale={openScale}
       {...measureBar}
+      unlocked={unlockedNow}
     />
   {/if}
 </div>

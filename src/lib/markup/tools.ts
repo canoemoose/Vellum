@@ -17,13 +17,16 @@ export interface ToolGroup {
   label: string;
 }
 
-/** The groups, in palette order. A group with no tools yet isn't shown. */
+/**
+ * The groups, in palette order (Matt's review: Pen and Highlighter straight after Select). A
+ * group with no tools yet isn't shown.
+ */
 export const GROUPS: ToolGroup[] = [
   { id: "select", label: "Select" },
+  { id: "pen", label: "Pen" },
   { id: "lines", label: "Lines" },
   { id: "shapes", label: "Shapes" },
   { id: "text", label: "Text" },
-  { id: "pen", label: "Pen" },
   { id: "measure", label: "Measure" },
   { id: "stamp", label: "Stamp" },
 ];
@@ -65,8 +68,11 @@ const STROKE = 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-line
 
 export const TOOLS: ToolDef[] = [
   { id: "select", group: "select", label: "Select", key: "v", tip: "click a markup to select it, drag to move, drag on empty drawing to select several; Esc also returns here", icon: `<path d="M3.5 2.5l9 5.2-4 1.1 2.3 4.2-1.6.9-2.3-4.2-3.4 2.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />` },
-  { id: "arrow", group: "lines", label: "Arrow", key: "a", kind: "arrow", icon: `<path d="M3 13L12.5 3.5M7.5 3.5h5v5" ${STROKE} />` },
+  { id: "ink", group: "pen", label: "Pen", key: "p", kind: "ink", icon: `<path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" ${STROKE} />` },
+  { id: "highlighter", group: "pen", label: "Highlighter", key: "h", kind: "highlighter", icon: `<path d="M3 13.5h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /><path d="M4.5 11.5l1.8-3.6 6-5.4 1.8 1.8-5.4 6-3.6 1.8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
+  // Lines: Line, Arrow, Polyline (Matt's review)
   { id: "line", group: "lines", label: "Line", key: "l", kind: "arrow", preset: { ends: ["none", "none"] }, icon: `<path d="M3 13L13 3" ${STROKE} />` },
+  { id: "arrow", group: "lines", label: "Arrow", key: "a", kind: "arrow", icon: `<path d="M3 13L12.5 3.5M7.5 3.5h5v5" ${STROKE} />` },
   { id: "polyline", group: "lines", label: "Polyline", key: "l", kind: "polyline", icon: `<path d="M2.5 12.5l4-7 4 5 3-7" ${STROKE} />` },
   { id: "rect", group: "shapes", label: "Rectangle", key: "r", kind: "rect", icon: `<rect x="2.75" y="3.75" width="10.5" height="8.5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
   { id: "ellipse", group: "shapes", label: "Ellipse", key: "e", kind: "ellipse", icon: `<ellipse cx="8" cy="8" rx="5.75" ry="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />` },
@@ -76,9 +82,6 @@ export const TOOLS: ToolDef[] = [
   // Text markups (beside their groups, which set the palette order): callout and note
   { id: "callout", group: "text", label: "Callout", key: "t", kind: "callout", icon: `<rect x="7.25" y="2.75" width="7" height="5.5" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M2.5 13.5L5.5 8.5h1.75" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /><path d="M2.5 13.5l.4-2M2.5 13.5l1.9-.7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />` },
   { id: "note", group: "text", label: "Note", key: "t", kind: "note", after: "double-click a note to edit it, rest the pointer on it to read it", icon: `<path d="M3 2.75h7.25l2.75 2.75v7.75H3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" /><path d="M10.25 2.75V5.5H13M5.5 8h5M5.5 10.5h3.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />` },
-  { id: "ink", group: "pen", label: "Pen", key: "p", kind: "ink", icon: `<path d="M2.5 12.5c2-4 3.5-6 5-6s.8 3.5 2.3 3.5S12 6 13.5 4" ${STROKE} />` },
-  // Text markups: highlighter
-  { id: "highlighter", group: "pen", label: "Highlighter", key: "h", kind: "highlighter", icon: `<path d="M3 13.5h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /><path d="M4.5 11.5l1.8-3.6 6-5.4 1.8 1.8-5.4 6-3.6 1.8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />` },
   // Measuring
   { id: "measureLength", group: "measure", label: "Length", key: "d", kind: "measureLength", icon: `<path d="M2.5 11.5l11-7M1.6 10.1l1.8 2.8M12.6 3.1l1.8 2.8" ${STROKE} />` },
   { id: "measurePath", group: "measure", label: "Polyline length", key: "d", kind: "measurePath", icon: `<path d="M2.5 12.5l4-6 3.5 3 3.5-6.5M1.5 11.5l2 2" ${STROKE} />` },

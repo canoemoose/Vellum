@@ -7,7 +7,7 @@
 import type { Pt, Rgb, Style } from "./base";
 import { type Op, type Seg, type TextOp, DIMENSION_HEAD, add, endedLine, mul, path, rot, sub, unit } from "./draw";
 import { type Face, HELVETICA, textWidth } from "./fonts";
-import { type MeasureFormat, type PageMeasure, areaDecimals, formatScale, isImperial, lengthUnit, measureSource, paperMm } from "./measure";
+import { type MeasureFormat, type PageMeasure, AUTO_DECIMALS, areaDecimals, formatScale, isImperial, lengthUnit, measureSource, paperMm, sig3Decimals } from "./measure";
 import { DEFAULT_FRACTION, MM_PER_FT, MM_PER_IN } from "./imperial"; // Imperial (stage 5 [A9])
 
 /** A dimension's ends (stage 5, D15): bars square to the line, 45 degree ticks, or filled arrows. */
@@ -121,13 +121,40 @@ export const EXT_BEYOND = 3;
 const lineSegs = (pts: Pt[]): Seg[] => pts.map((p, i) => [i ? "L" : "M", p[0], p[1]] as Seg);
 
 /**
- * A dimension line through `pts` with an end at each: a bar square to the line (the default), a
- * tick at 45 degrees (both leaning the same way, drawn twice the line's weight), or a filled
- * arrow pointing out. The line takes the style's pattern; the ends are always solid.
+ * How far an end reaches along its dimension line from its point, points: an arrow's length,
+ * a tick's lean; a bar is square to the line and takes none.
  */
-export function dimensionLine(pts: Pt[], s: Style, ends: DimEnds = "bar"): Op[] {
+export const endReach = (ends: DimEnds | undefined, width: number): number =>
+  ends === "arrow" ? DIMENSION_HEAD.length(width) : ends === "tick" ? barHalf(width) * Math.SQRT1_2 : 0;
+
+/** The clearance a value keeps from each end of the room it sits in, points. */
+export const VALUE_CLEAR = 2;
+
+/**
+ * Whether a value `width` points wide fits on a dimension line `length` points long between its
+ * ends (docs/edit-lock-brief.md, 7): inside the ticks or bars, with VALUE_CLEAR to spare at each
+ * side. Arrowheads take no room (Matt's review): the value sits above the line, clear of them, so
+ * switching to arrows never sends it outside by itself.
+ */
+export const valueFits = (length: number, width: number, ends: DimEnds | undefined, lineWidth: number): boolean =>
+  width + 2 * VALUE_CLEAR <= length - 2 * (ends === "arrow" ? 0 : endReach(ends, lineWidth));
+
+/**
+ * A dimension line through `pts` with an end at each: a bar square to the line (the default), a
+ * tick at 45 degrees (both leaning the same way), or a filled arrow pointing out. The line takes
+ * the style's pattern; the ends are always solid, and bars and ticks are the line's weight.
+ *
+ * `outside` (a two-point line whose value is beyond its ends, brief 7): arrows sit outside the
+ * points, pointing in at them, as CAD draws a tight dimension; the line between is plain. The
+ * runs carrying them outside are the caller's. Bars and ticks don't change.
+ *
+ * `ext`: the extension lines (solid, the line's weight). A bar lies along its extension line,
+ * so the two are one stroked path: drawn apart, the overlap's edges are painted twice and the
+ * ends read heavier than the extension lines (Matt's review).
+ */
+export function dimensionLine(pts: Pt[], s: Style, ends: DimEnds = "bar", outside = false, ext: [Pt, Pt][] = []): Op[] {
   if (pts.length < 2) return [];
-  if (ends === "arrow") return endedLine(pts, ["filled", "filled"], s, DIMENSION_HEAD);
+  if (ends === "arrow") return [...extensionLines(ext, s), ...arrowLine(pts, s, outside)];
   const h = barHalf(s.width);
   // Square to the line, or for a tick, a further eighth of a turn: the same line at both ends.
   const turn = ends === "tick" ? Math.PI / 4 : 0;
@@ -138,14 +165,30 @@ export function dimensionLine(pts: Pt[], s: Style, ends: DimEnds = "bar"): Op[] 
   };
   const n = pts.length;
   const bars = [...bar(pts[0], unit(sub(pts[1], pts[0]))), ...bar(pts[n - 1], unit(sub(pts[n - 1], pts[n - 2])))];
-  const endStyle = { ...s, dash: null, width: ends === "tick" ? s.width * 2 : s.width };
-  return [path(lineSegs(pts), s, null), path(bars, endStyle, null)];
+  return [path(lineSegs(pts), s, null), path([...extSegs(ext), ...bars], { ...s, dash: null }, null)];
 }
+
+/** A dimension line with arrow ends: pointing out, or turned outside (dimensionLine). */
+function arrowLine(pts: Pt[], s: Style, outside: boolean): Op[] {
+  if (outside && pts.length === 2) {
+    const [a, b] = pts;
+    const u = unit(sub(b, a)), h = DIMENSION_HEAD.length(s.width);
+    return [
+      path(lineSegs([a, b]), s, null),
+      // Each head drawn as the end of a run its own length coming in from outside: tip on the point.
+      ...endedLine([sub(a, mul(u, h)), a], ["none", "filled"], { ...s, dash: null }, DIMENSION_HEAD),
+      ...endedLine([add(b, mul(u, h)), b], ["none", "filled"], { ...s, dash: null }, DIMENSION_HEAD),
+    ];
+  }
+  return endedLine(pts, ["filled", "filled"], s, DIMENSION_HEAD);
+}
+
+const extSegs = (lines: [Pt, Pt][]): Seg[] => lines.flatMap(([a, b]) => [["M", a[0], a[1]], ["L", b[0], b[1]]] as Seg[]);
 
 /** Extension lines, solid, each from its measured point out to past the dimension line. */
 export function extensionLines(lines: [Pt, Pt][], s: Style): Op[] {
   if (!lines.length) return [];
-  return [path(lines.flatMap(([a, b]) => [["M", a[0], a[1]], ["L", b[0], b[1]]] as Seg[]), { ...s, dash: null }, null)];
+  return [path(extSegs(lines), { ...s, dash: null }, null)];
 }
 
 /** Lines of text in a block, centred on each other, with `dir` reading direction. */
@@ -250,7 +293,10 @@ export function measureSpec(pm: PageMeasure, fmt: MeasureFormat, typicalMm: numb
       ratio: r,
       unit: u,
       factor: u === "m" ? mmPerUnit / 1000 : mmPerUnit,
-      precision: u === "m" ? 10 ** fmt.decimals : pm.ratio === null ? 10 : 1,
+      // An explicit unit's decimals; Auto's fixed rule (two decimals in metres, three
+      // significant figures of the typical value in millimetres); paper mm to one decimal.
+      precision:
+        pm.ratio === null ? 10 : fmt.units !== "auto" ? 10 ** fmt.decimals : u === "m" ? 10 ** AUTO_DECIMALS : 10 ** sig3Decimals(typicalMm),
     };
   }
   // Imperial: distances in feet or inches, areas always in square feet.

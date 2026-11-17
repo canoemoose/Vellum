@@ -48,6 +48,10 @@ describe("the tool registry", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
+  it("run Select, Pen and Highlighter, then Line, Arrow and Polyline (Matt's review)", () => {
+    expect(TOOLS.slice(0, 6).map((t) => t.id)).toEqual(["select", "ink", "highlighter", "line", "arrow", "polyline"]);
+  });
+
   it("the nine plain tools are there, in their groups", () => {
     const want: Record<string, string> = { arrow: "lines", line: "lines", polyline: "lines", rect: "shapes", ellipse: "shapes", polygon: "shapes", cloud: "shapes", text: "text", ink: "pen" };
     for (const [id, g] of Object.entries(want)) expect(toolById(id)?.group).toBe(g);

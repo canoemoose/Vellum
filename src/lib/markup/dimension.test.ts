@@ -70,10 +70,10 @@ describe("placed the CAD way: the offset line and its extension lines", () => {
           close(s, add(p, mul(normal, Math.sign(off) * EXT_GAP)));
           close(e, add(p, mul(normal, off + Math.sign(off) * EXT_BEYOND)));
         });
-        // Drawn: the extension lines, then the dimension line through a and b.
+        // Drawn: the dimension line through a and b, then the extension lines with the bars.
         const ps = paths(m);
-        expect(ps[0].segs.length).toBe(4);
-        expect(ps[1].segs[0]).toEqual(["M", a[0], a[1]]);
+        expect(ps[0].segs[0]).toEqual(["M", a[0], a[1]]);
+        expect(ps[1].segs.length).toBe(8);
       }
     });
   }
@@ -295,10 +295,10 @@ describe("ends", () => {
     expect(bars).toEqual([["M", 100, 100 + h], ["L", 100, 100 - h], ["M", 300, 100 + h], ["L", 300, 100 - h]].map((s) => s.map((v) => (typeof v === "number" ? expect.closeTo(v, 9) : v))));
     const ticks = at("tick")[1];
     const dir = (i: number) => unit(sub([ticks.segs[i + 1][1], ticks.segs[i + 1][2]] as Pt, [ticks.segs[i][1], ticks.segs[i][2]] as Pt));
-    // 45 degrees off the line, the same way at both ends, heavier than the line.
+    // 45 degrees off the line, the same way at both ends, the line's weight (Matt's review).
     expect(Math.abs(dir(0)[0])).toBeCloseTo(Math.SQRT1_2, 6);
     close(dir(0), dir(2));
-    expect(ticks.width).toBeCloseTo(1.5);
+    expect(ticks.width).toBeCloseTo(0.75);
     const arrows = at("arrow");
     // The line and its two heads, one filled outline in the line's colour.
     expect(arrows.length).toBe(1);
@@ -313,7 +313,7 @@ describe("ends", () => {
     expect([a.lineEnds, a.interior]).toEqual([["ClosedArrow", "ClosedArrow"], kindOf("measureLength").defaultStyle().stroke]);
     const p = toSpec(mk("measurePath", { vertices: [[0, 0], [50, 0], [50, 50]], ends: "arrow" }), A3);
     expect(p.lineEnds).toEqual(["ClosedArrow", "ClosedArrow"]);
-    expect(paths(mk("measurePath", { vertices: [[0, 0], [50, 0], [50, 50]], ends: "tick" }))[1].width).toBeCloseTo(1.5);
+    expect(paths(mk("measurePath", { vertices: [[0, 0], [50, 0], [50, 50]], ends: "tick" }))[1].width).toBeCloseTo(0.75);
   });
 
   it("are chosen for the selection, only where there's a dimension line; the font for every measurement", () => {

@@ -172,12 +172,28 @@ changing what the file came with**:
 
 - **Always free:** adding markups, measurements, stamps and signatures; editing or deleting
   markups you added this session; searching, selecting and copying.
-- **Needs "Edit document" unlocked** (a padlock in the toolbar, per tab, locked again on every
-  open): deleting, reordering or permanently rotating pages; inserting pages; moving, restyling
-  or deleting annotations that were already in the file; placing images into or deleting
-  objects from the page content; flattening.
-- Unlocking is also what makes page objects and old annotations selectable, so a stray click
-  while panning can never grab part of the drawing. That's the practical gain beyond safety.
+- **Needs "Edit file" switched on** (per tab, locked again on every open): deleting, reordering
+  or permanently rotating pages; inserting pages; moving, restyling or deleting annotations that
+  were already in the file; placing images into or deleting objects from the page content;
+  flattening.
+- **It is the file's lock, not a tool's** (Matt, 16 November;
+  [edit-lock-brief.md](edit-lock-brief.md)). Today it guards the annotations that came with the
+  file; when page operations are built (phase 8) it guards reordering, adding and deleting pages
+  too. So it lives with the document's controls: an "Edit file" switch in a block of its own in
+  the toolbar's left zone, after the page layout buttons, not beside the markup tools (where it
+  read as switching them on: drawing a new markup never needs it) and not beside the navigation
+  mode toggle (two unrelated switches side by side). The switch is the only place it locks
+  again; Edit > "Unlock file…" / "Lock file" does the same.
+- **Unlock where you hit it.** Locked, an annotation that came with the file can still be picked
+  (a click, or its Markups list row), and shows a padlock on its selection in place of grips; it
+  can't be moved, restyled, cut or deleted, and a marquee and select all leave it out. Clicking
+  the padlock, dragging it or double-clicking to type asks "This markup came with the file.
+  Unlock the file to change it?" (always, with any warnings added); on Unlock it stays selected.
+  When page operations arrive, dragging a thumbnail asks the same way (not built).
+- **Status only:** while a file is unlocked, the status bar says "File unlocked" and its tab
+  shows a small open padlock. Neither is clickable.
+- (Before 16 November, unlocking was also what made old annotations selectable at all, so a
+  stray click while panning could never grab one. Picking is now free; changing still isn't.)
 - On unlock, say so if the file is digitally signed (saving changes invalidates it) or its
   permissions ask for no modification.
 - Phase 0 found that a *certified* file breaks when markups are merely added, which this lock

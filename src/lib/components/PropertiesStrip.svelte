@@ -13,7 +13,7 @@
   import { sameColour as same } from "../markup/colour";
   import ColourPicker from "./ColourPicker.svelte";
   import WeightControl from "./WeightControl.svelte";
-  import { LINE_COLOURS } from "../markup/palette";
+  import { FILL_COLOURS, LINE_COLOURS } from "../markup/palette";
   import StampLikeness from "./signature/StampLikeness.svelte";
   import PopChoice from "./PopChoice.svelte";
   import { DASHES, dashOption } from "../markup/dash";
@@ -25,7 +25,9 @@
   // Each choice's sample shows its effect on a value; its name says what it is (not the same
   // thing twice).
   const UNIT_OPTS: { key: UnitMode; name: string }[] = [
-    { key: "auto", name: "Auto: metres from 1 m, else millimetres" },
+    // docs/edit-lock-brief.md, 6: Auto is Vellum's fixed rule, so it has no decimals control.
+    // Its name is just "Auto" (Matt's review): the sample beside it shows the rule.
+    { key: "auto", name: "Auto" },
     { key: "mm", name: "Millimetres" },
     { key: "m", name: "Metres" },
     // Imperial (stage 5 [A9])
@@ -35,10 +37,9 @@
     { key: "in", name: "Decimal inches" },
   ];
   // In an imperial view Auto is feet and inches (inches under a foot).
-  const UNIT_OPTS_IMPERIAL = UNIT_OPTS.map((o) => (o.key === "auto" ? { ...o, name: "Auto: feet and inches, else inches" } : o));
   const UNIT_SAMPLE: Record<string, [string, string]> = {
-    auto: ["Auto", "mm / m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"],
-    "auto-imperial": ["Auto", "ft-in"], "ft-in": ["ft-in", `12' 4 1/2"`], "in-frac": ["in ½", `148 1/2"`], ft: ["ft", "12.38 ft"], in: ["in", "148.50 in"],
+    auto: ["Auto", "2.40 mm · 12.44 m"], mm: ["mm", "1240 mm"], m: ["m", "1.24 m"],
+    "auto-imperial": ["Auto", `8 1/2" · 12' 4 1/2"`], "ft-in": ["ft-in", `12' 4 1/2"`], "in-frac": ["in ½", `148 1/2"`], ft: ["ft", "12.38 ft"], in: ["in", "148.50 in"],
   };
   const DECIMAL_OPTS = Array.from({ length: MAX_DECIMALS + 1 }, (_, i) => ({ key: String(i), name: i === 0 ? "Whole numbers" : i === 1 ? "1 decimal place" : `${i} decimal places` }));
   // With a fraction, decimals become precision: to the nearest 1/2" to 1/64".
@@ -78,7 +79,7 @@
     kinds: MarkupKind[];
     style: Style;
     text: TextStyle | null;
-    /** "Arrow tool" or "2 markups selected". */
+    /** The kind's name, "Arrow", with its tool out or one selected; "2 markups" for several. */
     label: string;
     /**
      * A stamp or signature selected (or just placed): a button with its likeness, after the label,
@@ -117,14 +118,8 @@
   let p: Props = $props();
 
   const COLOURS = LINE_COLOURS;
-  const FILLS: { name: string; c: Rgb }[] = [
-    { name: "White", c: [1, 1, 1] },
-    { name: "Pale yellow", c: [1, 0.97, 0.7] },
-    { name: "Pale red", c: [1, 0.85, 0.85] },
-    { name: "Pale blue", c: [0.85, 0.92, 1] },
-    { name: "Pale green", c: [0.85, 0.96, 0.85] },
-    { name: "Pale grey", c: [0.9, 0.9, 0.9] },
-  ];
+  // None first, then markup/palette.ts's fills (Matt's review).
+  const FILLS = FILL_COLOURS;
   const SIZES = [6, 8, 10, 12, 14, 18, 24, 36];
   const SIZE_OPTS = SIZES.map((v) => ({ key: String(v), name: `${v} pt` }));
   const ENDS: { key: LineEnd; name: string }[] = [
@@ -404,8 +399,10 @@
       <span class="k">Value</span>
       <div class="controls">
         <PopChoice label="Label size" options={SIZE_OPTS} value={SIZES.includes(ms.labelSize) ? String(ms.labelSize) : null} compact={narrow} {out} sample={labelSizeSample} onChange={(k) => on({ labelSize: Number(k) })} />
-        <PopChoice label="Units" options={ms.format.system === "imperial" ? UNIT_OPTS_IMPERIAL : UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
-        {#if isFractional(ms.format)}
+        <PopChoice label="Units" options={UNIT_OPTS} value={ms.format.units} compact={narrow} {out} sample={unitSample} onChange={(k) => on({ format: { ...ms.format, units: k } })} />
+        {#if ms.format.units === "auto" && !isFractional(ms.format)}
+          <!-- Metric Auto writes to its own rule: no decimals to choose. -->
+        {:else if isFractional(ms.format)}
           <PopChoice label="Precision" options={PRECISION_OPTS} value={String(ms.format.fraction ?? DEFAULT_FRACTION)} compact={narrow} {out} sample={precisionSample} onChange={(k) => on({ format: { ...ms.format, fraction: Number(k) } })} />
         {:else}
           <PopChoice label="Decimal places" options={DECIMAL_OPTS} value={String(ms.format.decimals)} compact={narrow} {out} sample={decimalSample} onChange={(k) => on({ format: { ...ms.format, decimals: Number(k) } })} />
@@ -442,7 +439,9 @@
 {#snippet unitSample(k: string | null, w: number)}
   {@const key = k ?? p.measure?.format.units ?? "auto"}
   {@const s = UNIT_SAMPLE[key === "auto" && p.measure?.format.system === "imperial" ? "auto-imperial" : key] ?? ["", ""]}
-  <span class="num sz">{w < 60 ? s[0] : s[1]}</span>
+  {@const d = p.measure?.format.decimals ?? 2}
+  <!-- An explicit metric unit shows the current decimals, so the sample is what it writes. -->
+  <span class="num sz">{w < 60 ? s[0] : key === "mm" ? `${(1240).toFixed(d)} mm` : key === "m" ? `${(1.24).toFixed(d)} m` : s[1]}</span>
 {/snippet}
 <!-- Precision (a fractional unit): the box shows 1/16, the list a length rounded that way. -->
 {#snippet precisionSample(k: string | null, w: number)}
@@ -619,7 +618,8 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 10px;
-    padding: 5px 10px 5px 4px;
+    /* Room for the current swatch's ring (4 px outside it): a few pixels clear of the edge. */
+    padding: 8px 10px 8px 4px;
     background: var(--app);
     border: 1px solid var(--bd-strong);
     border-radius: 10px;
@@ -642,7 +642,7 @@
   .strip.column {
     align-items: center;
     width: auto;
-    padding: 4px 6px 8px;
+    padding: 4px 8px 8px;
     gap: 7px;
   }
   .strip.measure {
@@ -748,6 +748,10 @@
     display: flex;
     align-items: center;
     gap: 5px;
+  }
+  /* The current swatch's ring stands 4 px out: 7 px between swatches leaves 3 px to the next. */
+  .swatches {
+    gap: 7px;
   }
   .vertical:not(.column) .swatches {
     flex-wrap: wrap;

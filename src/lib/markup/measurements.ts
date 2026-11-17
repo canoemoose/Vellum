@@ -24,10 +24,56 @@ export const isMeasurement = (m: Markup): m is Measurement => MEASURE_KINDS.incl
 const atScale = (pm: PageMeasure, fmt: MeasureFormat) => (pm.ratio === null ? "no scale set" : `at ${formatScale(pm.ratio, isImperial(fmt) ? "imperial" : "metric")}`);
 
 /**
+ * A measurement as parts, for the Markups list's lines (docs/edit-lock-brief.md, 5):
+ * - `value`: where the eye lands, real-world at its scale ("12.40 m", "100.00 m²", "45.0°"); with
+ *   no scale, the value on paper.
+ * - `qualifier`: what qualifies it ("at 1:100"; "Perimeter 40.00 m, at 1:100" for an area; "on
+ *   paper, no scale set"), or "" when there's nothing to say (an angle).
+ * - `paper`: the on-paper value ("124.0 mm on paper"), or null where it says nothing new: an
+ *   angle, no scale (the value is already on paper), or 1:1 (real and paper are the same).
+ * Null for anything that isn't a measurement.
+ */
+export interface MeasurementParts {
+  value: string;
+  qualifier: string;
+  paper: string | null;
+}
+
+/** Real and on-paper are the same length at 1:1, so the paper value says nothing new (brief, 6). */
+const oneToOne = (pm: PageMeasure) => pm.ratio === 1;
+
+export function measurementParts(m: Markup): MeasurementParts | null {
+  if (!isMeasurement(m)) return null;
+  const pm = pageMeasureOf(m);
+  const at = atScale(pm, m.fmt);
+  switch (m.kind) {
+    case "measureLength":
+    case "measurePath": {
+      const v = m.kind === "measureLength" ? lengthValues(m) : pathValues(m);
+      if (v.real === null) return { value: v.paper, qualifier: "on paper, no scale set", paper: null };
+      return { value: v.real, qualifier: at, paper: oneToOne(pm) ? null : `${v.paper} on paper` };
+    }
+    case "measureArea": {
+      const v = areaValues(m);
+      const crosses = v.crosses ? "; the outline crosses itself" : "";
+      if (v.real === null) return { value: v.paper, qualifier: `Perimeter ${v.paperPerimeter}, on paper, no scale set${crosses}`, paper: null };
+      return {
+        value: v.real,
+        qualifier: `Perimeter ${v.realPerimeter}, ${at}${crosses}`,
+        paper: oneToOne(pm) ? null : `${v.paper}, perimeter ${v.paperPerimeter} on paper`,
+      };
+    }
+    case "measureAngle":
+      return { value: angleLabel(m), qualifier: "", paper: null };
+  }
+}
+
+/**
  * A measurement's two values as text: real-world at its scale ("12.40 m at 1:100"; with no
  * scale, "No scale set") and on paper ("124.0 mm on paper"). An angle reads the same at any
- * scale, so it has one value and no paper one. Null for anything that isn't a measurement.
- * For the markups list (phase 7) and the status bar.
+ * scale, so it has one value and no paper one; nor has anything at 1:1, where the two are the
+ * same (docs/edit-lock-brief.md, 6). Null for anything that isn't a measurement. For the
+ * status bar and the Markups list's tooltip.
  */
 export function measurementText(m: Markup): { real: string; paper: string | null } | null {
   if (!isMeasurement(m)) return null;
@@ -36,14 +82,16 @@ export function measurementText(m: Markup): { real: string; paper: string | null
     case "measureLength":
     case "measurePath": {
       const v = m.kind === "measureLength" ? lengthValues(m) : pathValues(m);
-      return { real: v.real === null ? "No scale set" : `${v.real} ${atScale(pm, m.fmt)}`, paper: `${v.paper} on paper` };
+      if (v.real === null) return { real: "No scale set", paper: `${v.paper} on paper` };
+      return { real: `${v.real} ${atScale(pm, m.fmt)}`, paper: oneToOne(pm) ? null : `${v.paper} on paper` };
     }
     case "measureArea": {
       const v = areaValues(m);
       const crosses = v.crosses ? " (the outline crosses itself)" : "";
+      if (v.real === null) return { real: "No scale set", paper: `${v.paper}, perimeter ${v.paperPerimeter} on paper${crosses}` };
       return {
-        real: v.real === null ? "No scale set" : `${v.real}, perimeter ${v.realPerimeter} ${atScale(pm, m.fmt)}${crosses}`,
-        paper: `${v.paper}, perimeter ${v.paperPerimeter} on paper${v.real === null ? crosses : ""}`,
+        real: `${v.real}, perimeter ${v.realPerimeter} ${atScale(pm, m.fmt)}${crosses}`,
+        paper: oneToOne(pm) ? null : `${v.paper}, perimeter ${v.paperPerimeter} on paper`,
       };
     }
     case "measureAngle":

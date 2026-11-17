@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULTS, SIDEBAR_MAX, sanitiseSettings } from "./settings";
+import { DEFAULTS, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, sanitiseSettings } from "./settings";
 
 describe("sanitiseSettings", () => {
   it("gives the defaults for nothing", () => {
@@ -28,6 +28,16 @@ describe("sanitiseSettings", () => {
       window: { x: -8, y: 10, w: 1200, h: 800, maximised: true },
     });
   });
+  // docs/edit-lock-brief.md, 5: the sidebar is wider, for its three word tabs.
+  it("pulls a remembered sidebar width below the new minimum up to it", () => {
+    expect(SIDEBAR_DEFAULT).toBe(260);
+    expect(SIDEBAR_MIN).toBe(220);
+    expect(DEFAULTS.sidebarWidth).toBe(SIDEBAR_DEFAULT);
+    expect(sanitiseSettings({ sidebarWidth: 196 }).sidebarWidth).toBe(SIDEBAR_MIN);
+    expect(sanitiseSettings({ sidebarWidth: 300 }).sidebarWidth).toBe(300);
+    expect(sanitiseSettings({}).sidebarWidth).toBe(SIDEBAR_DEFAULT);
+  });
+
   it("rejects bad values field by field", () => {
     const s = sanitiseSettings({
       theme: "purple", sidebarWidth: 5000, recent: ["ok", 3], scales: { a: -1, b: "x", c: 50 },

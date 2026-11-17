@@ -37,7 +37,7 @@ function annot(m: Markup, index: number, vellum = true, nm: string | null = m.id
 
 const read = (annots: FileAnnot[]): FromFile[] => fromFile({ page: 0, frame: F, annots } as PageAnnots, new Set());
 
-async function setup(author = "Matt James") {
+async function setup(author = "Matt James", onUnlockAsk?: (id: string) => void) {
   const { v } = await openViewer([{ w: 600, h: 400 }]);
   v.setZoom(1);
   v.centreOn(0, 300, 200);
@@ -45,7 +45,7 @@ async function setup(author = "Matt James") {
   doc.author = author;
   doc.frames.set(0, F);
   const lifted: string[][] = [];
-  const t = new MarkupTool(v, { styleFor: (k) => defaultStyle(k), textStyle: () => DEFAULT_TEXT, author: () => author, onChange: () => {}, onLift: (ids) => lifted.push(ids) });
+  const t = new MarkupTool(v, { styleFor: (k) => defaultStyle(k), textStyle: () => DEFAULT_TEXT, author: () => author, onChange: () => {}, onLift: (ids) => lifted.push(ids), onUnlockAsk });
   t.attach(doc);
   return { v, doc, t, lifted };
 }
@@ -93,24 +93,105 @@ describe("reading the file in", () => {
 });
 
 describe("the lock", () => {
-  it("lets you pick your own Vellum markups, and nothing else, while locked", async () => {
+  // docs/edit-lock-brief.md, 2: locked, what came with the file can be picked (to find it, copy
+  // it, and unlock from it) but not changed; your own Vellum markups stay free throughout.
+  it("lets you pick anything, and change only your own Vellum markups, while locked", async () => {
     const { doc, t, v } = await setup();
     doc.adoptFile(read([annot(rect("mine", "Matt James"), 0), annot(rect("theirs", "Pat", 200), 1), annot(rect("other app", "Matt James", 300), 2, false)]));
     click(t, v, [125, 100]);
     expect([...doc.selection]).toEqual(["mine"]);
     click(t, v, [225, 100]);
-    expect([...doc.selection]).toEqual([]);
-    click(t, v, [325, 100]);
-    expect([...doc.selection]).toEqual([]);
-    // Nor from the list, nor by deleting from it.
-    t.select(["theirs", "mine"]);
-    expect([...doc.selection]).toEqual(["mine"]);
-    t.removeMarkup("theirs");
-    expect(doc.byId("theirs")).toBeDefined();
-    // Unlocked, everything is.
-    doc.unlocked = true;
-    click(t, v, [225, 100]);
     expect([...doc.selection]).toEqual(["theirs"]);
+    expect(t.selectionLocked).toBe(true);
+    click(t, v, [325, 100]);
+    expect([...doc.selection]).toEqual(["other app"]);
+    // From the list too; but not deleted from it, nor by Delete, cut, a nudge or a restyle.
+    t.select(["theirs"]);
+    expect([...doc.selection]).toEqual(["theirs"]);
+    const before = doc.byId("theirs");
+    t.removeMarkup("theirs");
+    expect(t.deleteSelection(), "delete").toBe(false);
+    expect(t.nudge(10, 0), "nudge").toBe(false);
+    t.restyle({ stroke: [0, 0, 1] });
+    t.cut();
+    expect(doc.byId("theirs")).toBe(before);
+    expect(doc.history.canUndo).toBe(false);
+    // Unlocked, everything changes.
+    doc.unlocked = true;
+    t.select(["theirs"]);
+    expect(t.selectionLocked).toBe(false);
+    expect(t.deleteSelection()).toBe(true);
+    expect(doc.byId("theirs")).toBeUndefined();
+  });
+
+  it("changes only the free ones of a mixed selection", async () => {
+    const { doc, t } = await setup();
+    doc.adoptFile(read([annot(rect("mine", "Matt James"), 0), annot(rect("theirs", "Pat", 200), 1)]));
+    t.select(["mine", "theirs"]);
+    t.restyle({ stroke: [0, 0, 1] });
+    expect(doc.byId("mine")!.style.stroke).toEqual([0, 0, 1]);
+    expect(doc.byId("theirs")!.style.stroke).not.toEqual([0, 0, 1]);
+    t.deleteSelection();
+    expect(doc.byId("mine")).toBeUndefined();
+    expect(doc.byId("theirs")).toBeDefined();
+  });
+
+  it("leaves it out of a marquee and select all", async () => {
+    const { doc, t, v } = await setup();
+    doc.adoptFile(read([annot(rect("mine", "Matt James"), 0), annot(rect("theirs", "Pat", 200), 1)]));
+    const [ax, ay] = scr(v, 80, 60), [bx, by] = scr(v, 280, 180);
+    expect(t.down(ax, ay, 1, none)).toBe(false);
+    t.marqueeDown(ax, ay, none);
+    t.move(bx, by, none);
+    t.up(bx, by, none);
+    expect([...doc.selection]).toEqual(["mine"]);
+    t.clearSelection();
+    t.selectAllOnPage(0);
+    expect([...doc.selection]).toEqual(["mine"]);
+  });
+
+  it("asks to unlock when it's dragged, and leaves it where it was, still selected", async () => {
+    const asked: string[] = [];
+    const { doc, t, v } = await setup("Matt James", (id) => asked.push(id));
+    doc.adoptFile(read([annot(rect("theirs", "Pat", 200), 1)]));
+    const before = doc.byId("theirs");
+    drag(t, v, [225, 100], [325, 200]);
+    expect(asked).toEqual(["theirs"]);
+    expect(doc.byId("theirs")).toBe(before);
+    expect([...doc.selection]).toEqual(["theirs"]);
+    // A plain click picks it and asks nothing.
+    click(t, v, [225, 100]);
+    expect(asked).toEqual(["theirs"]);
+  });
+
+  it("asks to unlock from the padlock on its selection, and only from a locked one", async () => {
+    const asked: string[] = [];
+    const { doc, t, v } = await setup("Matt James", (id) => asked.push(id));
+    doc.adoptFile(read([annot(rect("mine", "Matt James"), 0), annot(rect("theirs", "Pat", 200), 1)]));
+    t.select(["theirs"]);
+    const at = t.lockBadgeAt(doc.byId("theirs")!)!;
+    // Beside the box's top-right corner as shown.
+    const corner = scr(v, 250, 100);
+    expect(at[0]).toBeGreaterThan(corner[0]);
+    expect(at[1]).toBeLessThan(corner[1]);
+    t.down(at[0], at[1], 1, none);
+    t.up(at[0], at[1], none);
+    expect(asked).toEqual(["theirs"]);
+    expect([...doc.selection]).toEqual(["theirs"]);
+    // Off the page's edge, it's still there to click.
+    doc.adoptFile(read([annot(rect("edge", "Pat", 560), 2)]));
+    t.select(["edge"]);
+    const off = t.lockBadgeAt(doc.byId("edge")!)!;
+    expect(off[0]).toBeGreaterThan(scr(v, 600, 0)[0]);
+    t.down(off[0], off[1], 1, none);
+    t.up(off[0], off[1], none);
+    expect(asked).toEqual(["theirs", "edge"]);
+    t.select(["theirs"]);
+    // Unlocked, there's no padlock: the same click is on nothing.
+    doc.unlocked = true;
+    t.down(at[0], at[1], 1, none);
+    t.up(at[0], at[1], none);
+    expect(asked).toEqual(["theirs", "edge"]);
   });
 
   it("never covers what you made in this session, even once it's saved", async () => {

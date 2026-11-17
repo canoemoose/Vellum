@@ -13,6 +13,8 @@ export interface TabView {
   snapshot: ImageBitmap | null;
   /** Unsaved markups. */
   dirty?: boolean;
+  /** The file's "Edit file" lock is off (docs/edit-lock-brief.md, 3): shown, not clickable. */
+  unlocked?: boolean;
 }
 </script>
 
@@ -243,6 +245,8 @@ export interface TabView {
           <svg class="ic" width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="2.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M2 10l3-3 2.5 2.5L9 8l3 3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
         {/if}
         <span class="title" class:loading={t.loading}>{truncateMiddle(t.title, titleChars)}</span>
+        <!-- The file is unlocked: a status only, across every open file. The switch locks it. -->
+        {#if t.unlocked}<span class="unl" title="File unlocked: annotations that came with it can be changed" role="img" aria-label="File unlocked"><svg class="ic unlocked" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="7" width="9" height="6.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M8.5 7V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg></span>{/if}
         {#if t.dirty}<span class="dirty" title="Unsaved markups" aria-label="Unsaved markups"></span>{/if}
         <CloseButton size="small" label="Close tab" tabindex={-1} onclick={() => onClose(t.id)} />
       </div>
@@ -355,6 +359,11 @@ export interface TabView {
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+  .unl {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--accent-text);
   }
   .dirty {
     width: 7px;

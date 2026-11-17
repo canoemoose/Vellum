@@ -5,8 +5,9 @@
 // Phase 7b: annotations already in the file are read in (adoptFile) and join the markups. Until
 // one is changed PDFium keeps drawing it, with its own appearance; once it's changed or deleted
 // it's "lifted": hidden in PDFium (toLift, then doc_hide_annots) and drawn by the overlay from
-// then on. Saving replaces it in place. The lock (editable) keeps what came with the file out
-// of reach until "Edit document" is unlocked, except your own Vellum markups.
+// then on. Saving replaces it in place. The lock (editable) keeps what came with the file from
+// being changed until "Edit file" is switched on, except your own Vellum markups; it can still be
+// picked (docs/edit-lock-brief.md, 2).
 
 import { History, changesFor, isDirty } from "../markup/history";
 import type { Markup } from "../markup/types";
@@ -30,7 +31,7 @@ export class MarkupDoc {
   readonly frames = new Map<number, Frame>();
   /** Selected markup ids. */
   selection = new Set<string>();
-  /** "Edit document" unlocked: changing what the file came with is allowed. Locked on open. */
+  /** "Edit file" on (the file unlocked): changing what the file came with is allowed. Locked on open. */
   unlocked = false;
 
   // Existing annotations (phase 7b)
@@ -155,8 +156,8 @@ export class MarkupDoc {
   }
 
   /**
-   * Whether a markup may be selected and changed: anything made in this session; with "Edit
-   * document" unlocked, anything; otherwise, of what came with the file, only your own Vellum
+   * Whether a markup may be changed: anything made in this session; with "Edit file" on,
+   * anything; otherwise, of what came with the file, only your own Vellum
    * markups (docs/editing-phase7-scope.md, 7b "Assumed" 1).
    */
   editable(m: Markup): boolean {

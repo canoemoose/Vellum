@@ -14,8 +14,10 @@
     measure?: string | null;
     /** Set while a measuring tool is out and the page has no scale: offers Calibrate. */
     onCalibrate?: (() => void) | null;
+    /** The active file's "Edit file" lock is off (docs/edit-lock-brief.md, 3): a status, not a control. */
+    unlocked?: boolean;
   }
-  let { scaleText, hint, notice = null, cursor, pageSize, onScale, measure = null, onCalibrate = null }: Props = $props();
+  let { scaleText, hint, notice = null, cursor, pageSize, onScale, measure = null, onCalibrate = null, unlocked = false }: Props = $props();
 </script>
 
 <footer class="bar">
@@ -32,6 +34,12 @@
   {:else}
     <span class="hint">{hint}</span>
   {/if}
+  {#if unlocked}
+    <span class="unl" title="Annotations that came with the file can be moved, restyled and deleted. Switch off Edit file to lock it.">
+      <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="7" width="9" height="6.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M8.5 7V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+      File unlocked
+    </span>
+  {/if}
   <span class="cursor num">{cursor}</span>
   <span class="size">{pageSize}</span>
   <!-- Measuring -->
@@ -44,6 +52,13 @@
 </footer>
 
 <style>
+  .unl {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--accent-text);
+    white-space: nowrap;
+  }
   .bar {
     min-height: 28px;
     display: flex;
