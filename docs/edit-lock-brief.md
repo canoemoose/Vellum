@@ -310,6 +310,34 @@ session that started this one asked. `main` still sits at `0.2.0-rc1`.)
 - Hand over: what changed, what's tested and what isn't in plain terms, and what Matt
   should look at.
 
+## Matt's review of the build (17 November)
+
+Changed on `editing` after his first look at the release exe:
+
+- Step 1: kept as built ("Edit file" and the switch).
+- Step 2: a selection of only locked markups shows **no context bar** at all (it had a label,
+  "Rectangle, in the file: locked"); the padlock says it. Mixed in, the bar is the free ones'.
+- Step 3: the open padlock read closed at 12 px. It's now drawn with the body to the left and
+  the shackle swung out on its right leg, in the tab, the status bar and the switch. The status
+  bar line stays shown only while unlocked.
+- Step 5: the sidebar opens at **260 px** (220 minimum). Nothing in the toolbar lines up at a
+  fixed place (the page box's width follows the page count), so it's a round number. The value in
+  a Markups row is regular weight: the monospaced face ships one weight and the synthesised bold
+  was too heavy.
+- Step 6: Auto's name in the Units list is just "Auto" (the sample beside it shows the rule);
+  imperial Auto likewise, with the sample `8 1/2" · 12' 4 1/2"`.
+- Step 7: a dimension's arrowhead grows with its weight above 0.75 pt, keeping its shape (9.6
+  times the weight long; unchanged at 0.75). Ticks are the line's weight (were twice it), and
+  bars and ticks are one stroked path with the extension lines, so the overlap no longer paints
+  twice and reads heavier. A value slid past an end by hand turns the arrows out, as one that
+  moved there for want of room does; each end without a run gets one to carry its arrow.
+- Step 8: Pale orange went (too like pale yellow) and Pale grey is back at its old colour. The
+  fills run **None, White, Pale red, Pale yellow, Pale green, Pale blue, Pale grey**, then
+  custom, so they no longer sit under their line colours. The weight box is 60 px (40 compact) so
+  "0.75" fits.
+- Tool order: **Select, Pen, Highlighter**, then **Line, Arrow, Polyline**, then shapes, text,
+  measuring and stamps.
+
 ## For Matt to check
 
 By eye, in the app (`npm run tauri dev`, or the release exe):
@@ -321,7 +349,7 @@ By eye, in the app (`npm run tauri dev`, or the release exe):
    stuck? Click it, then try dragging: both should ask, with "This markup came with the file".
 3. **The indicators** (step 3): the status bar's "File unlocked" and the tab's padlock, with two
    files open and one unlocked.
-4. **The sidebar** (step 5): 240 px wide. Are the tabs comfortable? A width remembered below
+4. **The sidebar** (step 5): 260 px wide. Are the tabs comfortable? A width remembered below
    220 opens at 220.
 5. **Markups list rows** (step 5): a length, an area, an angle, a text box with long words, a
    note. Line breaks and ellipses; the value's weight; right-click Delete.
@@ -330,7 +358,9 @@ By eye, in the app (`npm run tauri dev`, or the release exe):
 7. **A tight dimension** (step 7): a short Length with bars, ticks, then arrows. Where the value
    lands past the second point, the run carrying it, the arrows turned out. Then save and open
    in Acrobat: is the caption where Vellum draws it?
-8. **The context bar** (step 8): the fill row under the line row (stacked layout) with None
-   seventh (or None first, every fill one along: your call); the ring's clearance in the row,
+8. **The context bar** (step 8): the fills, None first; the ring's clearance in the row,
    stacked and thin column layouts; the weight field (type, Enter, Esc, wheel, slider); the
    label with a tool out and with one drawn.
+9. **This round** (the review above): the open padlock in a tab; a 2 pt Length with arrows,
+   ticks and bars beside its extension lines; a value slid past either end with arrows; the
+   weight box showing 0.75; the new tool order.
