@@ -339,6 +339,8 @@ Changed on `editing` after his first look at the release exe:
   a dimension to arrows never sends its value outside: it goes out only where it wouldn't fit
   between bars, or is slid out by hand.
 - The weight box: a press anywhere in it, the "pt" too, opens the slider.
+- Checked by Matt: a value moved out past the second point saves with its caption where Vellum
+  draws it, and Acrobat draws the turned-out arrows the same.
 - Tool order: **Select, Pen, Highlighter**, then **Line, Arrow, Polyline**, then shapes, text,
   measuring and stamps.
 
