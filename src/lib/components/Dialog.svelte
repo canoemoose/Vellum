@@ -115,6 +115,8 @@
     padding: 18px 20px;
     overflow: auto;
     min-height: 0;
+    /* A long file name with no spaces breaks where it must rather than running out of the box. */
+    overflow-wrap: break-word;
   }
   footer {
     height: 60px;
