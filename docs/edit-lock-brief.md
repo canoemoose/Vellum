@@ -335,6 +335,10 @@ Changed on `editing` after his first look at the release exe:
   fills run **None, White, Pale red, Pale yellow, Pale green, Pale blue, Pale grey**, then
   custom, so they no longer sit under their line colours. The weight box is 60 px (40 compact) so
   "0.75" fits.
+- Arrowheads no longer count against the room for the value (it sits above them), so switching
+  a dimension to arrows never sends its value outside: it goes out only where it wouldn't fit
+  between bars, or is slid out by hand.
+- The weight box: a press anywhere in it, the "pt" too, opens the slider.
 - Tool order: **Select, Pen, Highlighter**, then **Line, Arrow, Polyline**, then shapes, text,
   measuring and stamps.
 

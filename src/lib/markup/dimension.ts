@@ -132,11 +132,12 @@ export const VALUE_CLEAR = 2;
 
 /**
  * Whether a value `width` points wide fits on a dimension line `length` points long between its
- * ends (docs/edit-lock-brief.md, 7): inside the arrowheads, ticks or bars, with VALUE_CLEAR to
- * spare at each side.
+ * ends (docs/edit-lock-brief.md, 7): inside the ticks or bars, with VALUE_CLEAR to spare at each
+ * side. Arrowheads take no room (Matt's review): the value sits above the line, clear of them, so
+ * switching to arrows never sends it outside by itself.
  */
 export const valueFits = (length: number, width: number, ends: DimEnds | undefined, lineWidth: number): boolean =>
-  width + 2 * VALUE_CLEAR <= length - 2 * endReach(ends, lineWidth);
+  width + 2 * VALUE_CLEAR <= length - 2 * (ends === "arrow" ? 0 : endReach(ends, lineWidth));
 
 /**
  * A dimension line through `pts` with an end at each: a bar square to the line (the default), a

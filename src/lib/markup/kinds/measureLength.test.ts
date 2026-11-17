@@ -39,11 +39,10 @@ describe("the room for a value", () => {
     // Bars take no room along the line.
     expect(valueFits(30 + 2 * VALUE_CLEAR, 30, "bar", 0.75)).toBe(true);
     expect(valueFits(30 + 2 * VALUE_CLEAR - 0.01, 30, "bar", 0.75)).toBe(false);
-    // Arrows take their heads' length at each end.
-    const h = DIMENSION_HEAD.length(0.75);
-    expect(endReach("arrow", 0.75)).toBeCloseTo(h, 9);
-    expect(valueFits(30 + 2 * VALUE_CLEAR + 2 * h, 30, "arrow", 0.75)).toBe(true);
-    expect(valueFits(30 + 2 * VALUE_CLEAR + 2 * h - 0.01, 30, "arrow", 0.75)).toBe(false);
+    // Arrowheads take none either (Matt's review): the value sits above them.
+    expect(endReach("arrow", 0.75)).toBeCloseTo(DIMENSION_HEAD.length(0.75), 9);
+    expect(valueFits(30 + 2 * VALUE_CLEAR, 30, "arrow", 0.75)).toBe(true);
+    expect(valueFits(30 + 2 * VALUE_CLEAR - 0.01, 30, "arrow", 0.75)).toBe(false);
     // Ticks lean an eighth of a turn: their reach along the line.
     const t = barHalf(0.75) * Math.SQRT1_2;
     expect(valueFits(30 + 2 * VALUE_CLEAR + 2 * t, 30, "tick", 0.75)).toBe(true);
@@ -205,5 +204,14 @@ describe("a value slid past an end by hand", () => {
 
   it("leaves arrows inside while the value stays between the ends", () => {
     expect(lengthRuns(length([100, 300], [400, 300], { ends: "arrow", value: [60, 0] })).outside).toBe(false);
+  });
+});
+
+describe("switching a dimension's ends", () => {
+  it("never sends its value outside: arrows go out exactly where bars would", () => {
+    for (let x = 105; x <= 200; x += 1) {
+      const bar = length([100, 300], [x, 300]);
+      expect(lengthValueAt({ ...bar, ends: "arrow" }).out).toBe(lengthValueAt(bar).out);
+    }
   });
 });
