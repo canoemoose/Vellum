@@ -1,0 +1,57 @@
+# Builds the homepage (site/) and deploys it to GitHub Pages. tools/build-site.mjs fills in the
+# latest published release (version, size, installer link), so publishing a release redeploys
+# the page with nothing added to the release checklist. Needs Settings > Pages > Source set to
+# GitHub Actions. See docs/homepage-brief.md.
+name: Homepage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "tools/build-site.mjs"
+      - "src-tauri/icons/**"
+      - ".github/workflows/pages.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a newer one waits rather than cancelling one half-deployed.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Node at the version pinned in package.json ("volta"). No packages: the script needs none.
+      - uses: volta-cli/action@615a78f6c83e116339c53b94f3f82b4d6c0b7d18 # v5.0.0
+
+      # Gives the site's address (the github.io one, or a custom domain once set) for link previews.
+      - id: pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Build the page
+        run: node tools/build-site.mjs --out site-dist
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site-dist
+
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
