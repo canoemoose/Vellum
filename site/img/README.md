@@ -30,7 +30,7 @@ the placeholders, so they can be swapped one at a time.
 
 | File | Shows | Capture size | Display | Themes |
 | --- | --- | --- | --- | --- |
-| `hero-{dark,light}.webp` | Sheet 002 (event layout overall, A1 1:2500), Fit page. The first thing people see: dense and legible. | 1440 x 900 window at 1.5x: 2160 x 1350 | 1170 | both |
+| `hero-{dark,light}.webp` | Sheet 002 (event layout overall, A1 1:2500), Fit page. The first thing people see: dense and legible. | 1440 x 900 window at 1.5x: 2146 x 1343 as captured | 1170 | both |
 | `detail-{dark,light}.webp` | Sheet 003 (main arena) zoomed right in: barrier units and fence panels crisp. Tile: "Quick on big drawings". | as hero | 490 | both |
 | `site-{dark,light}.webp` | Sheet 001 (site plan) zoomed in, with the mini map showing. Tile: "Moves like CAD". | as hero | 490 | both |
 | `measure-{dark,light}.webp` | Sheet 004 (stage plan, A3 1:100) with two length measurements; status bar showing the scale. Tile: "Real-world scale and measuring". | as hero | 490 | both |
