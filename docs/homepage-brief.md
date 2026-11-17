@@ -171,6 +171,26 @@ The builder can't take the screenshots (they need the real app on a real screen)
 - Repository Settings > Pages > Source: **GitHub Actions**.
 - Run the workflow once (`gh workflow run pages.yml`) or push a change under `site/`.
 - Set the repository's website field: `gh repo edit --homepage https://canoemoose.github.io/Vellum/`.
+- Settings > Environments > **github-pages** > Deployment branches and tags: add a **tag** rule
+  `v*`. Publishing a release runs the workflow on the release's tag, and the environment only
+  lets `main` deploy by default, so without this rule the redeploy on publish is refused.
+
+## Built (17 November 2026)
+
+- `tools/build-site.mjs` (tests in `tools/build-site.test.mjs`, picked up by the existing
+  Vitest `tools/**/*.test.mjs` pattern), `npm run site`, `site/`, `.github/workflows/pages.yml`.
+- Checked against the real latest release (0.1.4: 6.7 MB, as Windows counts megabytes) and with
+  a refused API call (falls back to the releases page, exit 0, a warning annotation in Actions).
+- `SITE_URL` comes from `actions/configure-pages`, so `og:image` and `og:url` are absolute on the
+  deployed page (link previews need that) without naming the host anywhere.
+- The favicon and header icon are copied from `src-tauri/icons` at build time, so the workflow
+  also runs on changes there.
+- Images: placeholders at final size; the list is in `site/img/README.md`. That adds three
+  images the screenshot list didn't have: `image-*` (the "Images too" tile), `smartscreen` (by
+  hand) and `og.png`.
+- Third-party notices aren't on GitHub (the file is generated at build), so the footer links the
+  README's Licence section and points to Help > About.
+- The optional Help menu item was not built.
 
 ## Settled (17 November 2026)
 
