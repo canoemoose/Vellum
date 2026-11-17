@@ -24,13 +24,16 @@
 <div class="lock">
   <button type="button" class="sw" class:on={p.unlocked} role="switch" aria-checked={p.unlocked} aria-label="Edit file" title={tip} disabled={p.disabled} onclick={p.onToggle}>
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3" />
+      <!-- Open: the body to the left and the shackle swung out on its right leg, so it reads open. -->
       {#if p.unlocked}
-        <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+        <rect x="1.5" y="7" width="9" height="6.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3" />
+        <path d="M8.5 7V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+        <path d="M6 9.6v1.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
       {:else}
+        <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3" />
         <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.3" />
+        <path d="M8 9.6v1.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
       {/if}
-      <path d="M8 9.6v1.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
     </svg>
     <span class="lbl">Edit file</span>
     <span class="track" aria-hidden="true"><span class="knob"></span></span>

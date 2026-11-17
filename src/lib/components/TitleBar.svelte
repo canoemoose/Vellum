@@ -246,7 +246,7 @@ export interface TabView {
         {/if}
         <span class="title" class:loading={t.loading}>{truncateMiddle(t.title, titleChars)}</span>
         <!-- The file is unlocked: a status only, across every open file. The switch locks it. -->
-        {#if t.unlocked}<span class="unl" title="File unlocked: annotations that came with it can be changed" role="img" aria-label="File unlocked"><svg class="ic unlocked" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg></span>{/if}
+        {#if t.unlocked}<span class="unl" title="File unlocked: annotations that came with it can be changed" role="img" aria-label="File unlocked"><svg class="ic unlocked" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="7" width="9" height="6.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M8.5 7V4.5a2.5 2.5 0 0 1 5 0V6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg></span>{/if}
         {#if t.dirty}<span class="dirty" title="Unsaved markups" aria-label="Unsaved markups"></span>{/if}
         <CloseButton size="small" label="Close tab" tabindex={-1} onclick={() => onClose(t.id)} />
       </div>
