@@ -6,8 +6,8 @@
   <title>Vellum: a fast PDF viewer for drawings</title>
   <meta name="description" content="A fast PDF and image viewer for people who open drawings, not documents. Free, for Windows 10 and 11.">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c0d0f" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="{{siteUrl}}">
   <link rel="icon" href="img/vellum.svg" type="image/svg+xml">
   <link rel="icon" href="img/favicon-32.png" sizes="32x32" type="image/png">
@@ -30,117 +30,283 @@
   <meta name="twitter:image" content="{{ogImage}}">
 </head>
 <body>
-  <header class="intro wrap">
-    <img class="logo" src="img/vellum.svg" width="72" height="72" alt="">
-    <h1>Vellum</h1>
-    <p class="tagline">A fast PDF and image viewer for people who open drawings, not documents.</p>
-
-    <div class="download" id="download">
-      <a class="btn-primary" href="{{downloadUrl}}">{{downloadLabel}}</a>
-      <p class="meta">{{downloadMeta}}</p>
-      <p class="phone-only">Vellum is for Windows PCs. Send yourself this link and download it there.</p>
-      <p class="notes"><a href="{{notesUrl}}">{{notesLabel}}</a></p>
-      <p class="small">Free. Once installed, it keeps itself up to date.</p>
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="#top"><img src="img/vellum.svg" width="28" height="28" alt=""><span>Vellum</span></a>
+      <nav aria-label="Page">
+        <a class="nav-link" href="#features">Features</a>
+        <a class="nav-link" href="#install">Install</a>
+        <a class="nav-link" href="https://github.com/canoemoose/Vellum">GitHub</a>
+        <a class="btn btn-sm" href="{{downloadUrl}}">Download</a>
+      </nav>
     </div>
   </header>
 
-  <main>
-    <figure class="hero wrap-wide">
-      <picture>
-        <source srcset="img/hero-dark.webp" media="(prefers-color-scheme: dark)">
-        <img src="img/hero-light.webp" width="2146" height="1343" alt="Vellum with an A1 festival site layout open, fitted to the window: arenas, fences, roads and campsites in fine linework.">
-      </picture>
-    </figure>
+  <main id="top">
+    <section class="hero" aria-labelledby="headline">
+      <div class="wrap hero-text">
+        <a class="pill" href="{{notesUrl}}"><b>{{pillTag}}</b><span>Markup, measuring and signatures</span><span aria-hidden="true">→</span></a>
+        <h1 id="headline">Built for drawings, not documents.</h1>
+        <p class="lede">A fast PDF and image viewer for stage plans, site layouts and scanned blueprints.</p>
+        <div class="ctas">
+          <a class="btn" href="{{downloadUrl}}">{{downloadLabel}}</a>
+          <a class="btn-2" href="#features">See what it does</a>
+        </div>
+        <p class="meta">{{downloadMeta}}</p>
+        <p class="phone-only">Vellum is for Windows PCs. Send yourself this link and download it there.</p>
+        <p class="notes"><a href="{{notesUrl}}">{{notesLabel}}</a></p>
+      </div>
+      <!-- Flat on purpose: the drawing's linework is the point and must not be skewed. -->
+      <figure class="stage">
+        <picture>
+          <source srcset="img/hero-dark.webp" media="(prefers-color-scheme: dark)">
+          <img src="img/hero-light.webp" width="2146" height="1343" alt="Vellum with an A1 festival site layout open, fitted to the window: arenas, fences, roads and campsites in fine linework.">
+        </picture>
+      </figure>
+    </section>
 
-    <section class="why wrap" aria-labelledby="why">
-      <h2 id="why">Why it exists</h2>
-      <div class="why-body">
-        <p>Stage plans, site layouts, rigging plots, aerial photos, sixty-year-old scanned blueprints:
-          the files that make general-purpose PDF readers sit and think. They're built for documents.
-          Vellum is built for drawings. It draws only what's on screen, at the detail you're looking at,
-          so zooming in costs less, not more.</p>
-        <p class="figure"><span class="num">97&nbsp;ms</span>
-          <span>from letting go of the mouse to a sharp image, zoomed to 1600% on the heaviest real drawing tested.</span></p>
+    <div class="wrap">
+      <ul class="stats">
+        <li>
+          <!-- The page's one drawing nod: the figure dimensioned like a drawing. Nowhere else. -->
+          <span class="dimn">
+            <span class="n">97<small>ms</small></span>
+            <span class="dim-line" aria-hidden="true"><i></i><b></b><b></b><i></i></span>
+          </span>
+          <p>from letting go of the mouse to a sharp image at 1600%, on the heaviest real drawing tested</p>
+        </li>
+        <li>
+          <span class="n">1:200</span>
+          <p>prints to a real scale, read straight from the title block</p>
+        </li>
+        <li>
+          <span class="n">0</span>
+          <p>accounts, cookies or analytics. Your files stay yours.</p>
+        </li>
+      </ul>
+    </div>
+
+    <section id="features" class="sec" aria-labelledby="what">
+      <div class="wrap">
+        <p class="eyebrow">What it does</p>
+        <h2 id="what" class="sec-h">Everything you do with a drawing, without the wait.</h2>
+        <p class="sec-p">Stage plans, site layouts, rigging plots, sixty-year-old scanned blueprints: the files
+          that make general-purpose PDF readers sit and think. Vellum draws only what's on screen, at the
+          detail you're looking at, so zooming in costs less, not more.</p>
+
+        <ul class="bento">
+          <li class="card c-big">
+            <div class="txt">
+              <h3>Quick on big drawings</h3>
+              <p>Pages render in tiles, previews fill the gaps while you move, and they're cached, so a
+                drawing you opened yesterday is there before you've let go of the mouse.</p>
+            </div>
+            <picture class="pic">
+              <source srcset="img/detail-dark.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/detail-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="Zoomed right in on the main arena: individual barrier units and fence panels, crisp.">
+            </picture>
+          </li>
+          <li class="card c-sm">
+            <div class="txt">
+              <h3>Moves like CAD</h3>
+              <p>The wheel zooms at the cursor, middle-drag pans, double middle-click fits the page.
+                A mini map for big drawings; office documents scroll like documents.</p>
+            </div>
+            <picture class="pic">
+              <source srcset="img/site-dark.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/site-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A site plan zoomed in, with the mini map in the corner showing where you are.">
+            </picture>
+          </li>
+          <li class="card c-sm">
+            <div class="txt">
+              <h3>Real-world scale</h3>
+              <p>Reads the scale off the title block, so the cursor is in metres on site. Lengths, areas,
+                perimeters, angles and dimensions.</p>
+            </div>
+            <picture class="pic">
+              <source srcset="img/measure-dark.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/measure-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A stage plan at 1:100 with two length measurements in metres.">
+            </picture>
+          </li>
+          <li class="card c-half">
+            <div class="txt">
+              <h3>Markup, stamps and signatures</h3>
+              <p>Clouds, arrows, text, shapes, pen and highlighter, saved as ordinary PDF markup that
+                Acrobat and everyone else can see. Stamps, and your signature, drawn once and placed anywhere.</p>
+            </div>
+            <picture class="pic">
+              <source srcset="img/markup-dark.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/markup-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A drawing marked up with a revision cloud, a text box and an APPROVED stamp.">
+            </picture>
+          </li>
+          <li class="card c-half">
+            <div class="txt">
+              <h3>Prints to scale</h3>
+              <p>Fit, actual size, a real ratio like 1:200, or tiled with cut marks. Lay crops out by hand
+                across several sheets. Black lines turns grubby scans into clean, solid linework.</p>
+            </div>
+            <picture class="pic">
+              <source srcset="img/print-dark.webp" media="(prefers-color-scheme: dark)">
+              <img src="img/print-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="The print dialog, printing an A3 stage plan on A4 at exactly 1:200.">
+            </picture>
+          </li>
+        </ul>
+        <p class="credit"><strong>Images too:</strong> JPEG, PNG, WebP, TIFF, BMP and GIF open the same way,
+          colour profiles and all, however big.
+          The screenshots show the Fieldwork Festival, an event made up for them, with no connection to the
+          venue or its owners. Map data © OpenStreetMap contributors (ODbL). Contains OS data © Crown copyright
+          and database right 2026 (Open Government Licence).</p>
       </div>
     </section>
 
-    <section class="features wrap" aria-labelledby="what">
-      <h2 id="what">What it does</h2>
-      <ul class="tiles">
-        <li>
-          <picture>
-            <source srcset="img/detail-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="img/detail-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="Zoomed right in on the main arena: individual barrier units and fence panels, crisp.">
-          </picture>
-          <h3>Quick on big drawings</h3>
-          <p>Pages render in tiles, previews fill the gaps while you move, and they're cached, so a drawing
-            you opened yesterday is there before you've let go of the mouse.</p>
-        </li>
-        <li>
-          <picture>
-            <source srcset="img/site-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="img/site-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A site plan zoomed in, with the mini map in the corner showing where you are.">
-          </picture>
-          <h3>Moves like CAD</h3>
-          <p>The wheel zooms where your cursor is, middle-drag pans, double middle-click fits the page.
-            A mini map for drawings bigger than the window. Office documents scroll like documents.</p>
-        </li>
-        <li>
-          <picture>
-            <source srcset="img/measure-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="img/measure-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A stage plan at 1:100 with two length measurements in metres.">
-          </picture>
-          <h3>Real-world scale and measuring</h3>
-          <p>Reads the scale from the title block, so the cursor position is in metres on site. Measure
-            lengths, areas, perimeters and angles, and add dimensions.</p>
-        </li>
-        <li>
-          <picture>
-            <source srcset="img/markup-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="img/markup-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A drawing marked up with a revision cloud, a text box and an APPROVED stamp.">
-          </picture>
-          <h3>Markup, stamps and signatures</h3>
-          <p>Clouds, arrows, text, shapes, pen and highlighter, saved as ordinary PDF markup that Acrobat
-            and everyone else can see. Stamps, and your signature, drawn once and placed anywhere.</p>
-        </li>
-        <li>
-          <picture>
-            <source srcset="img/print-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="img/print-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="The print dialog, printing an A3 stage plan on A4 at exactly 1:200.">
-          </picture>
-          <h3>Prints to scale</h3>
-          <p>Fit, actual size, a real ratio like 1:200, or tiled with cut marks. Lay crops out by hand
-            across several sheets. Black lines turns grubby scans into clean, solid linework.</p>
-        </li>
-        <li>
-          <picture>
-            <source srcset="img/image-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="img/image-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A 6358 by 4490 pixel PNG of the site map open in Vellum.">
-          </picture>
-          <h3>Images too</h3>
-          <p>JPEG, PNG, WebP, TIFF, BMP and GIF open the same way, colour profiles and all, however big.</p>
-        </li>
-      </ul>
-      <p class="credit">The screenshots show the Fieldwork Festival, an event made up for them. It has no
-        connection with the venue or its owners.
-        Map data © OpenStreetMap contributors (ODbL). Contains OS data © Crown copyright and database
-        right 2026 (Open Government Licence).</p>
+    <section id="compare" class="sec" aria-labelledby="compare-h">
+      <div class="wrap">
+        <p class="eyebrow">Compared</p>
+        <h2 id="compare-h" class="sec-h">How it compares.</h2>
+        <p class="sec-p">The PDF readers you probably have already, in their free editions on Windows, against
+          the things you do with a drawing.</p>
+
+        <div class="cmp-box" role="region" aria-labelledby="compare-h" tabindex="0">
+          <table class="cmp">
+            <thead>
+              <tr>
+                <th scope="col"><span class="vh">Feature</span></th>
+                <th scope="col" class="v">Vellum</th>
+                <th scope="col">Acrobat Reader</th>
+                <th scope="col">Foxit Reader</th>
+                <th scope="col">PDF-XChange</th>
+                <th scope="col">SumatraPDF</th>
+                <th scope="col">Edge</th>
+                <th scope="col">Chrome</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Wheel zooms at the cursor<small>No Ctrl, no tool to switch to</small></th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <!-- UNVERIFIED: does Acrobat Reader still have the Hand-tool wheel-zoom setting? -->
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n1">1</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n1">1</a></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n2">2</a></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+              </tr>
+              <tr>
+                <th scope="row">Middle-drag pans<small>Like CAD, not autoscroll</small></th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+              </tr>
+              <tr>
+                <th scope="row">Reads the scale off the drawing<small>From the title block, nothing to calibrate</small></th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n3">3</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n3">3</a></td>
+                <!-- UNVERIFIED: PDF-XChange's scale cell. Matt checks it in Windows Sandbox. -->
+                <td><i class="m q"><span class="vh">Not checked yet</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+              </tr>
+              <tr>
+                <th scope="row">Measures in real units</th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <!-- UNVERIFIED: does PDF-XChange's free mode watermark measurements? -->
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+              </tr>
+              <tr>
+                <th scope="row">Prints at a true scale<small>1:200, not a percentage</small></th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
+              </tr>
+              <tr>
+                <th scope="row">Tiled printing with cut marks</th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+              </tr>
+              <tr>
+                <th scope="row">Writes markups into the PDF<small>Clouds, arrows, text and stamps, as standard annotations anyone can see</small></th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <!-- UNVERIFIED: does Reader's new interface still have the cloud tool? -->
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <!-- UNVERIFIED: does PDF-XChange's free mode watermark stamps or signatures? -->
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n5">5</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n6">6</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n7">7</a></td>
+              </tr>
+              <tr>
+                <th scope="row">Opens TIFF, PNG and JPEG<small>As a drawing, however big</small></th>
+                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m n"><span class="vh">No</span></i></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n8">8</a></td>
+                <td><i class="m y"><span class="vh">Yes</span></i></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n9">9</a></td>
+                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n9">9</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="legend" aria-hidden="true">
+          <span><i class="m y"></i>Yes</span>
+          <span><i class="m p"></i>Partly (see the note)</span>
+          <span><i class="m n"></i>No</span>
+          <span><i class="m q"></i>Not checked yet</span>
+        </div>
+        <ol class="cmp-notes">
+          <li id="cmp-n1">Only with the Hand tool selected.</li>
+          <li id="cmp-n2">Hold the right button and turn the wheel.</li>
+          <li id="cmp-n3">Only when the PDF itself carries scale data, and only if turned on.</li>
+          <li id="cmp-n4">A percentage only, worked out by hand.</li>
+          <li id="cmp-n5">No clouds, and no drawn signature.</li>
+          <li id="cmp-n6">Pen, highlighter and text only.</li>
+          <li id="cmp-n7">Pen and text only, and they may be flattened into the page.</li>
+          <li id="cmp-n8">Converts the image to a PDF first.</li>
+          <li id="cmp-n9">PNG and JPEG only, as a browser image.</li>
+        </ol>
+        <p class="cmp-foot">Free editions on Windows, checked November 2026. Every reader here can open a file
+          without an account and place a stamp or signature, so those rows are left out.</p>
+      </div>
     </section>
 
-    <section class="install wrap" aria-labelledby="first">
-      <h2 id="first">Windows will warn you the first time</h2>
-      <div class="install-body">
+    <section id="install" class="sec" aria-labelledby="first">
+      <div class="wrap install">
         <div>
-          <p>When you open the installer, Windows may say <q>Windows protected your PC</q>. To carry on:</p>
-          <ol>
-            <li>Choose <strong>More info</strong>.</li>
-            <li>Choose <strong>Run anyway</strong>.</li>
+          <p class="eyebrow">Installing</p>
+          <h2 id="first" class="sec-h">Windows will warn you the first time.</h2>
+          <p class="sec-p tight">The installer isn't code signed, so Windows may say
+            <q>Windows protected your PC</q>. To carry on:</p>
+          <ol class="steps">
+            <li><span class="step-n">1</span>Choose <strong>More info</strong></li>
+            <li><span class="step-n">2</span>Choose <strong>Run anyway</strong></li>
           </ol>
-          <p>It warns because the installer isn't code signed. The
-            <a href="https://github.com/canoemoose/Vellum">source is public</a>, and every release is
-            <a href="https://github.com/canoemoose/Vellum/actions/workflows/release.yml">built from it by GitHub Actions</a>.</p>
-          <p>It installs for you alone, so it doesn't need admin rights. If your browser questions the
-            download first, choose <strong>Keep</strong>.</p>
+          <p class="aside">The <a href="https://github.com/canoemoose/Vellum">source is public</a>, and every
+            release is <a href="https://github.com/canoemoose/Vellum/actions/workflows/release.yml">built from it
+            by GitHub Actions</a>. It installs for you alone, so it needs no admin rights. If your browser
+            questions the download first, choose <strong>Keep</strong>.</p>
         </div>
         <figure class="dialog">
           <img src="img/smartscreen.webp" width="800" height="740" loading="lazy" decoding="async" alt="The Windows protected your PC dialog after More info, with the Run anyway button.">
@@ -148,22 +314,30 @@
       </div>
     </section>
 
-    <!-- Who made it: kept in this one place, as it may later name Event Engineering or Alteka. -->
-    <section class="maker wrap" aria-labelledby="who">
-      <h2 id="who">Who made it</h2>
-      <p>Vellum is made by <strong>Matt James</strong>, who opens site and venue drawings for a living
-        and wanted a viewer that kept up with them. It's free, and the source is open.</p>
+    <section class="final" aria-labelledby="final-h">
+      <div class="wrap">
+        <img class="final-icon" src="img/vellum.svg" width="84" height="84" alt="">
+        <h2 id="final-h" class="sec-h">Open your next drawing in Vellum.</h2>
+        <!-- Who made it: kept in this one place, as it may later name Event Engineering or Alteka. -->
+        <p class="maker">Made by <strong>Matt James</strong>, who opens site and venue drawings for a living
+          and wanted a viewer that kept up with them. Free and open source.</p>
+        <div class="ctas">
+          <a class="btn" href="{{downloadUrl}}">{{downloadLabel}}</a>
+        </div>
+      </div>
     </section>
   </main>
 
-  <footer class="wrap">
-    <ul class="links">
-      <li><a href="https://github.com/canoemoose/Vellum">Source on GitHub</a></li>
-      <li><a href="https://github.com/canoemoose/Vellum/blob/main/LICENSE">MIT licence</a></li>
-      <li><a href="https://github.com/canoemoose/Vellum#licence">Third-party notices</a> (also in the app: Help &gt; About)</li>
-    </ul>
-    <p>No tracking on this page: no cookies, no analytics, nothing loaded from anywhere else.
-      The app's update check is one request to GitHub and sends nothing about you or your files.</p>
+  <footer>
+    <div class="wrap foot-row">
+      <ul class="links">
+        <li><a href="https://github.com/canoemoose/Vellum">Source on GitHub</a></li>
+        <li><a href="https://github.com/canoemoose/Vellum/blob/main/LICENSE">MIT licence</a></li>
+        <li><a href="https://github.com/canoemoose/Vellum#licence">Third-party notices</a> (also in the app: Help &gt; About)</li>
+      </ul>
+      <p>No tracking on this page: no cookies, no analytics, nothing loaded from anywhere else.
+        The app's update check is one request to GitHub and sends nothing about you or your files.</p>
+    </div>
   </footer>
 </body>
 </html>
