@@ -13,6 +13,8 @@ export interface LaunchArgs {
   dpr: number | null;
   /** Benchmark this page (zero-based) instead of the first. */
   benchPage?: number | null;
+  /** Zoom by a flight and time landing to sharp (see bench.ts). */
+  benchFlight?: boolean;
   processStartEpochMs: number;
 }
 

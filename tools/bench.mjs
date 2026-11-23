@@ -3,7 +3,7 @@
 // measures cold start from outside the process, and aggregates medians.
 //
 //   node tools/bench.mjs [--runs 3] [--renderer pdfium] [--pdfium-threads N] [--dpr N] [--exe path]
-//                        [--only substring] [--page N] [--size WxH] [files...]
+//                        [--only substring] [--page N] [--size WxH] [--flight] [files...]
 //
 // --page N zooms on page N (1-based) instead of the first; --size WxH sets the window in
 // logical pixels (default 1600x1000).
@@ -45,7 +45,11 @@ const size = opt("size", null);
 // --no-progressive: whole-region renders instead of streamed bands (for comparison).
 const noProgressive = argv.includes("--no-progressive");
 if (noProgressive) argv.splice(argv.indexOf("--no-progressive"), 1);
-const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "") + (noProgressive ? "-noprog" : "") +
+// --flight: zoom by a flight (typed zoom, fit) instead of a wheel step; the settle column is
+// then landing -> sharp, the still wait after the flight lands.
+const flight = argv.includes("--flight");
+if (flight) argv.splice(argv.indexOf("--flight"), 1);
+const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "") + (noProgressive ? "-noprog" : "") + (flight ? "-flight" : "") +
   (page ? `-p${page}` : "") + (size ? `-${size}` : "");
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -80,6 +84,7 @@ function runOnce(file, outJson) {
     if (dpr) args.push("--dpr", dpr);
     if (threads) args.push("--pdfium-threads", threads);
     if (noProgressive) args.push("--no-progressive");
+    if (flight) args.push("--bench-flight");
     if (page) args.push("--bench-page", String(Number(page) - 1));
     if (size) args.push("--bench-size", size);
     const p = spawn(exe, args, {
@@ -182,7 +187,7 @@ for (const file of files) {
 // Markdown tables for RESULTS.md
 const n = (v, d = 0) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 let md = `### ${tag} (median of ${runs} runs)\n\n`;
-md += "| File | Cold start (ms) | First band (ms) | First page (ms) | Pan fps fit / 400% / 1600% | Settle→sharp ms fit / 400% / 1600% | Peak memory (MB) | Faults |\n";
+md += `| File | Cold start (ms) | First band (ms) | First page (ms) | Pan fps fit / 400% / 1600% | ${flight ? "Landing→sharp" : "Settle→sharp"} ms fit / 400% / 1600% | Peak memory (MB) | Faults |\n`;
 md += "|---|---:|---:|---:|---|---|---:|---|\n";
 for (const e of summary.files) {
   const zs = ["fit", "400", "1600"].map((l) => e.zooms[l]);
