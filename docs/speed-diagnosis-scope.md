@@ -99,7 +99,7 @@ across viewers are not usable.
 
 1. **The still blur after a zoom lands**: the ease, then a 60 ms settle delay that exists only
    for wheel notches, then the render. Design, not regression. **Fixed for flights, merged 23 Nov**
-   (see "Next steps", 3). Wheel zoom fixed on branch `wheel-sharp`, not merged.
+   (see "Next steps", 3). Wheel zoom fixed and merged 23 Nov.
 2. **Stage plan at 1600%**: 198 ms on 18 Nov, 82 to 83 ms on both old and new builds on
    23 Nov. Probably a bench artefact (stale same-scale renders), not proven. Watch, don't chase.
 3. **Unexplained, low priority:** repeat fit renders of the aerial drawing took 1.26 s inside
@@ -132,8 +132,8 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
    figure is a bench artefact (two of three runs caught the previous step's "sharp" report:
    the flight bench needs a frame's wait after `dropTiles` before `whenSharp`; one real run
    read 232 ms). Matt tried it on 23 Nov and judged it good. 2c (ease length) still needs his go-ahead.
-   **3d. The wheel: done on branch `wheel-sharp` (not merged), option (a), Matt's choice
-   23 Nov after the (b) comparison below.** Each notch renders
+   **3d. The wheel: done, option (a), Matt's choice 23 Nov after the (b) comparison
+   below; merged into main 23 Nov, with one thing to watch (the free-spin jerk, below).** Each notch renders
    its landing view during the ease, held off screen until it lands, with no 60 ms wait once
    that render is under way. Plan (a): render on every notch, aborting the last; bench a
    burst of notches against a single notch, and fall back to (b), render once notches pause
@@ -180,7 +180,20 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
      On a burst (a) and (b) are within the noise (this session's (a) burst was much better
      than the first session's). On one notch, the common case, (b) costs 50 to 80 ms at 400%
      and 1600%: the pause pushes the render past the end of the ease. Back to (a) (Matt, 23 Nov);
-     (b) removed. For Matt to try by eye: `%TEMP%\vellum-smoke\wheel-after`.
+     (b) removed.
+   - **Watch: a jerk on a slow, steady free-spin (Matt, 23 Nov).** With the MX Master's
+     wheel free-rolling (still one event per notch, just no detents), a slow continuous
+     spin on Curtis Hall p61 between 80 and 800% felt jerky; the old build and 0.2.0-rc2
+     slightly, this build more. Not noticeable with the wheel notched, and hard to tell
+     even free-rolling. `tools/bench.mjs --spin --page 61` (new: ten notches in from 80% at
+     100, 200 and 300 ms gaps, every frame timed) found no difference, at 1380 x 850 or
+     2560 x 1320: 0 to 2 dropped frames per spin, none over 50 ms, both builds. So the
+     page draws on time; if the jerk is real it is outside the frame loop. Untested
+     guesses: wheel events delayed in WebView2's browser process by band IPC during the
+     spin, or late presentation. Matt merged as is (a single notch's gain is clear, the
+     jerk is faint). If it comes back in use, the fix is (d): a notch within 500 ms of the
+     last behaves as before (no render during the ease, 60 ms settle), so a spin is the
+     old code by construction and a single notch keeps the gain.
 4. **Then finish the cross-viewer zoom comparison** (parked, below).
 
 ## Overnight run, 22 to 23 Nov (autonomous): done

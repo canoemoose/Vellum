@@ -745,3 +745,8 @@ page on one PDFium instance, with the app's matrix and flags, at 12 scales from 
   flights built on branch `land-sharp`, measured, not merged.
 - 23 Nov: Matt tried `land-sharp` and judged it good; merged (`9bf1a90`). Go-ahead for the
   wheel (2d), on branch `wheel-sharp`.
+- 23 Nov: wheel blur fix built and benched; one notch lands sharp on ordinary drawings
+  (about 150 to 200 ms to 16 ms). Waiting for notches to pause (b) measured worse; kept (a).
+  The aerial drawing's small gain is band delivery to the webview, not the wheel. Matt felt
+  a faint jerk on a slow free-spin; a new spin bench found no dropped frames in either
+  build. Merged as is, with the jerk as a watch item (scope doc, 3d).

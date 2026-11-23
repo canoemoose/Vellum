@@ -20,6 +20,7 @@ zoom, plus multi-second stalls when zoomed out. Landed on main today:
 | `acd32d2`, `7767993` | *10 and 11 Nov:* image swaps (`pdfium_swap.rs`): images PDFium would decode on every render are decoded once, with a per-profile colour check; Bayou fit 4.3 s → about 100 ms (idea 2) |
 | (23 Nov) | Pages of 200k+ objects banded even when the region is small; the page profile (one band? object count?) is asked once per page, skipped if its render is cancelled; thumbnails always one worker; the front end asks the backend how many workers a render uses. Aerial fit 2339 → 450 ms (idea 2a) |
 | `9bf1a90` (23 Nov, branch `land-sharp`) | A flight (typed zoom, fit, actual size) renders its destination during the ease, held off screen until it lands, and settles on landing with no 60 ms wait. Landing to sharp on ordinary drawings about 150 to 200 ms → about 30 ms. Checked by Matt: good |
+| (23 Nov, branch `wheel-sharp`) | The same for the wheel: each notch renders where its ease lands, hidden until it lands, and settles on landing. One notch to sharp on ordinary drawings about 150 to 200 ms → 16 ms. Watch: a faint jerk on a slow free-spin (speed-diagnosis-scope.md, 3d) |
 
 Matt confirmed the zoom-out and pan stalls are fixed. *10 Nov:* he also judged thin lines at
 up to 1.6x downscale (`RS_MAX_DOWN` in `src/lib/render/tiles.ts`) fine, so it stays.
