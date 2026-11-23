@@ -19,7 +19,7 @@ zoom, plus multi-second stalls when zoomed out. Landed on main today:
 | `9929e0a`, `847df53` | *10 Nov:* sidebar thumbnails render top-down, up to half the workers at once, drop pages scrolled away, and run beside a render that holds a single worker (Bayou's thumbnails no longer wait 6 s) |
 | `acd32d2`, `7767993` | *10 and 11 Nov:* image swaps (`pdfium_swap.rs`): images PDFium would decode on every render are decoded once, with a per-profile colour check; Bayou fit 4.3 s → about 100 ms (idea 2) |
 | (23 Nov) | Pages of 200k+ objects banded even when the region is small; the page profile (one band? object count?) is asked once per page, skipped if its render is cancelled; thumbnails always one worker; the front end asks the backend how many workers a render uses. Aerial fit 2339 → 450 ms (idea 2a) |
-| branch `land-sharp` (24 Nov, not merged) | A flight (typed zoom, fit, actual size) renders its destination during the ease, held off screen until it lands, and settles on landing with no 60 ms wait. Landing to sharp on ordinary drawings about 150 to 200 ms → about 30 ms. Waiting for Matt's eyes (speed-diagnosis-scope.md, next step 3) |
+| branch `land-sharp` (23 Nov, not merged) | A flight (typed zoom, fit, actual size) renders its destination during the ease, held off screen until it lands, and settles on landing with no 60 ms wait. Landing to sharp on ordinary drawings about 150 to 200 ms → about 30 ms. Waiting for Matt's eyes (speed-diagnosis-scope.md, next step 3) |
 
 Matt confirmed the zoom-out and pan stalls are fixed. *10 Nov:* he also judged thin lines at
 up to 1.6x downscale (`RS_MAX_DOWN` in `src/lib/render/tiles.ts`) fine, so it stays.

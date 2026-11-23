@@ -86,7 +86,7 @@ these opens; the whole-sheet table replaces it.
 512%: Vellum 503 and 521 ms last notch to settled, Chrome 180 and 182 ms. Typed zoom figures
 across viewers are not usable.
 
-## Proposed homepage number (for Matt, 24 Nov)
+## Proposed homepage number (for Matt, 23 Nov)
 
 1. **"Shows the whole drawing about twice as fast as Adobe Acrobat."** True on all five
    drawings (1.65x to 3.9x, median 2.0x), from launch to the whole sheet drawn, measured the
@@ -136,7 +136,7 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
    looks right. Then 2c (ease length) and 2d (the wheel) need his go-ahead.
 4. **Then finish the cross-viewer zoom comparison** (parked, below).
 
-## Overnight run, 23 to 24 Nov (autonomous): done
+## Overnight run, 22 to 23 Nov (autonomous): done
 
 Matt away; asked for next step 2, then next step 3. Commits split by concern, none pushed.
 

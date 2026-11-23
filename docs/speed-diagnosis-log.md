@@ -739,7 +739,7 @@ page on one PDFium instance, with the app's matrix and flags, at 12 scales from 
   small; aerial fit 2339 → 450 ms, ordinary drawings unchanged. The scale step did not
   reproduce. All tests pass (1223 front end, 270 Rust).
   Next: step 2, re-run the open tests on this build and propose the homepage number.
-- 23 to 24 Nov, overnight (autonomous): scope doc split into current state and this log.
+- 22 to 23 Nov, overnight (autonomous): scope doc split into current state and this log.
   viewer-bench measures launch to the whole sheet drawn as one step; all seven viewers, five
   drawings, run; results and a proposed homepage number in the scope doc. The blur fix for
   flights built on branch `land-sharp`, measured, not merged.
