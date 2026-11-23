@@ -36,27 +36,70 @@ How to read it:
   figure on the day before quoting it, and compare builds only within one session.
 - Bayou and Silverstone are not in this bench.
 
-## Against other viewers (`tools/viewer-bench`, 18 Nov, before the fix)
+## Against other viewers (`tools/viewer-bench`, 23 Nov, fixed build `2eab73b`)
 
-Being replaced by the overnight run below. Until then:
+**Launch to the whole sheet drawn**, ms from process start, median of 3 after a warm-up,
+10 s quiet wait for every viewer, cold (fresh copy of the file each run, Vellum's preview
+cache cleared). Every viewer ends on its own fit page, the whole sheet, sharp: viewers that
+open on part of a sheet get their fit-page key as soon as anything shows. Raw results:
+`bench-output/viewers/20261123-0017` (whole sheet), `-0142` (plain opens), `-0216` and
+`-0231` (Acrobat re-runs).
 
-- **Cold open, five drawings, from launch:** Vellum 665 to 890 ms on the four ordinary
-  drawings, 3.8 s on the aerial one (now about 2 s faster, not re-measured). Second to fourth
-  of seven each time:
-  - **1.3x to 2.0x faster than Acrobat** on ordinary drawings (1.33, 1.73, 1.89, 2.03);
-  - behind the quicker of Foxit and PDF-XChange by 103 to 299 ms on ordinary drawings;
-  - 1.4x to 25x faster than Chrome, 1.25x to 5.3x faster than Edge;
-  - SumatraPDF quicker on one drawing (the stage plan, 671 against 890 ms).
-  Taken at a 3 s quiet wait except Acrobat and SumatraPDF (10 s).
-- **Launch to the whole sheet drawn, aerial drawing:** Vellum first at 4.1 s before the fix.
-  Not sound: the other viewers' figures are sums of two steps at the old short wait.
-- **After a zoom gesture ends:** wheel zoom, aerial drawing, fit page to 512%: Vellum 503 and
-  521 ms last notch to settled, Chrome 180 and 182 ms. Typed zoom figures are not usable.
+| | Aerial | Curtis Hall p1 | Stage plan | Bayou | Silverstone |
+|---|---:|---:|---:|---:|---:|
+| **Vellum** | **2717** | 820 | 1066 | **999** | 985 |
+| PDF-XChange | 6776 | **695** | 803 | 1184 | **753** |
+| SumatraPDF | 4663 | 1131 | **766** | 1902 | 1222 |
+| Foxit | 6429 | 819 | 1238 | 1471 | 1091 |
+| Acrobat | 10625 | 1761 | 1885 | 1649 | 1926 |
+| Chrome | 9909 | 5610 | 1851 | 21296 | 1630 |
+| Edge | not measurable | | | | |
+
+- **Vellum is fastest on the aerial drawing (1.7x the next, SumatraPDF) and on Bayou.** On
+  the three vector drawings it is second to fourth, 0 to 300 ms behind the fastest
+  (PDF-XChange twice, SumatraPDF once).
+- **Against Acrobat: 1.65x to 3.9x faster** (Bayou 1.65, stage plan 1.77, Silverstone 1.96,
+  Curtis Hall 2.15, aerial 3.9). Against Chrome 1.65x to 21x.
+- **Vellum's figures are its plain opens**: it opens on fit page, so its open is already
+  the whole sheet (checked in the frames: same picture as a fit page, sharp). Its whole-sheet
+  runs were voided by the tool's check on three drawings, wrongly: Vellum's reference fit
+  page, reached from fit width, keeps finer tiles and so differs from its own open by 9 to
+  17% of pixels while the open frame matches a plain open exactly (0.0%). Not a bug: the open
+  renders at or above display resolution (`chooseRenderScale` rounds up).
+- **Acrobat** opens at fit width, so only its whole-sheet runs count. Its aerial and Curtis
+  Hall figures are raw times from runs the tool voided because Windows' "Font Capture" error
+  box sat over the reference frame; every timed frame was checked by eye (whole sheet, no
+  box). Its stage plan figure is from the re-run; the first run agreed (1945).
+- **Edge** ignores the fit-page key (Ctrl+\), so it never shows the whole sheet; left out.
+- **Chrome on Bayou** shows nothing for 21 s (the cover scan), then the whole sheet.
+- Some figures are from 2 of 3 runs: Foxit's aerial and PDF-XChange's Curtis Hall (the key
+  went before the window could take it, and the check voided the run), Acrobat's Silverstone
+  (the error box covered the timed view).
+
+**Plain cold open** (process start to the view settled, each viewer on its own opening view,
+so not like for like): Vellum 2717 / 820 / 1066 / 999 / 985 ms in the order above. Acrobat
+opens at fit width (8477 / 1725 / 1976 / 1492 / 2090), as do Foxit and PDF-XChange on the
+aerial drawing (top of the sheet only). The 18 Nov "1.3 to 2.0x faster than Acrobat" compared
+these opens; the whole-sheet table replaces it.
+
+**After a zoom gesture ends** (unchanged, 22 Nov): wheel zoom, aerial drawing, fit page to
+512%: Vellum 503 and 521 ms last notch to settled, Chrome 180 and 182 ms. Typed zoom figures
+across viewers are not usable.
+
+## Proposed homepage number (for Matt, 24 Nov)
+
+1. **"Shows the whole drawing about twice as fast as Adobe Acrobat."** True on all five
+   drawings (1.65x to 3.9x, median 2.0x), from launch to the whole sheet drawn, measured the
+   same way in both. The working is the table above. Recommended.
+2. "The whole sheet in about a second": 0.82 to 1.07 s on four drawings from launch, 2.7 s on
+   a 5 m aerial drawing. True, but needs the caveat and invites the question "on what?".
+3. Not claimable: "fastest PDF viewer". PDF-XChange is quicker on three of five drawings.
 
 ## What is open
 
 1. **The still blur after a zoom lands**: the ease, then a 60 ms settle delay that exists only
-   for wheel notches, then the render. Design, not regression. Next step 2.
+   for wheel notches, then the render. Design, not regression. **Fixed for flights on branch
+   `land-sharp`, waiting for Matt's eyes** (see "Next steps", 3). Wheel zoom not yet.
 2. **Stage plan at 1600%**: 198 ms on 18 Nov, 82 to 83 ms on both old and new builds on
    23 Nov. Probably a bench artefact (stale same-scale renders), not proven. Watch, don't chase.
 3. **Unexplained, low priority:** repeat fit renders of the aerial drawing took 1.26 s inside
@@ -69,35 +112,45 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
 ## Next steps, in the order agreed with Matt
 
 1. ~~Fix the one-worker rule~~ **Done 23 Nov.**
-2. **Re-run the open tests on the fixed build, launch to whole sheet drawn as one timed step,
-   propose the homepage number.** Running overnight 23 to 24 Nov (below). Fallback that needs
-   no more work: "opens drawings 1.3 to 2x faster than Acrobat".
-3. **The blur fix**: no settle delay after a flight, render during the ease, then the same
-   for the wheel; measured with Vellum's own bench. Interactive: Matt judges by eye.
+2. ~~Re-run the open tests, launch to whole sheet as one timed step~~ **Done overnight
+   23 Nov.** Homepage number proposed above; Matt to choose.
+3. **The blur fix, for flights (typed zoom, fit, actual size): built on branch `land-sharp`,
+   not merged.** No settle delay after a flight, and its destination renders during the
+   220 ms ease, held off screen until it lands. Tests: 5 new (each fails on the old code), all
+   1228 front-end and 270 Rust pass. Measured with `tools/bench.mjs --flight` (new: the zoom
+   step as a flight, timed from landing to sharp), median of 3, same session, builds
+   `9977b60` (before) and `8391230` (after):
+
+   | Landing to sharp, fit / 400% / 1600% (ms) | Before | After |
+   |---|---|---|
+   | Curtis Hall p1 | 147 / 197 / 163 | 31 / 31 / 28 |
+   | Stage plan | 196 / 180 / 160 | 31 / 29 / 27 |
+   | Aerial drawing | 478 / 246 / 230 | 196 / – / 107 |
+
+   About 30 ms is the floor: the bench waits for the frame that shows the tiles and one more.
+   The aerial drawing's renders outlast the flight, so it lands part way through. Its 400%
+   figure is a bench artefact (two of three runs caught the previous step's "sharp" report:
+   the flight bench needs a frame's wait after `dropTiles` before `whenSharp`; one real run
+   read 232 ms). **For Matt to judge:** whether the ease stutters while bands arrive during
+   it (band transfer runs on the webview's main thread), and whether the clean swap on landing
+   looks right. Then 2c (ease length) and 2d (the wheel) need his go-ahead.
 4. **Then finish the cross-viewer zoom comparison** (parked, below).
 
-## Overnight run, 23 to 24 Nov (autonomous)
+## Overnight run, 23 to 24 Nov (autonomous): done
 
-Matt away; questions batched for the morning, commits split by concern, no push.
+Matt away; asked for next step 2, then next step 3. Commits split by concern, none pushed.
 
-**Steps and status:**
-
-1. Tidy this doc; log moved to speed-diagnosis-log.md. *Done.*
-2. viewer-bench: launch to whole sheet drawn as one timed step. *Design:* launch, press the
-   viewer's fit-page key as soon as the window first shows anything, time on the launch
-   stopwatch until settled (10 s quiet). Then read the zoom level: if it isn't the viewer's
-   fit-page level (taken from a normal fit page in the same launch), the key was lost and
-   the run is void. A mode with no zoom tests keeps launches short.
-3. Trial on Vellum and one other viewer, frames checked.
-4. Full run: plain cold open and launch to whole sheet, five drawings, seven viewers, one
-   warm-up and 3 runs each, 10 s quiet for every viewer.
-5. Check the saved frames by eye; void anything blank, blurred or wrong.
-6. Refresh Vellum's own bench on the fixed build (the table above, if it moved).
-7. Write up here, propose the homepage number with its working.
-8. Commit: viewer-bench change, then docs.
-
-**Assumptions:** the fixed build is `%TEMP%\vellum-smoke\heavy-band\vellum.exe` (`2eab73b`);
-the five drawings are the 18 Nov set; median of 3 as before.
+- Doc tidy: log moved to speed-diagnosis-log.md (`18dbc97`).
+- viewer-bench `--whole-sheet` and `--open-only` (`27a48bc`), fixes after the run
+  (`717a455`). The check against a later fit page catches a lost key but not a viewer whose
+  fit-page key does nothing (Edge), and wrongly voids a viewer whose reference keeps finer
+  tiles (Vellum) or shows an error box (Acrobat): **check the saved frames by eye**, as
+  always. Raw times of void runs are now kept for that.
+- Results and the proposed homepage number: above.
+- Blur fix for flights: branch `land-sharp` (`9977b60` bench option, `8391230` fix).
+- Vellum's own bench was not re-run: the table at the top is from the fixed build, 23 Nov.
+- A suspected Vellum bug (a soft picture after fit page pressed during an open) turned out
+  to be the tool's comparison: see the Vellum bullet above.
 
 ## The cross-viewer wheel zoom test: parked 22 Nov, about an hour from usable
 
