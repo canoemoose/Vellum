@@ -743,3 +743,5 @@ page on one PDFium instance, with the app's matrix and flags, at 12 scales from 
   viewer-bench measures launch to the whole sheet drawn as one step; all seven viewers, five
   drawings, run; results and a proposed homepage number in the scope doc. The blur fix for
   flights built on branch `land-sharp`, measured, not merged.
+- 23 Nov: Matt tried `land-sharp` and judged it good; merged (`9bf1a90`). Go-ahead for the
+  wheel (2d), on branch `wheel-sharp`.

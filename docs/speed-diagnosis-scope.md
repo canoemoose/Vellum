@@ -98,8 +98,8 @@ across viewers are not usable.
 ## What is open
 
 1. **The still blur after a zoom lands**: the ease, then a 60 ms settle delay that exists only
-   for wheel notches, then the render. Design, not regression. **Fixed for flights on branch
-   `land-sharp`, waiting for Matt's eyes** (see "Next steps", 3). Wheel zoom not yet.
+   for wheel notches, then the render. Design, not regression. **Fixed for flights, merged 23 Nov**
+   (see "Next steps", 3). Wheel zoom in progress on branch `wheel-sharp`.
 2. **Stage plan at 1600%**: 198 ms on 18 Nov, 82 to 83 ms on both old and new builds on
    23 Nov. Probably a bench artefact (stale same-scale renders), not proven. Watch, don't chase.
 3. **Unexplained, low priority:** repeat fit renders of the aerial drawing took 1.26 s inside
@@ -114,8 +114,8 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
 1. ~~Fix the one-worker rule~~ **Done 23 Nov.**
 2. ~~Re-run the open tests, launch to whole sheet as one timed step~~ **Done overnight
    23 Nov.** Homepage number proposed above; Matt to choose.
-3. **The blur fix, for flights (typed zoom, fit, actual size): built on branch `land-sharp`,
-   not merged.** No settle delay after a flight, and its destination renders during the
+3. **The blur fix, for flights (typed zoom, fit, actual size): done, merged into main
+   23 Nov (`9bf1a90`) after Matt tried it and judged it good.** No settle delay after a flight, and its destination renders during the
    220 ms ease, held off screen until it lands. Tests: 5 new (each fails on the old code), all
    1228 front-end and 270 Rust pass. Measured with `tools/bench.mjs --flight` (new: the zoom
    step as a flight, timed from landing to sharp), median of 3, same session, builds
@@ -131,9 +131,12 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
    The aerial drawing's renders outlast the flight, so it lands part way through. Its 400%
    figure is a bench artefact (two of three runs caught the previous step's "sharp" report:
    the flight bench needs a frame's wait after `dropTiles` before `whenSharp`; one real run
-   read 232 ms). **For Matt to judge:** whether the ease stutters while bands arrive during
-   it (band transfer runs on the webview's main thread), and whether the clean swap on landing
-   looks right. Then 2c (ease length) and 2d (the wheel) need his go-ahead.
+   read 232 ms). Matt tried it on 23 Nov and judged it good. 2c (ease length) still needs his go-ahead.
+   **3d. The wheel: go-ahead 23 Nov, building on branch `wheel-sharp`.** Each notch renders
+   its landing view during the ease, held off screen until it lands, with no 60 ms wait once
+   that render is under way. Plan (a): render on every notch, aborting the last; bench a
+   burst of notches against a single notch, and fall back to (b), render once notches pause
+   for a frame, only if bursts get slower.
 4. **Then finish the cross-viewer zoom comparison** (parked, below).
 
 ## Overnight run, 22 to 23 Nov (autonomous): done
