@@ -33,6 +33,10 @@ static class Zoom
     /// else's: see Centre.SumatraFitWidth.)
     public static bool WheelReadable(App a) => a.Id is not ("edge" or "acrobat");
 
+    /// Edge's PDF viewer ignores Ctrl+\ (seen 23 Nov: its view stayed at fit width), and has
+    /// no other fit-page key.
+    public static bool HasFitPageKey(App a) => a.Id != "edge";
+
     /// Chrome and Edge have one key that toggles between fit width and fit page.
     public static bool FitIsToggle(App a) => a.Id is "chrome" or "edge";
 

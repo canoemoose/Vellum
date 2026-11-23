@@ -51,6 +51,9 @@ static class Bench
         // Diff is the share of sampled pixels that differ from a fit page taken afterwards.
         public double? WholeSheetMs { get; init; } public double? WholeSheetKeyAt { get; init; }
         public double? WholeSheetDiff { get; init; }
+        /// The timed figure even when the run is void (Ms is null then), for judging from the
+        /// saved frames: Acrobat's error box can sit over the reference alone.
+        public double? WholeSheetRawMs { get; init; }
     }
 
     public static int Run(Options o)
@@ -72,7 +75,7 @@ static class Bench
                     if (WholeSheet || OpenOnly)
                     {
                         Program.Log(WholeSheet
-                            ? $"  run {r}: launch to whole sheet {Fmt(res.WholeSheetMs)} (key at {Fmt(res.WholeSheetKeyAt)}, differs from fit page by {res.WholeSheetDiff:P1}){(res.Moved ? " moved" : "")}{(res.Note != null ? " - " + res.Note : "")}"
+                            ? $"  run {r}: launch to whole sheet {Fmt(res.WholeSheetMs)} (raw {Fmt(res.WholeSheetRawMs)}, key at {Fmt(res.WholeSheetKeyAt)}, differs from fit page by {res.WholeSheetDiff:P1}){(res.Moved ? " moved" : "")}{(res.Note != null ? " - " + res.Note : "")}"
                             : $"  run {r}: open {Fmt(res.OpenMs)}{(res.Moved ? " moved" : "")}{(res.Note != null ? " - " + res.Note : "")}");
                         results.Add(res);
                         File.WriteAllText(Path.Combine(dir, "results.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
@@ -204,11 +207,13 @@ static class Bench
     /// mid-open; Place already brought the window forward), and the step ends when the picture
     /// has been unchanged for the quiet time. A viewer already at fit page just keeps drawing.
     /// Then, untimed, fit width and fit page again: the result counts only if that reference
-    /// matches the timed picture, which shows the key arrived and the view was the whole sheet.
+    /// matches the timed picture, which shows the key arrived. It can't show that the viewer's
+    /// fit-page key works at all (Edge's doesn't, so it is left out): check the saved frames.
     static RunResult MeasureWholeSheet(Program.Session s, App app, string file, int run, string dir, string tag)
     {
         RunResult Fail(string why, double? keyAt = null) =>
             new(app.Id, Path.GetFileName(file), run, null, null, null, null, null, s.Moved, why) { WholeSheetKeyAt = keyAt };
+        if (!Zoom.HasFitPageKey(app)) return Fail("no fit-page key: not measured");
         double? keyAt = null;
         while (s.Clock.ElapsedMilliseconds < TimeoutMs)
         {
@@ -229,13 +234,16 @@ static class Bench
         Settle(s, Stopwatch.StartNew(), QuietZoomMs, needContent: false);
         Focus(s.Hwnd); MoveCursorAway(s); Zoom.FitPageKey(s);
         Settle(s, Stopwatch.StartNew(), QuietZoomMs, needContent: true);
+        // Acrobat's "Font Capture" error box can appear by now (Windows' own, over the view):
+        // close it, or it alone fails the comparison.
+        if (Program.DismissStrays() > 0) Settle(s, Stopwatch.StartNew(), 2000, needContent: true);
         var reference = Look(Program.WatchRect(s.Hwnd));
         Program.SaveBmp(ClientOnScreen(s.Hwnd), Path.Combine(dir, "frames", tag + "-reference.bmp"));
         double? diff = Differ(timed, reference);
         var note = diff == null ? "the window changed size" : diff > MatchLimit ? "did not match a fit page taken afterwards: key lost?" : null;
         return new(app.Id, Path.GetFileName(file), run, null, null, null, null, null, s.Moved, note)
         {
-            WholeSheetMs = note == null ? whole : null, WholeSheetKeyAt = keyAt, WholeSheetDiff = diff,
+            WholeSheetMs = note == null ? whole : null, WholeSheetKeyAt = keyAt, WholeSheetDiff = diff, WholeSheetRawMs = whole,
         };
     }
 
@@ -473,6 +481,7 @@ static class Bench
                 var notes = string.Join("; ", x.Select(r => r.Note).Where(n => n != null).Distinct());
                 sb.AppendLine($"| {Apps.Get(a).Label} | {med(r => r.OpenMs)} | {all(r => r.OpenMs)} | {med(r => r.ZoomMs)} | {all(r => r.ZoomMs)} | {(lv == null ? "-" : $"{lv.FitPct}% -> {lv.TargetPct}% (got {lv.GotPct}%)")} | {notes} |");
             }
+            if (OpenOnly) continue; // no zoom steps were run
             sb.AppendLine();
             sb.AppendLine("Same views in every viewer, timed from the key press (first change / settled, median):");
             sb.AppendLine();
