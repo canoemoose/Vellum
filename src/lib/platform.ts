@@ -17,6 +17,8 @@ export interface LaunchArgs {
   benchFlight?: boolean;
   /** Zoom by this many wheel notches and time landing to sharp (see bench.ts). */
   benchWheel?: number | null;
+  /** Spin the wheel at fixed gaps and time every frame (see bench.ts). */
+  benchSpin?: boolean;
   processStartEpochMs: number;
 }
 

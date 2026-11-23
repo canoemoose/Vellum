@@ -30,6 +30,31 @@ const FLIGHT_MS = 220;
 /** --bench-wheel: one notch, and the gap between notches in a spin. */
 const NOTCH = 1.25;
 const NOTCH_GAP_MS = 40;
+/** --bench-spin: ten notches in from 80% (to about 745%) at each gap, three times each. */
+const SPIN_GAPS_MS = [100, 200, 300];
+const SPIN_NOTCHES = 10;
+const SPIN_FROM_ZOOM = 0.8;
+
+interface SpinRep {
+  frames: number;
+  /** Frame intervals over 1.5 frames (a dropped frame), and over 50 ms (a visible hitch). */
+  dropped: number;
+  over50: number;
+  p95Ms: number;
+  maxMs: number;
+}
+
+/** Frame times from requestAnimationFrame until `stop` is called (the page's own frames). */
+function recordFrames(): { stop: () => number[] } {
+  const ts: number[] = [];
+  let on = true;
+  const tick = (t: number) => {
+    ts.push(t);
+    if (on) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return { stop: () => ((on = false), ts) };
+}
 
 interface PanResult {
   fps: number;
@@ -194,7 +219,48 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     const results: ZoomResult[] = [];
     const snapDir = args.benchOut ? args.benchOut.replace(/\.json$/i, "") : null;
 
-    for (const z of ZOOMS) {
+    if (args.benchSpin) {
+      // --bench-spin: a steady wheel spin, as a mouse with a free-spinning wheel sends it.
+      // Each rep starts sharp at 80% on the page centre, from cold tiles, then sends ten
+      // notches at one gap and records every frame until 400 ms after the last notch.
+      const ax = v.vw / 2;
+      const ay = v.vh / 2;
+      const centred = (s: number) => ({ scale: s, tx: ax - (rect.x + rect.w / 2) * s, ty: ay - (rect.y + rect.h / 2) * s });
+      const budget = 1000 / (out.refreshHz as number);
+      const spin: { gapMs: number; reps: SpinRep[] }[] = [];
+      for (const gap of SPIN_GAPS_MS) {
+        const reps: SpinRep[] = [];
+        for (let rep = 0; rep < REPS; rep++) {
+          v.setView(centred(SPIN_FROM_ZOOM * (96 / 72)), "jump");
+          await v.whenIdle(TIMEOUT);
+          v.dropTiles();
+          v.setView(centred(SPIN_FROM_ZOOM * (96 / 72)), "jump");
+          await v.whenIdle(TIMEOUT);
+          await sleep(300);
+          const rec = recordFrames();
+          for (let k = 0; k < SPIN_NOTCHES; k++) {
+            if (k) await sleep(gap);
+            v.zoomAt(ax, ay, NOTCH, true);
+          }
+          await sleep(400);
+          const ts = rec.stop();
+          const iv = ts.slice(1).map((t, i) => t - ts[i]);
+          reps.push({
+            frames: ts.length,
+            dropped: iv.filter((d) => d > budget * 1.5).length,
+            over50: iv.filter((d) => d > 50).length,
+            p95Ms: pct(iv, 0.95),
+            maxMs: Math.max(0, ...iv),
+          });
+          await v.whenIdle(TIMEOUT);
+          sampleHeap();
+        }
+        spin.push({ gapMs: gap, reps });
+      }
+      out.spin = spin;
+    }
+
+    for (const z of args.benchSpin ? [] : ZOOMS) {
       const targetScale = z.zoom === "fit" ? fitScale : z.zoom * (96 / 72);
       const r: ZoomResult = {
         label: z.label,
