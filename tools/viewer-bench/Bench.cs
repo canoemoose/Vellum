@@ -20,6 +20,12 @@ static class Bench
     /// The typed zoom (fit page, type a level, Enter) is off unless --typed: each viewer lands
     /// on a different part of the sheet, so its figures don't compare (18 Nov).
     static bool Typed;
+    /// --open-only: the cold open and nothing else. --whole-sheet: launch to the whole sheet
+    /// drawn as one timed step (see MeasureWholeSheet), and nothing else.
+    static bool OpenOnly, WholeSheet;
+    /// A whole-sheet run counts only if its picture matches a fit page taken afterwards in the
+    /// same launch to within this share of sampled pixels (else the key was lost).
+    const double MatchLimit = 0.05;
     const int NotchGapMs = 50, MaxNotches = 80;
     /// Notches each viewer needs to reach the target, per drawing, found in its warm-up launch.
     static readonly Dictionary<string, int> NotchesFor = new();
@@ -40,11 +46,16 @@ static class Bench
         public int? WheelNotches { get; init; } public double? WheelFirstMs { get; init; } public double? WheelMs { get; init; }
         public double? WheelLandingMs { get; init; } public double? WheelPct { get; init; } public double? WheelTargetPct { get; init; }
         public string? WheelNote { get; init; }
+        // Launch to the whole sheet drawn (--whole-sheet): KeyAt is when the first drawing showed
+        // and the fit-page key went; Ms is the last change after it, both from process start.
+        // Diff is the share of sampled pixels that differ from a fit page taken afterwards.
+        public double? WholeSheetMs { get; init; } public double? WholeSheetKeyAt { get; init; }
+        public double? WholeSheetDiff { get; init; }
     }
 
     public static int Run(Options o)
     {
-        QuietOpenMs = QuietZoomMs = o.Quiet; Typed = o.Typed;
+        QuietOpenMs = QuietZoomMs = o.Quiet; Typed = o.Typed; OpenOnly = o.OpenOnly; WholeSheet = o.WholeSheet;
         var apps = o.Apps.Select(Apps.Get).ToList();
         var busy = Program.Running(apps);
         if (busy.Count > 0) { Program.Log("Close these first, the bench would take them over: " + string.Join(", ", busy)); return 1; }
@@ -58,6 +69,15 @@ static class Bench
                 for (int r = 1; r <= o.Runs; r++)
                 {
                     var res = One(app, file, r, dir, warm: false);
+                    if (WholeSheet || OpenOnly)
+                    {
+                        Program.Log(WholeSheet
+                            ? $"  run {r}: launch to whole sheet {Fmt(res.WholeSheetMs)} (key at {Fmt(res.WholeSheetKeyAt)}, differs from fit page by {res.WholeSheetDiff:P1}){(res.Moved ? " moved" : "")}{(res.Note != null ? " - " + res.Note : "")}"
+                            : $"  run {r}: open {Fmt(res.OpenMs)}{(res.Moved ? " moved" : "")}{(res.Note != null ? " - " + res.Note : "")}");
+                        results.Add(res);
+                        File.WriteAllText(Path.Combine(dir, "results.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+                        continue;
+                    }
                     Program.Log($"  run {r}: open {Fmt(res.OpenMs)}  zoom {Fmt(res.ZoomMs)} ({res.FitPct}% -> {res.TargetPct}%, got {res.GotPct}%){(res.Moved ? " moved" : "")}{(res.Note != null ? " - " + res.Note : "")}");
                     Program.Log($"         fit page {Fmt(res.FitPageFirstMs)} / {Fmt(res.FitPageMs)} (at {res.FitPagePct}%)  fit width {Fmt(res.FitWidthFirstMs)} / {Fmt(res.FitWidthMs)} (at {res.FitWidthPct}%)  [first change / settled; one look = {lookMs:0.0} ms]");
                     Program.Log($"         wheel {res.WheelNotches} notches: first change {Fmt(res.WheelFirstMs)}, landing to settled {Fmt(res.WheelLandingMs)}, first notch to settled {Fmt(res.WheelMs)} (at {res.WheelPct}%, target {res.WheelTargetPct}%)" + (res.WheelNote != null ? " - " + res.WheelNote : ""));
@@ -109,11 +129,13 @@ static class Bench
         Zoom.File = file;
         using var s = Program.Launch(app, file);
         if (!Program.Place(s)) return new(app.Id, Path.GetFileName(file), run, null, null, null, null, null, false, "no window");
+        if (WholeSheet) return MeasureWholeSheet(s, app, file, run, dir, tag);
         var open = Settle(s, s.Clock, QuietOpenMs, needContent: true);
         Program.SaveBmp(ClientOnScreen(s.Hwnd), Path.Combine(dir, "frames", tag + "-open.bmp"));
         if (open == null) return new(app.Id, Path.GetFileName(file), run, null, null, null, null, null, s.Moved, "open never settled");
         var cover = Program.Covering(s);
         if (cover != null) return new(app.Id, Path.GetFileName(file), run, null, null, null, null, null, s.Moved, $"another window covered the view: '{cover}'");
+        if (OpenOnly) return new(app.Id, Path.GetFileName(file), run, open, null, null, null, null, s.Moved, null);
 
         double? zoomMs = null, fit = null, target = null, got = null; string? note = null;
         double? fitPageMs = null, fitPageFirst = null, fitPagePct = null, fitWidthMs = null, fitWidthFirst = null, fitWidthPct = null;
@@ -174,6 +196,76 @@ static class Bench
             WheelNotches = w.Notches, WheelFirstMs = w.First, WheelMs = w.Settled, WheelLandingMs = w.Landing,
             WheelPct = w.Pct, WheelTargetPct = fit == null ? null : Math.Round(fit.Value * Factor, 1), WheelNote = w.Note,
         };
+    }
+
+    /// Launch to the whole sheet drawn, as one step on the launch stopwatch. Viewers open on
+    /// different views (Foxit and PDF-XChange show only the top of a long sheet), so as soon as
+    /// the window shows any drawing the fit-page key goes (no focus click: it could land
+    /// mid-open; Place already brought the window forward), and the step ends when the picture
+    /// has been unchanged for the quiet time. A viewer already at fit page just keeps drawing.
+    /// Then, untimed, fit width and fit page again: the result counts only if that reference
+    /// matches the timed picture, which shows the key arrived and the view was the whole sheet.
+    static RunResult MeasureWholeSheet(Program.Session s, App app, string file, int run, string dir, string tag)
+    {
+        RunResult Fail(string why, double? keyAt = null) =>
+            new(app.Id, Path.GetFileName(file), run, null, null, null, null, null, s.Moved, why) { WholeSheetKeyAt = keyAt };
+        double? keyAt = null;
+        while (s.Clock.ElapsedMilliseconds < TimeoutMs)
+        {
+            var (px, cols, rows) = Look(Program.WatchRect(s.Hwnd));
+            if (IsContent(px, cols, rows)) { keyAt = s.Clock.Elapsed.TotalMilliseconds; break; }
+            Thread.Sleep(5);
+        }
+        if (keyAt == null) return Fail("never showed any drawing");
+        Zoom.FitPageKey(s);
+        var whole = Settle(s, s.Clock, QuietOpenMs, needContent: true);
+        var timed = Look(Program.WatchRect(s.Hwnd));
+        Program.SaveBmp(ClientOnScreen(s.Hwnd), Path.Combine(dir, "frames", tag + "-wholesheet.bmp"));
+        if (whole == null) return Fail("never settled", keyAt);
+        var cover = Program.Covering(s);
+        if (cover != null) return Fail($"another window covered the view: '{cover}'", keyAt);
+
+        Focus(s.Hwnd); MoveCursorAway(s); Zoom.FitWidthKey(s);
+        Settle(s, Stopwatch.StartNew(), QuietZoomMs, needContent: false);
+        Focus(s.Hwnd); MoveCursorAway(s); Zoom.FitPageKey(s);
+        Settle(s, Stopwatch.StartNew(), QuietZoomMs, needContent: true);
+        var reference = Look(Program.WatchRect(s.Hwnd));
+        Program.SaveBmp(ClientOnScreen(s.Hwnd), Path.Combine(dir, "frames", tag + "-reference.bmp"));
+        double? diff = Differ(timed, reference);
+        var note = diff == null ? "the window changed size" : diff > MatchLimit ? "did not match a fit page taken afterwards: key lost?" : null;
+        return new(app.Id, Path.GetFileName(file), run, null, null, null, null, null, s.Moved, note)
+        {
+            WholeSheetMs = note == null ? whole : null, WholeSheetKeyAt = keyAt, WholeSheetDiff = diff,
+        };
+    }
+
+    /// One look at a screen rectangle: luminance sampled every third pixel each way.
+    static unsafe (byte[] px, int cols, int rows) Look(RECT r)
+    {
+        using var g = new Grabber(r);
+        const int step = 3;
+        int cols = g.W / step, rows = g.H / step;
+        var px = new byte[cols * rows];
+        var p = (byte*)g.Grab();
+        for (int y = 0, i = 0; y < rows; y++) { var row = p + (y * step) * g.W * 4; for (int x = 0; x < cols; x++, i++) { var q = row + x * step * 4; px[i] = (byte)((q[0] * 29 + q[1] * 150 + q[2] * 77) >> 8); } }
+        return (px, cols, rows);
+    }
+
+    /// The same test Settle uses for "shows drawing": 2% off the commonest shade, and detailed.
+    static bool IsContent(byte[] px, int cols, int rows)
+    {
+        var hist = new int[256]; foreach (var v in px) hist[v]++;
+        int mode = Array.IndexOf(hist, hist.Max()), near = 0;
+        for (int v = Math.Max(0, mode - 12); v <= Math.Min(255, mode + 12); v++) near += hist[v];
+        return px.Length - near > px.Length / 50 && Detailed(px, cols, rows);
+    }
+
+    /// Share of sampled pixels that differ by more than 24 levels; null if the sizes differ.
+    static double? Differ((byte[] px, int cols, int rows) a, (byte[] px, int cols, int rows) b)
+    {
+        if (a.cols != b.cols || a.rows != b.rows) return null;
+        int n = 0; for (int i = 0; i < a.px.Length; i++) if (Math.Abs(a.px[i] - b.px[i]) > 24) n++;
+        return n / (double)a.px.Length;
     }
 
     sealed class WheelResult { public int? Notches; public double? First, Settled, Landing, Pct; public string? Note; }
@@ -346,6 +438,27 @@ static class Bench
         sb.AppendLine($"# Viewer timings ({DateTime.Now:d MMM yyyy HH:mm})");
         sb.AppendLine();
         sb.AppendLine($"Median of {o.Runs} runs after one warm-up. A step is finished when the picture has been unchanged for {o.Quiet / 1000.0:0.#} s. Window 1600x1000 on the primary monitor. Open: process start to the middle of the window settled. Zoom: from fit page, type {Factor}x the fit-width level into the zoom box, Enter to settled.");
+        if (WholeSheet)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Launch to the whole sheet drawn: process start, fit-page key as soon as any drawing shows, to the picture unchanged for {o.Quiet / 1000.0:0.#} s. A run counts only if its picture differs from a fit page taken afterwards by under {MatchLimit:P0} of sampled pixels.");
+            foreach (var f in rs.Select(r => r.File).Distinct())
+            {
+                sb.AppendLine(); sb.AppendLine($"## {f}"); sb.AppendLine();
+                sb.AppendLine("| Viewer | Whole sheet (median) | All runs | Key sent at (all) | Differs from fit page (all) | Notes |");
+                sb.AppendLine("|---|---:|---|---|---|---|");
+                foreach (var a in rs.Where(r => r.File == f).Select(r => r.App).Distinct())
+                {
+                    var x = rs.Where(r => r.File == f && r.App == a).ToList();
+                    var v = x.Select(r => r.WholeSheetMs).Where(z => z != null).Select(z => z!.Value).OrderBy(z => z).ToList();
+                    string med = v.Count == 0 ? "-" : $"{v[v.Count / 2]:0} ms" + (v.Count < x.Count ? $" ({v.Count} of {x.Count})" : "");
+                    string all(Func<RunResult, string> k) => string.Join(", ", x.Select(k));
+                    var notes = string.Join("; ", x.Select(r => r.Note).Where(n => n != null).Distinct());
+                    sb.AppendLine($"| {Apps.Get(a).Label} | {med} | {all(r => r.WholeSheetMs == null ? "-" : $"{r.WholeSheetMs:0}")} | {all(r => r.WholeSheetKeyAt == null ? "-" : $"{r.WholeSheetKeyAt:0}")} | {all(r => r.WholeSheetDiff == null ? "-" : $"{r.WholeSheetDiff:P1}")} | {notes} |");
+                }
+            }
+            return sb.ToString();
+        }
         foreach (var f in rs.Select(r => r.File).Distinct())
         {
             sb.AppendLine(); sb.AppendLine($"## {f}"); sb.AppendLine();

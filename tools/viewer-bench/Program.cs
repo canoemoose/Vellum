@@ -28,7 +28,7 @@ static class Program
             case "wheelprobe": Centre.Probe(opt.Apps.Select(Apps.Get).ToList(), opt.Files, 6); return 0;
             case "methodprobe": Centre.MethodProbe(Apps.Get(opt.Apps[0]), opt.Files[0]); return 0;
             default:
-                Console.WriteLine("usage: viewer-bench probe <app> <file> | run [--apps a,b] [--runs 3] [--zoom 400] files...");
+                Console.WriteLine("usage: viewer-bench probe <app> <file> | run [--apps a,b] [--runs 3] [--quiet ms] [--open-only | --whole-sheet] files...");
                 return 2;
         }
     }
@@ -260,7 +260,7 @@ sealed class Options
 {
     public string Mode = "";
     public List<string> Apps = new(), Files = new();
-    public int Runs = 3, Zoom = 400, Quiet = 10000; public bool Warm = true, Typed;
+    public int Runs = 3, Zoom = 400, Quiet = 10000; public bool Warm = true, Typed, OpenOnly, WholeSheet;
     public string? Root;
     public static Options Parse(string[] a)
     {
@@ -274,6 +274,8 @@ sealed class Options
                 case "--zoom": o.Zoom = int.Parse(a[++i]); break;
                 case "--quiet": o.Quiet = int.Parse(a[++i]); break;
                 case "--typed": o.Typed = true; break;
+                case "--open-only": o.OpenOnly = true; break;
+                case "--whole-sheet": o.WholeSheet = true; break;
                 case "--out": o.Root = a[++i]; break;
                 case "--no-warm": o.Warm = false; break;
                 default:
