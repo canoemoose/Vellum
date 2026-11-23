@@ -25,6 +25,8 @@ const REPS = 3;
 const PAN_MS = 2000;
 const PAN_RADIUS = 400; // CSS px; one lap per PAN_MS, about 1250 px/s
 const TIMEOUT = 120000;
+/** The viewer's default flight (Viewer.animateTo). */
+const FLIGHT_MS = 220;
 
 interface PanResult {
   fps: number;
@@ -119,6 +121,8 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     // --no-progressive: whole-region renders, to compare against streaming.
     if ((args as unknown as { noProgressive?: boolean }).noProgressive) v.progressive = false;
     out.progressive = v.progressive;
+    const flight = !!args.benchFlight;
+    out.zoomBy = flight ? "flight" : "wheel";
     out.refreshHz = await measureRefresh();
     await resetMemoryPeak();
 
@@ -197,6 +201,22 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
         // One animated zoom step to the target (like a couple of wheel notches), then
         // measure settle -> all visible tiles sharp.
         const sharp = v.whenSharp();
+        if (flight) {
+          // --bench-flight: the same step as a flight (as typed zoom, fit and the zoom box
+          // do), timed from when it lands to sharp: the still, blurry wait a user sees. The
+          // landing is taken as start + FLIGHT_MS; the real one is up to a frame later.
+          const to = { scale: targetScale, tx: ax - (rect.x + rect.w / 2) * targetScale, ty: ay - (rect.y + rect.h / 2) * targetScale };
+          const t0 = performance.now();
+          v.animateTo(to, FLIGHT_MS);
+          const ev = await timeout(sharp, TIMEOUT);
+          r.settleToSharpMs.push(ev ? Math.max(0, performance.now() - t0 - FLIGHT_MS) : null);
+          r.settleToFirstBandMs.push(ev ? ev.settleToFirstBandMs : null);
+          r.complete.push(ev ? ev.complete : false);
+          r.regions.push(ev ? ev.regions : 0);
+          await v.whenIdle(TIMEOUT);
+          sampleHeap();
+          continue;
+        }
         v.zoomAt(ax, ay, 1.25, true);
         const ev = await timeout(sharp, TIMEOUT);
         r.settleToSharpMs.push(ev ? ev.settleToSharpMs : null);

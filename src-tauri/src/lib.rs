@@ -45,6 +45,9 @@ pub struct LaunchArgs {
     pub pdfium_threads: Option<usize>,
     /// Render whole regions instead of streaming bands (benchmark comparison).
     pub no_progressive: bool,
+    /// Zoom by a flight (as typed zoom, fit and the zoom box do) instead of a wheel step, and
+    /// time from the flight landing to sharp (benchmarking the blur after a zoom lands).
+    pub bench_flight: bool,
     /// Benchmark this page (zero-based) instead of the first.
     pub bench_page: Option<usize>,
     /// Benchmark window size in logical pixels, "WxH" (default 1600x1000).
@@ -68,6 +71,7 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
             }
             "--debug" => out.debug = true,
             "--no-progressive" => out.no_progressive = true,
+            "--bench-flight" => out.bench_flight = true,
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
             "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
             "--bench-page" => out.bench_page = it.next().and_then(|v| v.parse().ok()),
