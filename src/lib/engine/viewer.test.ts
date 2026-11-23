@@ -11,6 +11,51 @@ afterEach(() => {
 });
 
 
+/**
+ * Start a move with `start`, and check that the tiles it renders ahead (at the scale it lands
+ * on) were rendered while it moved but not drawn until it landed (about 190 ms later).
+ */
+async function expectHiddenUntilLanding(start: (v: Viewer) => void): Promise<void> {
+  // Tag every bitmap with its render scale and record what the canvas draws.
+  const drawn: { rs: number; flying: boolean }[] = [];
+  let flying = false;
+  const r = new StubRenderer(doc([{ w: 1190, h: 842 }]));
+  r.auto = true;
+  const base = r.renderRegion.bind(r);
+  r.renderRegion = (id, req, signal) =>
+    base(id, req, signal).then((bs) => {
+      bs?.forEach((b) => ((b as unknown as { rs: number }).rs = req.rs));
+      return bs;
+    });
+  const ctx = new Proxy({} as Record<string, unknown>, {
+    get: (t, k) =>
+      k === "drawImage"
+        ? (b: { rs?: number }) => { if (b.rs !== undefined) drawn.push({ rs: b.rs, flying }); }
+        : k in t ? t[k as string] : () => {},
+    set: (t, k, val) => ((t[k as string] = val), true),
+  });
+  const canvas = { width: 0, height: 0, style: {}, getContext: () => ctx } as unknown as HTMLCanvasElement;
+  const v = new Viewer(canvas, {}, r);
+  v.resize(800, 600, 1);
+  await v.open("C:/x/drawing.pdf", undefined, r);
+  await until(() => v.queueLength === 0 && !v.rendering);
+  flying = true;
+  start(v);
+  for (let k = 0; k < 12; k++) {
+    await vi.advanceTimersByTimeAsync(16);
+    if (!(v as unknown as { animating: boolean }).animating) throw new Error("landed too soon for this test");
+  }
+  flying = false;
+  const inFlight = r.calls.length;
+  await vi.advanceTimersByTimeAsync(400);
+  await until(() => v.queueLength === 0 && !v.rendering);
+  await vi.advanceTimersByTimeAsync(32);
+  const rs = v.renderScale;
+  expect(r.calls.slice(0, inFlight).some((c) => c.req.rs === rs)).toBe(true);
+  expect(drawn.some((d) => d.flying && d.rs === rs)).toBe(false);
+  expect(drawn.some((d) => !d.flying && d.rs === rs)).toBe(true);
+}
+
 describe("Viewer scheduler", () => {
   it("renders straight after open, visible tiles before the preview, two at a time", async () => {
     const { v, r } = await openViewer();
@@ -61,20 +106,111 @@ describe("Viewer scheduler", () => {
     expect(after[0].req.rs).toBe(rs);
   });
 
-  it("settles a wheel zoom 60 ms after its ease lands, not the full settle delay", async () => {
-    const { v, r } = await openViewer([{ w: 1190, h: 842 }], true);
-    await until(() => v.queueLength === 0 && !v.rendering);
-    const before = r.calls.length;
-    const target = v.view.scale * 1.25;
-    v.zoomAt(400, 300, 1.25, true);
-    // Step in single frames so "landed" is accurate to one frame.
-    for (let k = 0; k < 200 && v.view.scale !== target; k++) await vi.advanceTimersByTimeAsync(4);
-    expect(v.view.scale).toBe(target);
-    const landed = performance.now();
-    const rs = v.renderScale;
-    for (let k = 0; k < 100 && r.calls.length === before; k++) await vi.advanceTimersByTimeAsync(4);
-    expect(performance.now() - landed).toBeLessThan(100);
-    expect(r.calls[before].req.rs).toBe(rs);
+  describe("a wheel ease", () => {
+    /** One wheel notch zooming in 2x about (400, 300), from an idle, fully drawn view. */
+    async function notch(auto: boolean) {
+      const { v, r } = await openViewer([{ w: 1190, h: 842 }], true);
+      await until(() => v.queueLength === 0 && !v.rendering);
+      await vi.advanceTimersByTimeAsync(100); // let the open's own "sharp" report go out
+      r.auto = auto;
+      const before = r.calls.length;
+      const startRs = v.renderScale;
+      const target = v.view.scale * 2;
+      v.zoomAt(400, 300, 2, true);
+      return { v, r, before, startRs, target, t0: performance.now() };
+    }
+    /** Step in 4 ms frames until the ease reaches `target`; returns the landing time. */
+    async function land(v: Viewer, target: number): Promise<number> {
+      for (let k = 0; k < 200 && v.view.scale !== target; k++) await vi.advanceTimersByTimeAsync(4);
+      expect(v.view.scale).toBe(target);
+      return performance.now();
+    }
+
+    it("renders its landing view during the ease, at the scale it lands on", async () => {
+      const { v, r, before, startRs, target } = await notch(true);
+      await vi.advanceTimersByTimeAsync(20); // well before it lands
+      expect(v.view.scale).not.toBe(target);
+      const during = r.calls.slice(before).filter((c) => c.req.rs !== startRs);
+      expect(during.length).toBeGreaterThan(0);
+      await land(v, target);
+      await until(() => v.queueLength === 0 && !v.rendering);
+      const rs = v.renderScale;
+      expect(rs).not.toBe(startRs);
+      expect(during.some((c) => c.req.rs === rs)).toBe(true);
+      expect(v.visibleComplete()).toBe(true);
+    });
+
+    it("doesn't render the same tiles again when it lands", async () => {
+      const { v, r, before, startRs, target } = await notch(false); // still running at landing
+      await vi.advanceTimersByTimeAsync(20);
+      const ahead = r.pending().filter((c) => c.req.rs !== startRs);
+      expect(ahead.length).toBeGreaterThan(0);
+      await land(v, target);
+      await vi.advanceTimersByTimeAsync(100);
+      const rs = v.renderScale;
+      const seen = new Map<string, number>();
+      for (const c of r.calls.slice(before)) {
+        if (c.req.rs !== rs || c.signal.aborted) continue;
+        for (const t of c.req.tiles) {
+          const k = `${c.req.page}|${t.i}|${t.j}`;
+          seen.set(k, (seen.get(k) ?? 0) + 1);
+        }
+      }
+      expect([...seen.values()].every((n) => n === 1)).toBe(true);
+      expect(ahead.every((c) => !c.signal.aborted)).toBe(true);
+    });
+
+    it("is sharp within a couple of frames of landing when the renders finished during the ease", async () => {
+      const { v, target } = await notch(true);
+      let sharpAt: number | null = null;
+      void v.whenSharp().then(() => (sharpAt = performance.now()));
+      const landed = await land(v, target);
+      await until(() => sharpAt !== null, 1000);
+      expect(sharpAt).not.toBeNull();
+      // Before this change the 60 ms wait for another notch came first, then the render.
+      expect(sharpAt! - landed).toBeLessThan(50);
+    });
+
+    it("on a burst of notches, keeps only the last notch's renders", async () => {
+      const { v, r, before, startRs } = await notch(false);
+      await vi.advanceTimersByTimeAsync(12);
+      v.zoomAt(400, 300, 2, true);
+      await vi.advanceTimersByTimeAsync(12);
+      v.zoomAt(400, 300, 2, true);
+      const target = (v as unknown as { anim: { target: number } }).anim.target;
+      await land(v, target);
+      const rs = v.renderScale;
+      const calls = r.calls.slice(before);
+      // Every notch started its own landing view; the earlier ones were aborted.
+      const scales = new Set(calls.map((c) => c.req.rs).filter((x) => x !== startRs && x !== rs));
+      expect(scales.size).toBeGreaterThan(0);
+      for (const c of calls) if (c.req.rs !== rs && c.req.tiles.length > 1) expect(c.signal.aborted).toBe(true);
+      // Aborted renders hold their slot until they return (a band already running in PDFium
+      // finishes first); then the last notch's renders start, and nothing else.
+      r.auto = true;
+      r.resolveAll();
+      await until(() => v.queueLength === 0 && !v.rendering);
+      const after = r.calls.slice(before + calls.length);
+      expect(after.some((c) => c.req.rs === rs)).toBe(true);
+      expect(after.every((c) => c.req.rs === rs || c.req.tiles.length === 1)).toBe(true);
+      expect(v.visibleComplete()).toBe(true);
+    });
+
+    it("drops its landing view's renders when a jump to another zoom ends it early", async () => {
+      const { v, r, startRs } = await notch(false);
+      await vi.advanceTimersByTimeAsync(20);
+      const ahead = r.pending().filter((c) => c.req.rs !== startRs);
+      expect(ahead.length).toBeGreaterThan(0);
+      v.setZoom(0.5);
+      expect(ahead.every((c) => c.signal.aborted)).toBe(true);
+    });
+
+    it("keeps its landing view's tiles off screen until it lands, across notches", async () => {
+      await expectHiddenUntilLanding((v) => {
+        v.zoomAt(400, 300, 1.6, true);
+        v.zoomAt(400, 300, 1.6, true);
+      });
+    });
   });
 
   it("renders ahead on a wheel zoom in, so the next notch in needs no render", async () => {
@@ -159,42 +295,7 @@ describe("Viewer scheduler", () => {
     });
 
     it("keeps the destination's tiles off screen until it lands", async () => {
-      // Tag every bitmap with its render scale and record what the canvas draws.
-      const drawn: { rs: number; flying: boolean }[] = [];
-      let flying = false;
-      const r = new StubRenderer(doc([{ w: 1190, h: 842 }]));
-      r.auto = true;
-      const base = r.renderRegion.bind(r);
-      r.renderRegion = (id, req, signal) =>
-        base(id, req, signal).then((bs) => {
-          bs?.forEach((b) => ((b as unknown as { rs: number }).rs = req.rs));
-          return bs;
-        });
-      const ctx = new Proxy({} as Record<string, unknown>, {
-        get: (t, k) =>
-          k === "drawImage"
-            ? (b: { rs?: number }) => { if (b.rs !== undefined) drawn.push({ rs: b.rs, flying }); }
-            : k in t ? t[k as string] : () => {},
-        set: (t, k, val) => ((t[k as string] = val), true),
-      });
-      const canvas = { width: 0, height: 0, style: {}, getContext: () => ctx } as unknown as HTMLCanvasElement;
-      const v = new Viewer(canvas, {}, r);
-      v.resize(800, 600, 1);
-      await v.open("C:/x/drawing.pdf", undefined, r);
-      await until(() => v.queueLength === 0 && !v.rendering);
-      flying = true;
-      v.setZoom(4, 400, 300, true);
-      for (let k = 0; k < 12; k++) await vi.advanceTimersByTimeAsync(16); // about 190 ms
-      flying = false;
-      const inFlight = r.calls.length;
-      await vi.advanceTimersByTimeAsync(300);
-      await until(() => v.queueLength === 0 && !v.rendering);
-      await vi.advanceTimersByTimeAsync(32);
-      const rs = v.renderScale;
-      // Its tiles were rendered during the flight, but none was drawn until it landed.
-      expect(r.calls.slice(0, inFlight).some((c) => c.req.rs === rs)).toBe(true);
-      expect(drawn.some((d) => d.flying && d.rs === rs)).toBe(false);
-      expect(drawn.some((d) => !d.flying && d.rs === rs)).toBe(true);
+      await expectHiddenUntilLanding((v) => v.setZoom(4, 400, 300, true));
     });
   });
 

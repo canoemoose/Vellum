@@ -48,6 +48,12 @@ pub struct LaunchArgs {
     /// Zoom by a flight (as typed zoom, fit and the zoom box do) instead of a wheel step, and
     /// time from the flight landing to sharp (benchmarking the blur after a zoom lands).
     pub bench_flight: bool,
+    /// Zoom by this many wheel notches (1.25x each, 40 ms apart) and time from the ease
+    /// landing to sharp. 1 is one notch, more is a quick spin.
+    pub bench_wheel: Option<u32>,
+    /// Instead of the zoom steps: spin the wheel from 80% (ten notches in at fixed gaps) and
+    /// time every frame, to see whether rendering during a spin makes it stutter.
+    pub bench_spin: bool,
     /// Benchmark this page (zero-based) instead of the first.
     pub bench_page: Option<usize>,
     /// Benchmark window size in logical pixels, "WxH" (default 1600x1000).
@@ -72,6 +78,8 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
             "--debug" => out.debug = true,
             "--no-progressive" => out.no_progressive = true,
             "--bench-flight" => out.bench_flight = true,
+            "--bench-spin" => out.bench_spin = true,
+            "--bench-wheel" => out.bench_wheel = it.next().and_then(|v| v.parse().ok()),
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
             "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
             "--bench-page" => out.bench_page = it.next().and_then(|v| v.parse().ok()),

@@ -3,7 +3,8 @@
 // measures cold start from outside the process, and aggregates medians.
 //
 //   node tools/bench.mjs [--runs 3] [--renderer pdfium] [--pdfium-threads N] [--dpr N] [--exe path]
-//                        [--only substring] [--page N] [--size WxH] [--flight] [files...]
+//                        [--only substring] [--page N] [--size WxH] [--flight] [--wheel N] [--spin]
+//                        [files...]
 //
 // --page N zooms on page N (1-based) instead of the first; --size WxH sets the window in
 // logical pixels (default 1600x1000).
@@ -49,7 +50,14 @@ if (noProgressive) argv.splice(argv.indexOf("--no-progressive"), 1);
 // then landing -> sharp, the still wait after the flight lands.
 const flight = argv.includes("--flight");
 if (flight) argv.splice(argv.indexOf("--flight"), 1);
-const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "") + (noProgressive ? "-noprog" : "") + (flight ? "-flight" : "") +
+// --wheel N: zoom by N wheel notches 40 ms apart (1: one notch; 3: a quick spin), timed from
+// the ease landing to sharp, like --flight.
+const wheel = opt("wheel", null);
+// --spin: instead of the zoom steps, spin the wheel from 80% (ten notches at 100, 200 and
+// 300 ms gaps) and count long frames. Use with --page.
+const spinMode = argv.includes("--spin");
+if (spinMode) argv.splice(argv.indexOf("--spin"), 1);
+const tag = renderer + (threads ? `-t${threads}` : "") + (dpr ? `-dpr${dpr}` : "") + (noProgressive ? "-noprog" : "") + (flight ? "-flight" : "") + (wheel ? `-wheel${wheel}` : "") + (spinMode ? "-spin" : "") +
   (page ? `-p${page}` : "") + (size ? `-${size}` : "");
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -85,6 +93,8 @@ function runOnce(file, outJson) {
     if (threads) args.push("--pdfium-threads", threads);
     if (noProgressive) args.push("--no-progressive");
     if (flight) args.push("--bench-flight");
+    if (wheel) args.push("--bench-wheel", wheel);
+    if (spinMode) args.push("--bench-spin");
     if (page) args.push("--bench-page", String(Number(page) - 1));
     if (size) args.push("--bench-size", size);
     const p = spawn(exe, args, {
@@ -178,6 +188,21 @@ for (const file of files) {
     dpr: ok[0]?.dpr ?? null,
     viewport: ok[0]?.viewport ?? null,
     zooms: z,
+    // --spin: per gap, every rep of every run pooled.
+    spin: spinMode
+      ? [100, 200, 300].map((gapMs) => {
+          const reps = ok.flatMap((d) => d.spin?.find((g) => g.gapMs === gapMs)?.reps ?? []);
+          return {
+            gapMs,
+            reps: reps.length,
+            droppedMedian: median(reps.map((r) => r.dropped)),
+            droppedTotal: reps.reduce((a, r) => a + r.dropped, 0),
+            over50Total: reps.reduce((a, r) => a + r.over50, 0),
+            p95Ms: median(reps.map((r) => r.p95Ms)),
+            maxMs: reps.length ? Math.max(...reps.map((r) => r.maxMs)) : null,
+          };
+        })
+      : null,
     errors: perRun.filter((d) => !d || d.error).map((d) => d?.error?.split("\n")[0] ?? "no result"),
   };
   summary.files.push(entry);
@@ -187,7 +212,7 @@ for (const file of files) {
 // Markdown tables for RESULTS.md
 const n = (v, d = 0) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 let md = `### ${tag} (median of ${runs} runs)\n\n`;
-md += `| File | Cold start (ms) | First band (ms) | First page (ms) | Pan fps fit / 400% / 1600% | ${flight ? "Landing→sharp" : "Settle→sharp"} ms fit / 400% / 1600% | Peak memory (MB) | Faults |\n`;
+md += `| File | Cold start (ms) | First band (ms) | First page (ms) | Pan fps fit / 400% / 1600% | ${flight || wheel ? "Landing→sharp" : "Settle→sharp"} ms fit / 400% / 1600% | Peak memory (MB) | Faults |\n`;
 md += "|---|---:|---:|---:|---|---|---:|---|\n";
 for (const e of summary.files) {
   const zs = ["fit", "400", "1600"].map((l) => e.zooms[l]);
@@ -208,6 +233,14 @@ for (const e of summary.files) {
     const q = e.zooms[l];
     md += `| ${e.file} | ${l === "fit" ? `fit (${n(q.zoomPct, 1)}%)` : l + "%"} | ${n(q.panFpsMin)} | ${n(q.intervalP95Ms, 1)} / ${n(q.maxIntervalMs, 1)} | ${n(q.dropped)} | ${n(q.drawP95Ms, 2)} | ${n(q.firstBandMs)} | ${n(q.settleMs)} / ${n(q.settleMaxMs)} | ${n(q.regions)} |\n`;
   }
+}
+if (spinMode) {
+  md = `### ${tag} spin (median of ${runs} runs x 3 reps)\n\n`;
+  md += "| File | Gap between notches (ms) | Dropped frames per spin (median) | Frames over 50 ms (all spins) | Frame p95 (ms) | Longest frame (ms) |\n";
+  md += "|---|---:|---:|---:|---:|---:|\n";
+  for (const e of summary.files)
+    for (const g of e.spin ?? [])
+      md += `| ${e.file} | ${g.gapMs} | ${n(g.droppedMedian)} | ${n(g.over50Total)} of ${g.reps} | ${n(g.p95Ms, 1)} | ${n(g.maxMs, 1)} |\n`;
 }
 writeFileSync(join(root, "bench-output", `summary-${tag}.md`), md);
 console.log("\n" + md);
