@@ -23,9 +23,9 @@ installed copies update themselves: see Releasing below and
   Image swaps (`pdfium_swap.rs`) are always on and log each swap and colour-profile check
   as `[swap]` lines on stderr.
 - Speed work: start from [docs/speed-handoff.md](docs/speed-handoff.md) (state, numbers,
-  ideas ranked, how to measure). The current baseline against other viewers, the regression
-  on very long pages and the agreed order of fixes are in
-  [docs/speed-diagnosis-scope.md](docs/speed-diagnosis-scope.md): read its "Start here".
+  ideas ranked, how to measure). The current baseline, the comparison with other viewers and
+  the agreed order of fixes are in [docs/speed-diagnosis-scope.md](docs/speed-diagnosis-scope.md)
+  (current truth; its dated log is [docs/speed-diagnosis-log.md](docs/speed-diagnosis-log.md)).
 - `tools/viewer-bench` (C#, `dotnet build -c Release` in that folder): times Vellum and six
   other viewers from outside by watching the screen. `ViewerBench.exe run [--apps a,b]
   [--runs 3] [--quiet 10000] files...` for cold opens, fit page and fit width, and a Ctrl+wheel

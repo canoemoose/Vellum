@@ -107,7 +107,7 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
    banded even for a small region (`HEAVY_PAGE_OBJECTS`, `bands_for` in `pdfium.rs`).
    Aerial drawing, before / after: fit 2339 / 450 ms, first band 3432 / 1464 ms, peak
    memory 4998 / 3221 MB. Ordinary drawings unchanged. Details and the threshold's
-   reasoning: speed-diagnosis-scope.md, "Step 1 of Next steps". The notes below are the
+   reasoning: speed-diagnosis-log.md, "Step 1 of Next steps". The notes below are the
    original probe.* *Probed 10 and 11 Nov; parked by Matt, may revisit with the native surface.* One
    746 × 14400 pt page with 327,207 objects (280,109 paths, 46,202 text, 896 images: 730
    DeviceRGB JPEG tiles of about 1 MP, 166 small Indexed images). Bench: first page about
