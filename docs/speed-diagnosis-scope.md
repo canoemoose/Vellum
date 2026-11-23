@@ -99,7 +99,7 @@ across viewers are not usable.
 
 1. **The still blur after a zoom lands**: the ease, then a 60 ms settle delay that exists only
    for wheel notches, then the render. Design, not regression. **Fixed for flights, merged 23 Nov**
-   (see "Next steps", 3). Wheel zoom in progress on branch `wheel-sharp`.
+   (see "Next steps", 3). Wheel zoom fixed on branch `wheel-sharp`, not merged.
 2. **Stage plan at 1600%**: 198 ms on 18 Nov, 82 to 83 ms on both old and new builds on
    23 Nov. Probably a bench artefact (stale same-scale renders), not proven. Watch, don't chase.
 3. **Unexplained, low priority:** repeat fit renders of the aerial drawing took 1.26 s inside
@@ -132,11 +132,55 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
    figure is a bench artefact (two of three runs caught the previous step's "sharp" report:
    the flight bench needs a frame's wait after `dropTiles` before `whenSharp`; one real run
    read 232 ms). Matt tried it on 23 Nov and judged it good. 2c (ease length) still needs his go-ahead.
-   **3d. The wheel: go-ahead 23 Nov, building on branch `wheel-sharp`.** Each notch renders
+   **3d. The wheel: done on branch `wheel-sharp` (not merged), option (a), Matt's choice
+   23 Nov after the (b) comparison below.** Each notch renders
    its landing view during the ease, held off screen until it lands, with no 60 ms wait once
    that render is under way. Plan (a): render on every notch, aborting the last; bench a
    burst of notches against a single notch, and fall back to (b), render once notches pause
    for a frame, only if bursts get slower.
+   6 new tests (each fails on the old code), all 1233 front-end pass.
+   `tools/bench.mjs --wheel N` (new: N notches 40 ms apart, timed from landing to sharp;
+   the bench also now skips a stale "sharp" report from the step before). Median of 3,
+   same session, `wheel-before` = the same tree with main's viewer.ts:
+
+   | Landing to sharp, fit / 400% / 1600% (ms) | 1 notch before | after | 3 notches before | after |
+   |---|---|---|---|---|
+   | Curtis Hall p1 | 133 / 183 / 150 | 16 / 33 / 17 | 149 / 166 / 200 | 15 / 176 / 45 |
+   | Stage plan | 183 / 167 / 150 | 16 / 17 / 17 | 200 / 250 / 183 | 16 / 132 / 89 |
+   | Aerial drawing | 533 / 233 / 200 | 516 / 50 / 199 | 648 / 284 / 216 | 583 / 283 / 192 |
+
+   One notch: ordinary drawings land sharp (about 16 ms is the bench's floor). A burst gains
+   less, and nothing at Curtis Hall 400%: each notch's renders are aborted by the next, but a
+   band already running finishes first, holding the workers. Not slower than before, so by
+   the rule above (a) stands, but (b) would likely recover the burst. The aerial drawing, looked
+   at 23 Nov (timing log, plus a throwaway test of the bench's steps at its page size):
+   - **Fit is a bench artefact.** Its fit is 5%, the minimum zoom, so the bench's start
+     "1.25x out" is clamped and the notch barely moves (a 32 ms ease). Both builds time a
+     cold render from `dropTiles`; nothing to hide it in. A flight always takes 220 ms, which
+     is why flights gained there.
+   - **400% and 1600%: the scheduling is right.** Every landing tile is planned during the
+     ease, at the scale it lands on, rendered once, and nothing is planned after landing.
+     PDFium's bands finish in 30 to 175 ms, inside the 240 ms ease. Yet landing to sharp
+     is still 50 to 200 ms and swings run to run (this run: 150 to 167 at 400%, 49 to 66 at
+     1600%; the bench's medians the other way round). So the time goes after PDFium:
+     getting bands of up to about 20 MB each to the webview and into the cache, the IPC cost
+     of handoff idea 1. Likely, not proven: band delivery competes with the ease's frames
+     on the webview's main thread. Proving it needs front-end timestamps (not added).
+   - **(b) built and benched 23 Nov: worse.** A wheel ease starts rendering once notches
+     pause for 50 ms (`WHEEL_PAUSE_MS`). Same session, median of 3, landing to sharp (ms),
+     fit / 400% / 1600% (Matt's own Vellum was open, sharing WebView2's browser process,
+     which also lowers the memory figures):
+
+     | | 3 notches before | (a) | (b) | 1 notch (a) | (b) |
+     |---|---|---|---|---|---|
+     | Curtis Hall | 133 / 166 / 200 | 16 / 97 / 83 | 17 / 45 / 104 | 16 / 17 / 17 | 16 / 99 / 66 |
+     | Stage plan | 183 / 200 / 167 | 16 / 58 / 111 | 16 / 68 / 71 | 17 / 17 / 17 | 16 / 99 / 70 |
+     | Aerial drawing | 566 / 282 / 215 | 666 / 299 / 225 | 433 / 200 / 200 | 384 / 200 / 100 | 468 / 50 / 245 |
+
+     On a burst (a) and (b) are within the noise (this session's (a) burst was much better
+     than the first session's). On one notch, the common case, (b) costs 50 to 80 ms at 400%
+     and 1600%: the pause pushes the render past the end of the ease. Back to (a) (Matt, 23 Nov);
+     (b) removed. For Matt to try by eye: `%TEMP%\vellum-smoke\wheel-after`.
 4. **Then finish the cross-viewer zoom comparison** (parked, below).
 
 ## Overnight run, 22 to 23 Nov (autonomous): done
