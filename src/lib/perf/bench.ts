@@ -3,7 +3,7 @@
 // tools/bench.mjs launches the release build repeatedly and aggregates the JSON.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Viewer } from "../engine/viewer";
+import type { SharpEvent, Viewer } from "../engine/viewer";
 import { fitRect } from "../view/viewMath";
 import {
   type LaunchArgs,
@@ -27,6 +27,9 @@ const PAN_RADIUS = 400; // CSS px; one lap per PAN_MS, about 1250 px/s
 const TIMEOUT = 120000;
 /** The viewer's default flight (Viewer.animateTo). */
 const FLIGHT_MS = 220;
+/** --bench-wheel: one notch, and the gap between notches in a spin. */
+const NOTCH = 1.25;
+const NOTCH_GAP_MS = 40;
 
 interface PanResult {
   fps: number;
@@ -50,6 +53,23 @@ interface ZoomResult {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise<number>((r) => requestAnimationFrame(r));
+
+/**
+ * The first "sharp" report at or after `landed()` (ms, performance.now), with its time.
+ * Listens from the start, so a report in the frame right after landing isn't missed; one
+ * before landing is stale (a move ends any measurement) and is waited past.
+ */
+function sharpAfter(v: Viewer, landed: () => number): Promise<{ ev: SharpEvent; t: number }> {
+  return new Promise((res) => {
+    const listen = () =>
+      v.whenSharp().then((ev) => {
+        const t = performance.now();
+        if (t < landed()) listen();
+        else res({ ev, t });
+      });
+    listen();
+  });
+}
 
 function timeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([p, sleep(ms).then(() => null)]);
@@ -122,7 +142,8 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     if ((args as unknown as { noProgressive?: boolean }).noProgressive) v.progressive = false;
     out.progressive = v.progressive;
     const flight = !!args.benchFlight;
-    out.zoomBy = flight ? "flight" : "wheel";
+    const notches = !flight && args.benchWheel ? Math.max(1, Math.round(args.benchWheel)) : 0;
+    out.zoomBy = flight ? "flight" : notches ? `wheel-${notches}` : "wheel";
     out.refreshHz = await measureRefresh();
     await resetMemoryPeak();
 
@@ -185,19 +206,48 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
         pan: [],
       };
       for (let rep = 0; rep < REPS; rep++) {
-        // Start 1.25x out from the target, centred on the page centre, and let it go sharp.
+        // Start 1.25x out from the target (1.25x per notch for --bench-wheel), centred on the
+        // page centre, and let it go sharp.
+        const out0 = notches ? NOTCH ** notches : 1.25;
         v.fit("page");
         const ax = v.vw / 2;
         const ay = v.vh / 2;
         v.setView(
-          { scale: targetScale / 1.25, tx: ax - (rect.x + rect.w / 2) * (targetScale / 1.25), ty: ay - (rect.y + rect.h / 2) * (targetScale / 1.25) },
+          { scale: targetScale / out0, tx: ax - (rect.x + rect.w / 2) * (targetScale / out0), ty: ay - (rect.y + rect.h / 2) * (targetScale / out0) },
           "jump",
         );
         await v.whenIdle(TIMEOUT);
         // Earlier reps cached the target scale; drop tiles so every rep renders from cold
         // (previews stay, as they would in real use).
         v.dropTiles();
+        // Two frames, so a "sharp" report from the step before has gone out before we listen
+        // (one frame let it through on the aerial drawing).
         await frame();
+        await frame();
+        if (notches) {
+          // --bench-wheel N: N notches 40 ms apart (one, or a quick spin), timed from the
+          // frame the ease lands to sharp: the still, blurry wait a user sees. A "sharp"
+          // report can't come mid-ease (the ease ends any measurement), so one that arrives
+          // before landing is stale and is waited past.
+          const moving = () => (v as unknown as { animating: boolean }).animating;
+          let landed = Infinity;
+          const got = timeout(sharpAfter(v, () => landed), TIMEOUT);
+          for (let k = 0; k < notches; k++) {
+            if (k) await sleep(NOTCH_GAP_MS);
+            v.zoomAt(ax, ay, NOTCH, true);
+          }
+          while (moving()) await frame();
+          landed = performance.now();
+          const s = await got;
+          const ev = s?.ev ?? null;
+          r.settleToSharpMs.push(s ? s.t - landed : null);
+          r.settleToFirstBandMs.push(ev ? ev.settleToFirstBandMs : null);
+          r.complete.push(ev ? ev.complete : false);
+          r.regions.push(ev ? ev.regions : 0);
+          await v.whenIdle(TIMEOUT);
+          sampleHeap();
+          continue;
+        }
         // One animated zoom step to the target (like a couple of wheel notches), then
         // measure settle -> all visible tiles sharp.
         const sharp = v.whenSharp();
@@ -207,9 +257,11 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
           // landing is taken as start + FLIGHT_MS; the real one is up to a frame later.
           const to = { scale: targetScale, tx: ax - (rect.x + rect.w / 2) * targetScale, ty: ay - (rect.y + rect.h / 2) * targetScale };
           const t0 = performance.now();
+          const got = timeout(sharpAfter(v, () => t0 + FLIGHT_MS), TIMEOUT);
           v.animateTo(to, FLIGHT_MS);
-          const ev = await timeout(sharp, TIMEOUT);
-          r.settleToSharpMs.push(ev ? Math.max(0, performance.now() - t0 - FLIGHT_MS) : null);
+          const s = await got;
+          const ev = s?.ev ?? null;
+          r.settleToSharpMs.push(s ? s.t - t0 - FLIGHT_MS : null);
           r.settleToFirstBandMs.push(ev ? ev.settleToFirstBandMs : null);
           r.complete.push(ev ? ev.complete : false);
           r.regions.push(ev ? ev.regions : 0);

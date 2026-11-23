@@ -15,6 +15,8 @@ export interface LaunchArgs {
   benchPage?: number | null;
   /** Zoom by a flight and time landing to sharp (see bench.ts). */
   benchFlight?: boolean;
+  /** Zoom by this many wheel notches and time landing to sharp (see bench.ts). */
+  benchWheel?: number | null;
   processStartEpochMs: number;
 }
 
