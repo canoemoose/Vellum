@@ -50,19 +50,28 @@ changes. It is the one bit of maths everything else depends on, so it has the mo
 1. **Instant stage.** Every input changes the view and requests a frame. The compositor
    redraws from whatever bitmaps are cached, scaled to the new view. Nothing renders.
    Wheel notches animate (exponential ease, ~45 ms time constant) towards a target scale;
-   touchpad pinch and drags apply directly.
-2. **Sharp stage.** After the last input ("settle": 60 ms after a wheel zoom's ease lands,
-   at once when a flight lands, 150 ms after anything else, such as a pinch), `plan()` lists
+   touchpad pinch and drags apply directly. The exception: a flight or a wheel ease renders
+   where it will land while it moves (below).
+2. **Sharp stage.** After the last input ("settle": at once when a flight or a wheel ease
+   lands, 150 ms after anything else, such as a pinch), `plan()` lists
    the tiles that cover the viewport at the render scale for the current zoom, plus a
    one-tile prefetch ring, skips any already cached or already rendering, and queues region
    renders: visible tiles first, nearest the centre first, then the ring, then a page
    preview if the page has none.
 
-**Flights render ahead.** A flight (fit, typed zoom, actual size: `animateTo`) knows where
-it will land, so it plans and starts that view's renders as it begins (`renderAhead`), at
-the render scale it will land on. Those tiles go into the cache but aren't drawn until it
-lands, so the picture swaps cleanly rather than sharpening in patches mid-flight. Landing
-keeps those renders; any other input ends the flight and drops them (`cancelFlight`).
+**Flights and wheel eases render ahead.** A flight (fit, typed zoom, actual size:
+`animateTo`) knows where it will land, so it plans and starts that view's renders as it
+begins (`renderAhead`), at the render scale it will land on. Those tiles go into the cache
+but aren't drawn until it lands, so the picture swaps cleanly rather than sharpening in
+patches mid-flight. Landing keeps those renders; any other input ends the flight and drops
+them (`cancelFlight`). A wheel notch does the same for its ease (`renderWheelAhead`): the
+landing view is the target scale about the cursor. Each further notch re-plans for the new
+target and aborts renders at the previous one's scale (a band already running in PDFium
+still finishes); every scale started during the gesture stays hidden until it lands.
+Waiting for the notches to pause before rendering was tried and measured worse: on one
+notch it pushed the render past the end of the ease, and bursts gained nothing clear. A pan
+mid-ease moves the anchor, so the frame re-plans. Since rendering began during the ease,
+which also covers the wait for another notch, there's no settle delay after it lands.
 
 **Render scales** (`chooseRenderScale` in `tiles.ts`) are quantised to steps of 2^¼, so
 zooming back and forth lands on scales already cached, and they run ahead of the display:
