@@ -280,8 +280,11 @@ export class Viewer {
   /** A pan moved the view since the last plan: re-plan on the next frame, without waiting. */
   private panPending = false;
   private anim: { target: number; ax: number; ay: number } | null = null;
-  /** An eased move to a whole new view (fit, a typed zoom, actual size): see animateTo. */
-  private flight: { from: View; to: View; t0: number; dur: number } | null = null;
+  /**
+   * An eased move to a whole new view (fit, a typed zoom, actual size): see animateTo. `rs`
+   * is the render scale its destination is being rendered at while it flies (null: none).
+   */
+  private flight: { from: View; to: View; t0: number; dur: number; rs: number | null } | null = null;
   /** The fit the view is at, if it hasn't been moved since: refitted when the window resizes. */
   private fitted: FitMode | null = null;
   /** A pinch held at a sticky zoom stop: the zoom factor gathered since it stopped. */
@@ -297,7 +300,19 @@ export class Viewer {
 
   private stopAnimations(): void {
     this.anim = null;
+    this.cancelFlight();
+  }
+
+  /**
+   * End a flight before it lands: drop the renders started for its destination, unless they
+   * are at the scale on screen (then they're still useful).
+   */
+  private cancelFlight(): void {
+    const f = this.flight;
     this.flight = null;
+    if (f?.rs == null || f.rs === this.renderScale) return;
+    this.queue = this.queue.filter((j) => j.rs !== f.rs);
+    for (const j of this.active) if (j.rs === f.rs) j.ac?.abort();
   }
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private settleAt = 0;
@@ -673,7 +688,7 @@ export class Viewer {
     // The drawing stays put relative to the window: refit if it was at a fit, else keep the
     // point at the centre of the view at the centre (not the top-left corner).
     if (this.doc && (oldW !== cssW || oldH !== cssH) && oldW > 1 && oldH > 1) {
-      this.flight = null;
+      this.cancelFlight();
       const r = this.fitted ? this.fitRectFor(this.fitted) : null;
       if (this.fitted && r) {
         const kept = keepCentre(this.view, oldW, oldH, cssW, cssH);
@@ -706,7 +721,7 @@ export class Viewer {
   }
 
   panBy(dx: number, dy: number): void {
-    this.flight = null;
+    this.cancelFlight();
     this.fitted = null;
     if (this.anim) {
       // Keep the zoom anchor glued to the content while panning mid-animation.
@@ -795,7 +810,7 @@ export class Viewer {
    * cross one lands on it, and a pinch holds there until it has gone 8% further.
    */
   zoomAt(sx: number, sy: number, factor: number, animate: boolean): void {
-    this.flight = null;
+    this.cancelFlight();
     this.fitted = null;
     if (animate) {
       const base = this.anim ? this.anim.target : this.view.scale;
@@ -826,13 +841,33 @@ export class Viewer {
     }
   }
 
-  /** Ease to a whole new view over `ms` (fit, a typed zoom, actual size). */
+  /**
+   * Ease to a whole new view over `ms` (fit, a typed zoom, actual size). The destination is
+   * known from the start, so it renders while the view moves (see renderAhead) and the
+   * picture is usually sharp, or nearly, when it lands.
+   */
   animateTo(target: View, ms = 220): void {
     this.anim = null;
     const to = this.doc ? constrainView(target, this.layout.bounds, this.vw, this.vh) : target;
-    this.flight = { from: { ...this.view }, to, t0: performance.now(), dur: ms };
+    this.flight = { from: { ...this.view }, to, t0: performance.now(), dur: ms, rs: null };
     this.inputActivity(true);
+    this.renderAhead();
     this.requestFrame();
+  }
+
+  /**
+   * Plan and start the flight's destination at the render scale it will land on (the same
+   * choice updateRenderRs makes on landing). Its tiles go into the cache but stay off screen
+   * until the flight lands (see draw), so the picture swaps cleanly instead of sharpening in
+   * patches while it moves. Any other input ends the flight, and a change of scale aborts
+   * renders at other scales as usual.
+   */
+  private renderAhead(): void {
+    const f = this.flight;
+    if (!f || !this.doc) return;
+    f.rs = chooseRenderScale(this.renderRs || null, scaleKey(f.to.scale * this.dpr));
+    this.plan(f.to, f.rs);
+    this.pump();
   }
 
   zoomStep(dir: 1 | -1): void {
@@ -1196,6 +1231,8 @@ export class Viewer {
    * carries on throughout a drag and the newly uncovered strip fills in as you go.
    */
   private get renderBlocked(): boolean {
+    // A flight's destination is known: render it while flying (renderAhead).
+    if (this.flight?.rs != null && !this.anim) return false;
     return this.animating || performance.now() - this.lastScaleInput < this.scaleSettleMs;
   }
 
@@ -1274,15 +1311,23 @@ export class Viewer {
     return tileRangeForRect(l.x, l.y, l.x + l.w, l.y + l.h, size.w, size.h, grid, rs, margin);
   }
 
-  /** Work out which tiles are missing at the current scale and queue region renders. */
-  private plan(): void {
+  /**
+   * Work out which tiles are missing at render scale `rs` for `view` (by default the current
+   * ones) and queue region renders. Tiles already being rendered at that scale by a job that
+   * hasn't been aborted are left out: a flight's renders are still running when it lands.
+   */
+  private plan(view: View = this.view, rs: number = this.renderScale): void {
     if (!this.doc) return;
-    const rs = this.renderScale;
-    const vis = visibleWorldRect(this.view, this.vw, this.vh);
+    const vis = visibleWorldRect(view, this.vw, this.vh);
     const cx = this.vw / 2;
     const cy = this.vh / 2;
     const jobs: Job[] = [];
     const maxSide = Math.max(1, Math.floor(this.opts.maxRegion / TILE));
+    const busy = new Set<string>();
+    for (const a of this.active) {
+      if (a.kind !== "tiles" || a.rs !== rs || a.ac?.signal.aborted) continue;
+      for (const t of a.req.tiles) busy.add(tileKey(a.page, a.rs, t.i, t.j));
+    }
 
     for (const p of pagesInRect(this.layout, vis)) {
       const rect = this.layout.rects[p]!;
@@ -1295,7 +1340,7 @@ export class Viewer {
       const missingRing: { i: number; j: number }[] = [];
       for (let j = ring.j0; j <= ring.j1; j++) {
         for (let i = ring.i0; i <= ring.i1; i++) {
-          if (this.cache.peek(p, rs, i, j)) continue;
+          if (this.cache.peek(p, rs, i, j) || busy.has(tileKey(p, rs, i, j))) continue;
           const inCore = i >= core.i0 && i <= core.i1 && j >= core.j0 && j <= core.j1;
           (inCore ? missingCore : missingRing).push({ i, j });
         }
@@ -1310,8 +1355,8 @@ export class Viewer {
               if (set.has(i * 100003 + j)) tiles.push(tileSpec(grid, i, j));
           const req = regionRequest(p, rs, grid, reg, tiles);
           const [X, Y] = rotatePoint((req.x + req.w / 2) / rs, (req.y + req.h / 2) / rs, size, this.rotationDeg);
-          const sx = (rect.x + X) * this.view.scale + this.view.tx;
-          const sy = (rect.y + Y) * this.view.scale + this.view.ty;
+          const sx = (rect.x + X) * view.scale + view.tx;
+          const sy = (rect.y + Y) * view.scale + view.ty;
           jobs.push({ kind: "tiles", page: p, rs, req, prio, dist: Math.hypot(sx - cx, sy - cy) });
         }
       }
@@ -1632,9 +1677,13 @@ export class Viewer {
       if (e >= 1) {
         this.view = f.to;
         this.flight = null;
+        // Keeps the renders started for this destination (same scale), drops the rest.
         this.inputActivity(true);
-        this.scaleSettleMs = Math.min(WHEEL_SETTLE_MS, this.opts.settleMs);
-        this.scheduleSettle();
+        // No settle delay: it waits for another wheel notch, and a flight has none to come.
+        if (this.settleTimer) clearTimeout(this.settleTimer);
+        this.settleTimer = null;
+        this.scaleSettleMs = 0;
+        this.onSettle();
       } else {
         this.lastInput = performance.now();
         this.requestFrame();
@@ -1707,6 +1756,10 @@ export class Viewer {
     const target = this.renderScale;
     const vis = visibleWorldRect(this.view, this.vw, this.vh);
     const pages = pagesInRect(this.layout, vis);
+    // A flight's destination tiles stay hidden until it lands (see renderAhead), unless they
+    // are at the scale already on screen.
+    const ahead = this.flight?.rs;
+    const hidden = ahead != null && ahead !== target ? ahead : null;
 
     for (const p of pages) {
       const r = this.layout.rects[p]!;
@@ -1753,7 +1806,7 @@ export class Viewer {
 
       // Fallback layers (other scales) underneath, then bands still rendering at the target
       // scale, then the target's tiles. See fallbackScales: sharper copies go on top.
-      const scales = fallbackScales(this.cache.scalesFor(p), target);
+      const scales = fallbackScales(this.cache.scalesFor(p), target).filter((s) => s !== hidden);
       const drawTiles = (rs: number) => {
         const grid = tileGrid(size, rs);
         const range = this.pageRange(p, grid, rs, vis, 0);

@@ -94,6 +94,110 @@ describe("Viewer scheduler", () => {
     expect(v.visibleComplete()).toBe(true);
   });
 
+  describe("a flight (typed zoom, fit, actual size)", () => {
+    /** Zoom in 4x as a 220 ms flight from an idle, fully drawn view. */
+    async function fly(auto: boolean) {
+      const { v, r } = await openViewer([{ w: 1190, h: 842 }], true);
+      await until(() => v.queueLength === 0 && !v.rendering);
+      await vi.advanceTimersByTimeAsync(100); // let the open's own "sharp" report go out
+      r.auto = auto;
+      const before = r.calls.length;
+      const startRs = v.renderScale;
+      v.setZoom(4, 400, 300, true);
+      return { v, r, before, startRs, t0: performance.now() };
+    }
+
+    it("renders the destination while it flies, at the scale it lands on", async () => {
+      const { v, r, before, startRs } = await fly(true);
+      await vi.advanceTimersByTimeAsync(40); // well before the 220 ms landing
+      const during = r.calls.slice(before).filter((c) => c.req.rs !== startRs);
+      expect(during.length).toBeGreaterThan(0);
+      await vi.advanceTimersByTimeAsync(300);
+      await until(() => v.queueLength === 0 && !v.rendering);
+      const rs = v.renderScale;
+      expect(rs).not.toBe(startRs);
+      expect(during.some((c) => c.req.rs === rs)).toBe(true);
+      expect(v.visibleComplete()).toBe(true);
+    });
+
+    it("doesn't render the same tiles again when it lands", async () => {
+      const { v, r, before } = await fly(false); // hold renders: still running at landing
+      await vi.advanceTimersByTimeAsync(40);
+      const ahead = r.pending().filter((c) => c.req.rs !== r.calls[0].req.rs);
+      expect(ahead.length).toBeGreaterThan(0);
+      await vi.advanceTimersByTimeAsync(300); // landed
+      const rs = v.renderScale;
+      const key = (c: (typeof ahead)[number]) => c.req.tiles.map((t) => `${c.req.page}|${t.i}|${t.j}`);
+      const seen = new Map<string, number>();
+      for (const c of r.calls.slice(before)) {
+        if (c.req.rs !== rs || c.signal.aborted) continue;
+        for (const k of key(c)) seen.set(k, (seen.get(k) ?? 0) + 1);
+      }
+      expect([...seen.values()].every((n) => n === 1)).toBe(true);
+      expect(ahead.every((c) => !c.signal.aborted)).toBe(true);
+    });
+
+    it("is sharp within a couple of frames of landing when the renders finished in flight", async () => {
+      const { v, t0 } = await fly(true);
+      let sharpAt: number | null = null;
+      void v.whenSharp().then(() => (sharpAt = performance.now()));
+      await until(() => sharpAt !== null, 1000);
+      expect(sharpAt).not.toBeNull();
+      // Landing is 220 ms after the start (plus up to a frame); before this change the
+      // settle delay alone added 60 ms after it.
+      expect(sharpAt! - t0).toBeGreaterThanOrEqual(220);
+      expect(sharpAt! - t0 - 220).toBeLessThan(50);
+    });
+
+    it("drops the destination's renders when a pan ends it early", async () => {
+      const { v, r, startRs } = await fly(false);
+      await vi.advanceTimersByTimeAsync(40);
+      const ahead = r.pending().filter((c) => c.req.rs !== startRs);
+      expect(ahead.length).toBeGreaterThan(0);
+      v.panBy(20, 0);
+      expect(ahead.every((c) => c.signal.aborted)).toBe(true);
+    });
+
+    it("keeps the destination's tiles off screen until it lands", async () => {
+      // Tag every bitmap with its render scale and record what the canvas draws.
+      const drawn: { rs: number; flying: boolean }[] = [];
+      let flying = false;
+      const r = new StubRenderer(doc([{ w: 1190, h: 842 }]));
+      r.auto = true;
+      const base = r.renderRegion.bind(r);
+      r.renderRegion = (id, req, signal) =>
+        base(id, req, signal).then((bs) => {
+          bs?.forEach((b) => ((b as unknown as { rs: number }).rs = req.rs));
+          return bs;
+        });
+      const ctx = new Proxy({} as Record<string, unknown>, {
+        get: (t, k) =>
+          k === "drawImage"
+            ? (b: { rs?: number }) => { if (b.rs !== undefined) drawn.push({ rs: b.rs, flying }); }
+            : k in t ? t[k as string] : () => {},
+        set: (t, k, val) => ((t[k as string] = val), true),
+      });
+      const canvas = { width: 0, height: 0, style: {}, getContext: () => ctx } as unknown as HTMLCanvasElement;
+      const v = new Viewer(canvas, {}, r);
+      v.resize(800, 600, 1);
+      await v.open("C:/x/drawing.pdf", undefined, r);
+      await until(() => v.queueLength === 0 && !v.rendering);
+      flying = true;
+      v.setZoom(4, 400, 300, true);
+      for (let k = 0; k < 12; k++) await vi.advanceTimersByTimeAsync(16); // about 190 ms
+      flying = false;
+      const inFlight = r.calls.length;
+      await vi.advanceTimersByTimeAsync(300);
+      await until(() => v.queueLength === 0 && !v.rendering);
+      await vi.advanceTimersByTimeAsync(32);
+      const rs = v.renderScale;
+      // Its tiles were rendered during the flight, but none was drawn until it landed.
+      expect(r.calls.slice(0, inFlight).some((c) => c.req.rs === rs)).toBe(true);
+      expect(drawn.some((d) => d.flying && d.rs === rs)).toBe(false);
+      expect(drawn.some((d) => !d.flying && d.rs === rs)).toBe(true);
+    });
+  });
+
   it("keeps up to one small region per backend worker in flight, but only two large ones", async () => {
     const pages = Array.from({ length: 20 }, () => ({ w: 1190, h: 842 }));
     const { v, r } = await openViewer(pages, false);
