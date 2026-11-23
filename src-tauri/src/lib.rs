@@ -271,15 +271,18 @@ async fn doc_thumbnail(
     Ok(tauri::ipc::Response::new(buf))
 }
 
-/// How many bands a page's large renders use, or null if not known yet. Never waits on a worker.
+/// How many workers a `w` x `h` region of a page renders on, or null if not known yet. Never
+/// waits on a worker.
 #[tauri::command]
 fn doc_known_bands(
     pdf: tauri::State<'_, PdfiumState>,
     docs: tauri::State<'_, Arc<Docs>>,
     doc_id: u64,
     page: usize,
+    w: i32,
+    h: i32,
 ) -> Result<Option<usize>, String> {
-    docs.known_bands(&pdf, doc_id, page)
+    docs.known_bands(&pdf, doc_id, page, w, h)
 }
 
 /// The page's text (empty for images).

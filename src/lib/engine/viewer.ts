@@ -1371,19 +1371,20 @@ export class Viewer {
   }
 
   /**
-   * Find out how many workers a running render occupies (see idleForThumbnails). Small
-   * regions always use one. A large one asks the backend, which knows once it has planned
-   * the page's first large render: retried a few times, since this can beat the plan.
+   * Find out how many workers a running render occupies (see idleForThumbnails). The
+   * backend decides (a small region on a very heavy page is banded too) and knows once it
+   * has planned the page's first render: retried a few times, since this can beat the plan.
+   * A renderer that can't say is assumed to keep small regions on one worker.
    */
   private learnBands(job: Job, tries = 5): void {
-    if (job.req.w * job.req.h <= SMALL_REGION_PX) {
-      job.bands = 1;
+    const doc = this.doc;
+    if (!doc) return;
+    if (!this.renderer.knownBands) {
+      if (job.req.w * job.req.h <= SMALL_REGION_PX) job.bands = 1;
       return;
     }
-    const doc = this.doc;
-    if (!doc || !this.renderer.knownBands) return;
     this.renderer
-      .knownBands(doc.docId, job.page)
+      .knownBands(doc.docId, job.page, job.req.w, job.req.h)
       .then((n) => {
         if (!this.active.has(job)) return;
         if (n !== null) job.bands = n;

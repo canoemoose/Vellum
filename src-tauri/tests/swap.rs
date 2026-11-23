@@ -367,9 +367,9 @@ fn big_jpegs_swap_from_our_decode_including_inside_forms() {
     check_quadrants(doc, 0, pw, ph, "sRGB profile page");
     check_quadrants(doc, 1, pw, ph, "device RGB page, image inside a form");
     assert!(SWAPS_OURS.load(Ordering::Relaxed) >= before + 2, "both swapped from our decode");
-    // Bands are only worked out for regions over 0.5 MP.
+    // A large region: a swapped page is one band at any size.
     pdfium().render(doc, RegionArgs { id: 0, page: 0, rs: 2.0, x: 0, y: 0, w: 920, h: 880 }).unwrap().unwrap();
-    assert_eq!(pdfium().known_bands(doc, 0), Some(1), "a swapped page renders as one band");
+    assert_eq!(pdfium().known_bands(doc, 0, 920, 880), Some(1), "a swapped page renders as one band");
 }
 
 #[test]
@@ -412,6 +412,6 @@ fn pages_with_a_swap_render_as_one_band_others_stay_banded() {
     for p in [0, 1] {
         pdfium().render(doc, RegionArgs { id: 0, page: p, rs: 1.0, x: 0, y: 0, w: 1200, h: 1200 }).unwrap().unwrap();
     }
-    assert_eq!(pdfium().known_bands(doc, 0), Some(1), "60.7 MB image, swapped: one band");
-    assert_eq!(pdfium().known_bands(doc, 1), Some(workers), "11 MP image PDFium keeps: banded");
+    assert_eq!(pdfium().known_bands(doc, 0, 1200, 1200), Some(1), "60.7 MB image, swapped: one band");
+    assert_eq!(pdfium().known_bands(doc, 1, 1200, 1200), Some(workers), "11 MP image PDFium keeps: banded");
 }

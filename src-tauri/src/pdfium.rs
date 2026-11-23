@@ -41,8 +41,12 @@ const FPDF_ERR_SECURITY: u64 = 5;
 /// Parsed pages kept per document per worker; parsing is the expensive part for heavy pages.
 const PAGES_PER_DOC: usize = 16;
 
-/// Regions up to this many pixels render on one worker (see `PdfiumState::plan`).
+/// Regions up to this many pixels render on one worker (see `bands_for`).
 const SMALL_REGION_PX: i64 = 512 * 1024;
+
+/// Pages with at least this many objects (forms counted into) are banded even for a small
+/// region. The aerial drawing has 327k; the densest ordinary sheet measured, 88k (22 Nov).
+pub const HEAVY_PAGE_OBJECTS: usize = 200_000;
 
 /// The worker that owns a page: one-strip renders and the band-count check go there, so a
 /// page that isn't banded is parsed by one worker only.
@@ -109,6 +113,31 @@ pub struct OutlineNode {
 
 // ------------------------------------------------------------------------------------------
 // Band splitting (pure)
+
+/// What a page's own worker found when it first parsed it, kept by the coordinator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageProfile {
+    /// A swapped or slow-to-decode image: render on one worker (pdfium_swap::page_one_band).
+    pub one_band: bool,
+    /// Objects on the page, including those nested in forms.
+    pub objects: usize,
+}
+
+/// How many workers render a region of `w` x `h` px of a page.
+///
+/// A small region (zoomed out, often many pages on screen) goes whole to the page's own
+/// worker: banding it would make every worker parse every visible page, and with more pages
+/// on screen than a worker keeps parsed (PAGES_PER_DOC) they thrash, reparsing pages for
+/// seconds. A heavy page is the exception: it is almost always alone on screen, and one
+/// worker drawing all of it is the slow part (aerial drawing at fit: 2.3 s on one worker).
+pub fn bands_for(w: i32, h: i32, p: PageProfile, max: usize) -> usize {
+    let small = (w as i64) * (h as i64) <= SMALL_REGION_PX;
+    if p.one_band || (small && p.objects < HEAVY_PAGE_OBJECTS) {
+        1
+    } else {
+        max.max(1)
+    }
+}
 
 /// The part of a region that one band renders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,8 +226,9 @@ enum WorkerReq {
     Render { doc_id: u64, strip: Strip, tag: usize, reply: Sender<(usize, Result<(), String>)> },
     /// Close parsed pages, which frees PDFium's decoded-image caches.
     Trim,
-    /// How many bands to split this page into (see `bands_for_page`).
-    Bands { doc_id: u64, page: usize, max: usize, reply: Sender<Result<usize, String>> },
+    /// Parse a page and describe it (see `page_profile`). Ok(None) if `cancel` was set before
+    /// the worker reached it, so a render abandoned mid-scroll doesn't parse its page.
+    Profile { doc_id: u64, page: usize, cancel: Option<Arc<AtomicBool>>, reply: Sender<Result<Option<PageProfile>, String>> },
     Run(Job),
     /// Parse a page into the cache ahead of its first render (no reply).
     Prefetch { doc_id: u64, page: usize },
@@ -207,7 +237,7 @@ enum WorkerReq {
 /// Per-document facts the coordinator needs without asking a worker.
 struct DocMeta {
     sizes: Vec<PageSize>,
-    bands: HashMap<usize, usize>,
+    profiles: HashMap<usize, PageProfile>,
 }
 
 #[derive(Clone)]
@@ -340,7 +370,7 @@ impl PdfiumState {
             .docs
             .lock()
             .unwrap()
-            .insert(doc_id, DocMeta { sizes: info.sizes.clone(), bands: HashMap::new() });
+            .insert(doc_id, DocMeta { sizes: info.sizes.clone(), profiles: HashMap::new() });
         Ok(info)
     }
 
@@ -388,40 +418,64 @@ impl PdfiumState {
     }
 
     /// Plan a region render: band parts in band order, and the worker each part goes to.
-    fn plan(&self, doc_id: u64, a: &RegionArgs) -> Result<(Vec<BandPart>, Vec<usize>), String> {
+    /// `one_worker` skips the page profile and renders on the page's own worker (thumbnails:
+    /// nobody waits on them, and banding them would have every worker parse every heavy page).
+    /// None if the request was cancelled while the page's profile was being found.
+    #[allow(clippy::type_complexity)]
+    fn plan(
+        &self,
+        doc_id: u64,
+        a: &RegionArgs,
+        cancel: &Option<Arc<AtomicBool>>,
+        one_worker: bool,
+    ) -> Result<Option<(Vec<BandPart>, Vec<usize>)>, String> {
         if a.w <= 0 || a.h <= 0 {
             return Err("empty region".into());
         }
         let workers = self.workers()?;
-        // A small region (zoomed out, often many pages on screen) goes whole to the page's own
-        // worker: banding it would make every worker parse every visible page, and with more
-        // pages on screen than a worker keeps parsed (PAGES_PER_DOC) they thrash, reparsing
-        // pages for seconds. One worker per page keeps each page parsed once, and different
-        // pages still render in parallel on different workers.
-        let small = (a.w as i64) * (a.h as i64) <= SMALL_REGION_PX;
-        let n = if small { 1 } else { self.bands(workers, doc_id, a.page)? };
+        let n = if one_worker {
+            1
+        } else {
+            match self.profile(workers, doc_id, a.page, cancel)? {
+                Some(p) => bands_for(a.w, a.h, p, workers.len()),
+                None => return Ok(None),
+            }
+        };
         let size = self.page_size(doc_id, a.page)?;
         let parts = split_region(size.w as f64 * a.rs, size.h as f64 * a.rs, n, a.x, a.y, a.w, a.h);
-        // Banded: band k renders on worker k. Unbanded: the page's own worker.
+        // Banded: band k renders on worker k. Unbanded: the page's own worker, so each page is
+        // parsed once and different pages still render in parallel on different workers.
         let to = parts.iter().map(|p| if n == 1 { page_worker(a.page, workers.len()) } else { p.band }).collect();
-        Ok((parts, to))
+        Ok(Some((parts, to)))
     }
 
     /// Render a region into one RGBA buffer (w*h*4, opaque white background). None if the
     /// request was cancelled before it started.
     pub fn render(&self, doc_id: u64, a: RegionArgs) -> Result<Option<Vec<u8>>, String> {
+        self.render_region(doc_id, a, false)
+    }
+
+    fn render_region(&self, doc_id: u64, a: RegionArgs, one_worker: bool) -> Result<Option<Vec<u8>>, String> {
         let Ok(cancel) = self.begin(a.id) else {
             return Ok(None);
         };
-        let r = self.render_inner(doc_id, &a, &cancel);
+        let r = self.render_inner(doc_id, &a, &cancel, one_worker);
         if self.end(a.id, &cancel) {
             return Ok(None); // some strips were skipped: the buffer is incomplete
         }
         r
     }
 
-    fn render_inner(&self, doc_id: u64, a: &RegionArgs, cancel: &Option<Arc<AtomicBool>>) -> Result<Option<Vec<u8>>, String> {
-        let (parts, to) = self.plan(doc_id, a)?;
+    fn render_inner(
+        &self,
+        doc_id: u64,
+        a: &RegionArgs,
+        cancel: &Option<Arc<AtomicBool>>,
+        one_worker: bool,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let Some((parts, to)) = self.plan(doc_id, a, cancel, one_worker)? else {
+            return Ok(None);
+        };
         let workers = self.workers()?;
         let stride = a.w * 4;
         let mut buf = vec![0xFFu8; stride as usize * a.h as usize];
@@ -480,7 +534,9 @@ impl PdfiumState {
         cancel: &Option<Arc<AtomicBool>>,
         mut on_band: impl FnMut(&BandPart, Vec<u8>) -> bool,
     ) -> Result<Option<usize>, String> {
-        let (parts, to) = self.plan(doc_id, a)?;
+        let Some((parts, to)) = self.plan(doc_id, a, cancel, false)? else {
+            return Ok(None);
+        };
         let workers = self.workers()?;
         // Allocate every buffer before taking pointers so none moves while workers write.
         // Spare capacity lets the IPC layer append its trailer without copying the band.
@@ -539,7 +595,7 @@ impl PdfiumState {
         let w = ((size.w as f64 * rs).ceil() as i32).max(1);
         let h = ((size.h as f64 * rs).ceil() as i32).max(1);
         let buf = self
-            .render(doc_id, RegionArgs { id: 0, page, rs, x: 0, y: 0, w, h })?
+            .render_region(doc_id, RegionArgs { id: 0, page, rs, x: 0, y: 0, w, h }, true)?
             .ok_or("cancelled")?;
         Ok((w as u32, h as u32, buf))
     }
@@ -563,26 +619,35 @@ impl PdfiumState {
         }
     }
 
-    /// A page's band count if it's already known (its first large render has been planned),
-    /// without asking a worker. Lets the front end tell a one-worker render from a banded one.
-    pub fn known_bands(&self, doc_id: u64, page: usize) -> Option<usize> {
-        self.inner.docs.lock().unwrap().get(&doc_id).and_then(|d| d.bands.get(&page).copied())
+    /// How many workers a `w` x `h` region of a page renders on, if the page's profile is
+    /// already known (its first render has been planned), without asking a worker. Lets the
+    /// front end tell a one-worker render from a banded one.
+    pub fn known_bands(&self, doc_id: u64, page: usize, w: i32, h: i32) -> Option<usize> {
+        let p = *self.inner.docs.lock().unwrap().get(&doc_id)?.profiles.get(&page)?;
+        Some(bands_for(w, h, p, self.inner.threads))
     }
 
-    /// Band count for a page, asked of the page's own worker once and remembered.
-    fn bands(&self, workers: &[Sender<WorkerReq>], doc_id: u64, page: usize) -> Result<usize, String> {
-        if let Some(&b) = self.inner.docs.lock().unwrap().get(&doc_id).and_then(|d| d.bands.get(&page)) {
-            return Ok(b);
+    /// A page's profile, asked of the page's own worker once and remembered. None if the
+    /// request was cancelled before the worker got to it (nothing is remembered then).
+    fn profile(
+        &self,
+        workers: &[Sender<WorkerReq>],
+        doc_id: u64,
+        page: usize,
+        cancel: &Option<Arc<AtomicBool>>,
+    ) -> Result<Option<PageProfile>, String> {
+        if let Some(&p) = self.inner.docs.lock().unwrap().get(&doc_id).and_then(|d| d.profiles.get(&page)) {
+            return Ok(Some(p));
         }
         let (tx, rx) = channel();
         workers[page_worker(page, workers.len())]
-            .send(WorkerReq::Bands { doc_id, page, max: workers.len(), reply: tx })
+            .send(WorkerReq::Profile { doc_id, page, cancel: cancel.clone(), reply: tx })
             .map_err(|e| e.to_string())?;
-        let b = rx.recv().map_err(|e| e.to_string())??.clamp(1, workers.len());
-        if let Some(d) = self.inner.docs.lock().unwrap().get_mut(&doc_id) {
-            d.bands.insert(page, b);
+        let p = rx.recv().map_err(|e| e.to_string())??;
+        if let (Some(p), Some(d)) = (p, self.inner.docs.lock().unwrap().get_mut(&doc_id)) {
+            d.profiles.insert(page, p);
         }
-        Ok(b)
+        Ok(p)
     }
 
     pub fn trims(&self) -> usize {
@@ -1030,10 +1095,14 @@ fn worker(index: usize, lib: PathBuf, rx: Receiver<WorkerReq>, ready: Sender<Res
                     }
                 }
             }
-            WorkerReq::Bands { doc_id, page, max, reply } => {
-                let r = match docs.get_mut(&doc_id) {
-                    Some(d) => bands_for_page(b.as_ref(), d, page, max),
-                    None => Err("document not open".into()),
+            WorkerReq::Profile { doc_id, page, cancel, reply } => {
+                let r = if cancel.as_ref().is_some_and(|f| f.load(Ordering::Relaxed)) {
+                    Ok(None)
+                } else {
+                    match docs.get_mut(&doc_id) {
+                        Some(d) => page_profile(b.as_ref(), d, page).map(Some),
+                        None => Err("document not open".into()),
+                    }
                 };
                 let _ = reply.send(r);
             }
@@ -1166,18 +1235,43 @@ fn load_page(b: &dyn PdfiumLibraryBindings, doc: FPDF_DOCUMENT, i: usize) -> Res
     Ok(p)
 }
 
-/// A swapped image is held by every worker that renders its page, and an image that's slow to
-/// decode is decoded by every one, so those pages render on one worker; everything else uses
-/// all of them (pdfium_swap::one_band).
-fn bands_for_page(b: &dyn PdfiumLibraryBindings, d: &mut Doc, page: usize, max: usize) -> Result<usize, String> {
-    let p = get_page(b, d, page)?;
-    if crate::pdfium_swap::page_one_band(b, p) {
-        if timing() {
-            eprintln!("[pdfium] page {} has a swapped or slow-to-decode image: 1 band", page + 1);
+/// Objects on a page, including those nested in form XObjects (to the same depth as
+/// pdfium_swap::page_images).
+fn count_objects(b: &dyn PdfiumLibraryBindings, page: FPDF_PAGE) -> usize {
+    const FPDF_PAGEOBJ_FORM: i32 = 5; // fpdf_edit.h
+    unsafe {
+        let mut n = 0;
+        let mut stack: Vec<(FPDF_PAGEOBJECT, usize)> =
+            (0..b.FPDFPage_CountObjects(page).max(0)).map(|i| (b.FPDFPage_GetObject(page, i), 1)).collect();
+        while let Some((o, depth)) = stack.pop() {
+            if o.is_null() {
+                continue;
+            }
+            n += 1;
+            if b.FPDFPageObj_GetType(o) == FPDF_PAGEOBJ_FORM && depth < 8 {
+                for j in 0..b.FPDFFormObj_CountObjects(o).max(0) {
+                    stack.push((b.FPDFFormObj_GetObject(o, j as _), depth + 1));
+                }
+            }
         }
-        return Ok(1);
+        n
     }
-    Ok(max)
+}
+
+/// Parse a page and describe it for `bands_for`. A swapped image is held by every worker that
+/// renders its page, and an image that's slow to decode is decoded by every one, so those
+/// pages render on one worker (pdfium_swap::one_band). The object count picks out pages heavy
+/// enough to band even when zoomed out.
+fn page_profile(b: &dyn PdfiumLibraryBindings, d: &mut Doc, page: usize) -> Result<PageProfile, String> {
+    let p = get_page(b, d, page)?;
+    let one_band = crate::pdfium_swap::page_one_band(b, p);
+    let t0 = std::time::Instant::now();
+    let objects = count_objects(b, p);
+    if timing() {
+        let note = if one_band { ", swapped or slow-to-decode image: 1 band" } else { "" };
+        eprintln!("[pdfium] page {}: {} objects (counted in {} ms){note}", page + 1, objects, t0.elapsed().as_millis());
+    }
+    Ok(PageProfile { one_band, objects })
 }
 
 fn close_doc(b: &dyn PdfiumLibraryBindings, d: Doc) {

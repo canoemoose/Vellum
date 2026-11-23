@@ -3,7 +3,12 @@
 Started 18 November 2026. Interactive: Matt steers, each step is shown before the next, nothing
 is committed until he asks. Source of truth for this piece of work; kept current as it goes.
 
-## Start here (state at 22 November 2026)
+## Start here (state at 23 November 2026)
+
+**23 Nov: next step 1 is done.** The aerial drawing's
+fit is back to v0.1 speed: 450 ms, first band 1464 ms, peak memory down 1.8 GB; ordinary
+drawings unchanged. The "scale step" blamed on `71ae3f1` did not reproduce. See "Step 1 of
+Next steps" near the end. The baseline table below is still the 18 Nov one, before the fix.
 
 The sections below this one are the working log, in the order things happened; some early
 statements were corrected later. This section is the current truth. A fresh session should
@@ -65,24 +70,27 @@ Against other viewers (`tools/viewer-bench`, from outside, cold):
 
 ### What is wrong, with causes
 
-1. **Fit and first open of a very long single page regressed 3 to 5x since v0.1** (aerial
-   drawing: fit 437 ms to 2286 ms, first band 1.4 s to 3.4 s of white page, +1.8 GB). Pinned by
-   bisect: `e337efb` sends the thin fit view to one worker (confirmed by the strip log);
-   `71ae3f1` moves that render to a scale where PDFium's cost steps up (measured, reason
-   unknown). Ordinary sheets did not regress and use a third of the spike's memory.
+1. **Fixed 23 Nov.** *Was:* fit and first open of a very long single page regressed 3 to 5x
+   since v0.1 (aerial drawing: fit 437 ms to 2286 ms, first band 1.4 s to 3.4 s of white
+   page, +1.8 GB). Cause: `e337efb` sends the thin fit view to one worker. Banding pages of
+   200k+ objects restores it. The second suspect, a PDFium cost step between scales at
+   `71ae3f1`, did not reproduce in isolation (see "Step 1 of Next steps").
 2. **The still blur after a zoom lands**: the ease, then a 60 ms settle delay that exists
    only for wheel notches, then the render. Design, not regression.
 3. **Stage plan at 1600%, repeat zooms 84 to 198 ms** since `71ae3f1`: not PDFium (strips take
    2 to 9 ms); probably same-scale renders for the previous view that are not cancelled.
    Partly a bench artefact. Not proven.
-4. **Unexplained:** the 1.8 GB on the aerial drawing; why PDFium's cost steps up between
-   render scales 0.0667 and 0.0743.
+4. **Unexplained (23 Nov):** why repeat fit renders took 1.26 s inside the app at `e337efb`
+   but 2.3 s in a standalone probe (no longer matters for the fix). Peak memory reads about
+   650 to 700 MB higher than on 18 Nov with the *same* exe (Curtis Hall and the stage plan
+   about 1030 MB against 352 and 339): something outside Vellum changed, perhaps WebView2.
+   Re-take any memory figure before quoting it. *Explained:* the aerial drawing's 1.8 GB was
+   one worker holding every decoded image of the whole page; bands hold only their own.
 
 ### Next steps, in the order agreed with Matt on 22 Nov
 
-1. **Fix the one-worker rule** for object-heavy single pages (handoff idea 2a; probe the
-   scale step alongside). Small, cause confirmed. Expect about 1.3 s off the aerial open, the
-   early first band back, probably the memory. Measure before and after with `tools/bench.mjs`.
+1. ~~**Fix the one-worker rule** for object-heavy single pages~~ **Done 23 Nov**: fit
+   2339 → 450 ms, first band 3432 → 1464 ms, memory −1.8 GB. See "Step 1 of Next steps".
 2. **Re-run the open tests on the fixed build** (they are sound) and make "launch to the whole
    sheet drawn" one timed step at the 10 s wait. **Propose the homepage number from that.**
    Fallback that needs no more work: "opens drawings 1.3 to 2x faster than Acrobat".
@@ -766,6 +774,87 @@ notches. Measuring the zoom from the screen (matching frames between notches) wo
 wasn't judged worth it. Edge stays in the open table (1.5 to 4.8 s); Chrome covers browsers for
 zoom. So the wheel test runs on Vellum, Foxit, PDF-XChange, SumatraPDF and Chrome.
 
+## Step 1 of Next steps: heavy pages banded at fit (22 and 23 Nov)
+
+**Design** (agreed with Matt; reviewed by a second model, which added the cancel, threshold
+and thumbnail points):
+
+- Each page's own worker parses it once and reports a profile: does it need one band (a
+  swapped or slow-to-decode image, as before) and how many objects it has, counting into
+  form XObjects. The coordinator keeps it. `bands_for(w, h, profile, workers)` in
+  `pdfium.rs` is the whole rule: one worker for a one-band page, or for a region of 0.5 MP
+  or less on a page under `HEAVY_PAGE_OBJECTS` (200,000); otherwise every worker.
+- Small renders now ask for the profile too (before, they asked nothing). The question
+  carries the render's cancel flag and the worker skips it if cancelled, so scrolling past
+  pages doesn't queue parses nobody needs. A cancelled answer is not remembered.
+- Thumbnails always render on one worker: banding them would have every worker parse every
+  heavy page for nothing urgent.
+- The front end asks the backend how many workers a render occupies (`doc_known_bands`
+  now takes the region's size) instead of assuming small means one. This only decides when
+  thumbnails may run beside a render. Images keep the old assumption.
+- `VELLUM_PDFIUM_TIMING=1` prints each page's object count and how long counting took.
+- Tests: the rule in `tests/bands.rs` (both sides of both thresholds, one-band pages, never
+  zero), a cancelled first render in `tests/cancel.rs`, three viewer tests for small renders.
+
+**Choosing the threshold.** Object counts, page 1 unless stated:
+
+| Page | Objects |
+|---|---:|
+| Aerial drawing | 327,207 |
+| Curtis Hall p48 (densest ordinary page known) | 88,244 |
+| Xero stage plan | 74,423 |
+| Silverstone (three revisions) | 8,649 to 10,531 |
+| Fieldwork Festival set | 9,672 |
+| Curtis Hall p1 | 2,343 |
+| 50 MB sample | 44 |
+| Bayou cover (one scanned image; one band anyway) | 1 |
+
+The handoff's 50,000 would have caught Curtis Hall and the stage plan, bringing back the
+many-pages thrash `e337efb` fixed (40 pages: 81 s against 1.9 s). 200,000 sits 2.3x above
+the densest ordinary page and 1.6x below the aerial drawing. Only page 1 of the Fieldwork
+set and Bayou, and pages 1 and 48 of Curtis Hall, were counted.
+
+**Results**, `tools/bench.mjs --runs 3 --pdfium-threads 8 --size 1600x960`, median of 3, old
+(`%TEMP%\vellum-smoke\step1-main-bde9832`) and new (`%TEMP%\vellum-smoke\heavy-band`)
+builds run back to back:
+
+| Aerial drawing | Before | After |
+|---|---:|---:|
+| First band (ms) | 3432 | 1464 |
+| First page complete (ms) | 3432 | 1999 |
+| Settle to sharp, fit / 400% / 1600% (ms) | 2339 / 167 / 150 | 450 / 67 / 152 |
+| Peak memory (MB) | 4998 | 3221 |
+
+| | Curtis Hall p1, old / new | Stage plan, old / new |
+|---|---|---|
+| First band (ms) | 97 / 82 | 181 / 180 |
+| First page (ms) | 114 / 131 | 314 / 314 |
+| Fit / 400% / 1600% (ms) | 66 / 105 / 83 → 66 / 104 / 85 | 117 / 99 / 82 → 119 / 88 / 83 |
+| Peak memory (MB) | 1029 / 1049 | 1027 / 986 |
+
+- Fit is back to v0.1's 437 ms. The first band arrives at 1.5 s and the page completes
+  half a second later, instead of a white page for 3.4 s.
+- 400% on the aerial drawing also improved (167 → 67 ms), probably because every worker has
+  already parsed the page by then. Not confirmed.
+- Ordinary drawings: within noise. The stage plan's 1600% is 82 to 83 ms on both builds,
+  against 198 ms on 18 Nov, which supports "partly a bench artefact" for problem 3.
+- Peak memory: the old exe reads 650 to 700 MB higher than on 18 Nov on all three drawings.
+  Not caused by this change (see "What is wrong", 4).
+
+**Scale probe: no step found.** A throwaway test (deleted after) rendered the whole aerial
+page on one PDFium instance, with the app's matrix and flags, at 12 scales from 0.0533 to
+0.0884; fresh parse per scale, three renders each:
+
+- First render 2.5 to 4.1 s; repeats 2.3 to 2.7 s at every scale from 0.0625 to 0.0743,
+  bar one outlier (0.0718, about 3.9 s, with normal neighbours). No step.
+- Private memory about 2.45 GB after the first render at every scale: PDFium keeps every
+  decoded image regardless of scale, so a cache-size limit is not the mechanism.
+- The 1.26 s repeats logged in the app at `e337efb` (rs 0.0533 and 0.0667) are not
+  reproduced; nothing here goes below 1.9 s. So the extra second at `71ae3f1` came from
+  something else in that commit, not the scale. Untested lead: in the app the page had
+  first been rendered as the 0.1422 preview on the same worker. Dropped: the fix restores
+  v0.1's fit, and the banded render won't meet a scale cliff.
+
 ## Progress
 
 - 18 Nov: scope written and agreed in outline with Matt (ease stays; landing → sharp is the
@@ -780,3 +869,7 @@ zoom. So the wheel test runs on Vellum, Foxit, PDF-XChange, SumatraPDF and Chrom
   wheel test built in `tools/viewer-bench`; sound for Vellum and Chrome only. Acrobat and Edge
   zoom parked. Cross-viewer zoom comparison parked in favour of fixing Vellum first; see
   "Start here". No Vellum code changed; nothing committed.
+- 22 and 23 Nov: next step 1 done. Pages of 200k+ objects are banded even when the region is
+  small; aerial fit 2339 → 450 ms, ordinary drawings unchanged. The scale step did not
+  reproduce. All tests pass (1223 front end, 270 Rust).
+  Next: step 2, re-run the open tests on this build and propose the homepage number.

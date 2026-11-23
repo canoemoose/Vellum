@@ -207,5 +207,53 @@ describe("Viewer scheduler", () => {
       expect((await openLarge(8)).v.idleForThumbnails).toBe(false);
       expect((await openLarge(null)).v.idleForThumbnails).toBe(false);
     });
+
+    // A small region (a 400 x 300 window at fit): usually one worker, but the backend bands a
+    // very heavy page even then, so the viewer asks rather than assuming.
+    async function openSmall(bands: number | null | undefined) {
+      const r = new StubRenderer(doc([{ w: 1190, h: 842 }]));
+      const asked: number[][] = [];
+      if (bands !== undefined) {
+        (r as StubRenderer & { knownBands: (...a: number[]) => Promise<number | null> }).knownBands = async (
+          ...a: number[]
+        ) => {
+          asked.push(a);
+          return bands;
+        };
+      }
+      const v = new Viewer(stubCanvas(), {}, r);
+      v.resize(400, 300, 1);
+      await v.open("C:/x/drawing.pdf", undefined, r);
+      await flush();
+      vi.advanceTimersByTime(400);
+      await flush();
+      // Finish anything large in flight (a look-ahead render), leaving only the small one.
+      for (const c of r.pending()) {
+        if (c.req.w * c.req.h > 512 * 1024) {
+          c.done = true;
+          c.resolve();
+        }
+      }
+      await flush();
+      expect(r.pending().length).toBeGreaterThan(0);
+      expect(r.pending().every((c) => c.req.w * c.req.h <= 512 * 1024)).toBe(true);
+      return { v, asked };
+    }
+
+    it("asks the backend about a small render, passing its size", async () => {
+      const { v, asked } = await openSmall(1);
+      expect(asked.length).toBeGreaterThan(0);
+      expect(asked[0].length).toBe(4);
+      expect(asked[0][2] * asked[0][3]).toBeLessThanOrEqual(512 * 1024);
+      expect(v.idleForThumbnails).toBe(true);
+    });
+
+    it("waits while a small render on a heavy page is banded", async () => {
+      expect((await openSmall(8)).v.idleForThumbnails).toBe(false);
+    });
+
+    it("assumes one worker for a small render when the renderer can't say", async () => {
+      expect((await openSmall(undefined)).v.idleForThumbnails).toBe(true);
+    });
   });
 });

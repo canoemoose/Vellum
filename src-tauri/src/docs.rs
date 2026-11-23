@@ -224,11 +224,12 @@ impl Docs {
         }
     }
 
-    /// A page's band count if already known (PDFs only; see PdfiumState::known_bands).
-    pub fn known_bands(&self, pdf: &PdfiumState, doc_id: u64, page: usize) -> Result<Option<usize>, String> {
+    /// How many workers a `w` x `h` region of a page renders on, if known (see
+    /// PdfiumState::known_bands). Images: a small region is one, a large one isn't known.
+    pub fn known_bands(&self, pdf: &PdfiumState, doc_id: u64, page: usize, w: i32, h: i32) -> Result<Option<usize>, String> {
         match self.entry(doc_id)? {
-            EntryRef::Pdf => Ok(pdf.known_bands(doc_id, page)),
-            EntryRef::Image(_) => Ok(None),
+            EntryRef::Pdf => Ok(pdf.known_bands(doc_id, page, w, h)),
+            EntryRef::Image(_) => Ok(((w as i64) * (h as i64) <= 512 * 1024).then_some(1)),
         }
     }
 
