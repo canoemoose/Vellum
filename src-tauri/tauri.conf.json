@@ -45,6 +45,7 @@
     ],
     "resources": {
       "pdfium/bin/pdfium.dll": "pdfium.dll",
+      "icons/document.ico": "document.ico",
       "../LICENSE": "LICENSE.txt",
       "licenses/THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt"
     },
