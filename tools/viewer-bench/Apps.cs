@@ -33,6 +33,7 @@ static class Apps
             var p = Psi(Environment.GetEnvironmentVariable("VELLUM_EXE") ?? Path.Combine(Local, "Vellum", "vellum.exe"), file);
             var prof = Profile(root, "vellum");
             p.Environment["VELLUM_MULTI_INSTANCE"] = "1";
+            p.Environment["VELLUM_PERF_LOG"] = "1"; // landing to sharp per zoom, read by --notches
             p.Environment["VELLUM_DATA_DIR"] = Path.Combine(prof, "data");
             p.Environment["WEBVIEW2_USER_DATA_FOLDER"] = Path.Combine(prof, "webview2");
             if (Environment.GetEnvironmentVariable("VB_NO_LOCAL") == null) p.Environment["LOCALAPPDATA"] = Path.Combine(prof, "local"); // moves the preview cache too

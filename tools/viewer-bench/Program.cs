@@ -22,13 +22,14 @@ static class Program
         switch (opt.Mode)
         {
             case "probe": Probe(Apps.Get(opt.Apps[0]), opt.Files[0]); return 0;
-            case "run": return Bench.Run(opt);
+            case "run": return opt.Notches ? Notch.Run(opt) : Bench.Run(opt);
+            case "analyse": return Notch.Analyse(opt.Files[0]);
             case "exp": Exp(Apps.Get(opt.Apps[0]), opt.Files[0]); return 0;
             case "open": Hold(Apps.Get(opt.Apps[0]), opt.Files[0]); return 0;
             case "wheelprobe": Centre.Probe(opt.Apps.Select(Apps.Get).ToList(), opt.Files, 6); return 0;
             case "methodprobe": Centre.MethodProbe(Apps.Get(opt.Apps[0]), opt.Files[0]); return 0;
             default:
-                Console.WriteLine("usage: viewer-bench probe <app> <file> | run [--apps a,b] [--runs 3] [--quiet ms] [--open-only | --whole-sheet] files...");
+                Console.WriteLine("usage: viewer-bench probe <app> <file> | run [--apps a,b] [--runs 3] [--quiet ms] [--open-only | --whole-sheet | --notches] files...");
                 return 2;
         }
     }
@@ -260,7 +261,7 @@ sealed class Options
 {
     public string Mode = "";
     public List<string> Apps = new(), Files = new();
-    public int Runs = 3, Zoom = 400, Quiet = 10000; public bool Warm = true, Typed, OpenOnly, WholeSheet;
+    public int Runs = 3, Zoom = 400, Quiet = 10000; public bool Warm = true, Typed, OpenOnly, WholeSheet, Notches, QuietSet;
     public string? Root;
     public static Options Parse(string[] a)
     {
@@ -272,7 +273,13 @@ sealed class Options
                 case "--apps": o.Apps.AddRange(a[++i].Split(',')); break;
                 case "--runs": o.Runs = int.Parse(a[++i]); break;
                 case "--zoom": o.Zoom = int.Parse(a[++i]); break;
-                case "--quiet": o.Quiet = int.Parse(a[++i]); break;
+                case "--quiet": o.Quiet = int.Parse(a[++i]); o.QuietSet = true; break;
+                case "--notches": o.Notches = true; break;
+                case "--frames": Notch.SaveFrames = true; break;
+                case "--keep-raw": Notch.KeepRaw = true; break;
+                case "--blur": Notch.BlurR = int.Parse(a[++i]); break;
+                case "--why": Notch.Why = true; break;
+                case "--tolerance": Notch.TolPx = int.Parse(a[++i]); break;
                 case "--typed": o.Typed = true; break;
                 case "--open-only": o.OpenOnly = true; break;
                 case "--whole-sheet": o.WholeSheet = true; break;

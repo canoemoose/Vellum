@@ -96,7 +96,12 @@ static class Bench
 
     static string Fmt(double? ms) => ms == null ? "-" : $"{ms:0} ms";
 
-    static RunResult One(App app, string file, int run, string dir, bool warm)
+    static RunResult One(App app, string file, int run, string dir, bool warm) =>
+        Prepared(app, file, copy => Measure(app, copy, run, dir));
+
+    /// Runs `measure` on a fresh copy of the file, with the viewer's leftovers cleared first
+    /// (cold caches, no remembered session) and stray error boxes closed after.
+    internal static T Prepared<T>(App app, string file, Func<string, T> measure)
     {
         if (app.Id == "vellum")
         {
@@ -118,7 +123,7 @@ static class Bench
         var copy = Path.Combine(copyDir, Path.GetFileName(file));
         File.Copy(file, copy);
         Program.DismissStrays();
-        try { return Measure(app, copy, run, dir); }
+        try { return measure(copy); }
         finally
         {
             if (Program.DismissStrays() > 0) Program.Log($"  closed an error box left by {app.Id}");

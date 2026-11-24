@@ -186,6 +186,8 @@ static class Native
         }
         /// Copies the screen into the buffer and returns a pointer to BGRA rows (stride W*4).
         public IntPtr Grab() { BitBlt(mem, 0, 0, W, H, screen, X, Y, 0x00CC0020); return bits; }
+        /// The last grab's BGRA rows (stride W*4), valid until the next Grab.
+        public IntPtr Bits => bits;
         public void Dispose() { SelectObject(mem, old); DeleteObject(bmp); DeleteDC(mem); ReleaseDC(IntPtr.Zero, screen); }
     }
 }
