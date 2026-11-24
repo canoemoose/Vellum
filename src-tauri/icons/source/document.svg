@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<!-- Vellum's PDF document icon, 32 to 48 px (64 up: document-full.svg): a white page with its top-right corner folded and the
+     app tile as a badge over its bottom-left (docs/document-icon-brief.md). Edges sit on the 32 px
+     grid (8 units a pixel). The badge is vellum-24.svg's solid drawing: the big icon's glow and
+     lighting are lost at badge size. 24 and 16 px: document-24.svg, document-16.svg. -->
+<defs><linearGradient id="front" gradientUnits="userSpaceOnUse" x1="1080" y1="1400" x2="1450" y2="500"><stop offset="0" stop-color="#99f6e4"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs>
+<path d="M60 12 H156 L220 76 V240 Q220 252 208 252 H60 Q48 252 48 240 V24 Q48 12 60 12 Z" fill="#ffffff" stroke="#8a9493" stroke-width="6" stroke-linejoin="round"/>
+<path d="M156 12 V64 Q156 76 168 76 H220 Z" fill="#dfe5e4" stroke="#8a9493" stroke-width="6" stroke-linejoin="round"/>
+<rect x="4" y="116" width="136" height="136" rx="27" fill="#0a4540"/>
+<svg x="4" y="116" width="136" height="136" viewBox="130 128 1670 1670">
+<g transform="translate(955 966) scale(1.15) translate(-923.5 -975.5)" stroke-width="40" stroke-linejoin="round">
+<path d="M1068 1448 L829 1300 L951 1000 C1000 880 1250 540 1456 500 L1068 1448 Z" fill="#14b8a6" stroke="#14b8a6"/>
+<path d="M1068 1448 L829 1300 L951 1000 C1000 880 1040 600 1240 505 C1114 806 1056 1121 1068 1448 Z" fill="url(#front)" stroke="url(#front)"/>
+<path d="M392 510 L600 508 C680 508 722 548 745 602 L1068 1448 L870 1450 C800 1450 762 1410 740 1360 Z" fill="#2dd4bf" stroke="#2dd4bf"/>
+</g>
+</svg>
+</svg>

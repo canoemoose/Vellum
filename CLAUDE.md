@@ -49,8 +49,10 @@ installed copies update themselves: see Releasing below and
   shipped crate, front-end package and PDFium library with its licence). `tauri build` runs it;
   the installer ships it and Help > About opens it. After updating PDFium, run
   `node tools/fetch-pdfium-licences.mjs` and commit `src-tauri/licenses/pdfium/`.
-- `node tools/make-icons.mjs`: rebuild the app icon set in `src-tauri/icons` from the SVGs in
+- `node tools/make-icons.mjs [--only app|document]`: rebuild the app icon set and
+  `document.ico` (the icon of PDFs that open in Vellum) in `src-tauri/icons` from the SVGs in
   `src-tauri/icons/source` (rendered with headless Edge; 16 and 24 px have their own drawings).
+  Edge occasionally hangs on one size: run it again.
 
 ## Releasing
 

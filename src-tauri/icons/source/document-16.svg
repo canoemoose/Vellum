@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+<!-- Vellum's PDF document icon at 16 px, on the pixel grid: a sliver of page and fold behind a
+     10 px badge (vellum-16.svg's tile, scaled), as Office does at this size. See document.svg. -->
+<path d="M4.5 0.5 H10.5 L14.5 4.5 V15.5 H4.5 Z" fill="#ffffff" stroke="#8a9493" stroke-linejoin="round"/>
+<path d="M10.5 0.5 V4.5 H14.5 Z" fill="#dfe5e4" stroke="#8a9493" stroke-linejoin="round"/>
+<g transform="translate(0 6) scale(0.625)">
+<rect x="0" y="0" width="16" height="16" rx="3.5" fill="#0a4540"/>
+<polygon points="11.7,2.5 13.4,2.5 9,13 8.4,13" fill="#14b8a6"/>
+<polygon points="10,3.5 12,3.5 8.6,13 6,13" fill="#ffffff"/>
+<polygon points="2,3 5,3 9,13 6,13" fill="#2dd4bf"/>
+</g>
+</svg>
