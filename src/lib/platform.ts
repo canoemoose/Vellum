@@ -13,7 +13,15 @@ export interface LaunchArgs {
   dpr: number | null;
   /** Benchmark this page (zero-based) instead of the first. */
   benchPage?: number | null;
+  /** Zoom by a flight and time landing to sharp (see bench.ts). */
+  benchFlight?: boolean;
+  /** Zoom by this many wheel notches and time landing to sharp (see bench.ts). */
+  benchWheel?: number | null;
+  /** Spin the wheel at fixed gaps and time every frame (see bench.ts). */
+  benchSpin?: boolean;
   processStartEpochMs: number;
+  /** VELLUM_PERF_LOG: log settle-to-sharp events without the debug overlay. */
+  perfLog?: boolean;
 }
 
 export interface MemSample {

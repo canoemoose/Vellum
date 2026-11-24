@@ -406,3 +406,15 @@ describe("mini map turned a quarter turn", async () => {
     expect(mapBox(0.5, 1, Infinity, Infinity, false)).toEqual(mapBox(0.5));
   });
 });
+
+describe("remainingMove", () => {
+  it("is zero for the same view, and the corner displacement for a zoom or a pan", async () => {
+    const { remainingMove } = await import("./viewMath");
+    const v: View = { scale: 2, tx: 10, ty: 20 };
+    expect(remainingMove(v, v, 800, 600)).toBe(0);
+    // A pan moves everything by the same amount.
+    close(remainingMove(v, { ...v, tx: v.tx + 3, ty: v.ty - 4 }, 800, 600), 5);
+    // A 1% zoom about the centre moves the corners by 1% of their distance from it (500 px).
+    close(remainingMove(v, zoomAt(v, 400, 300, v.scale * 1.01), 800, 600), 5, 1e-6);
+  });
+});

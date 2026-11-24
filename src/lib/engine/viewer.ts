@@ -26,6 +26,7 @@ import {
   interpolateView,
   keepCentre,
   nextZoomPreset,
+  remainingMove,
   stickyZoomTarget,
   scaleToZoom,
   screenToWorld,
@@ -145,6 +146,18 @@ const IDLE_AFTER_INPUT_MS = 300;
  * in the backend instead of running to completion.
  */
 const WHEEL_SETTLE_MS = 60;
+/**
+ * A flight or wheel ease lands as soon as less than this many device pixels of movement
+ * would be left anywhere on screen. An exponential wheel ease otherwise spends its last
+ * 60 to 80 ms creeping through the final couple of pixels, with the sharp tiles held back
+ * until it formally lands: from the screen, the stage plan was sharp about 80 ms after the
+ * zoom looked finished, against 17 ms from the formal landing (viewer-bench, 23 Nov).
+ * The last step is a snap of under this, on the frame the sharp tiles go in. 4 px, not
+ * less: the bench judges "finished" by the middle of the window (within 2 px), and the
+ * corners, which this measures, are about twice as far from the zoom's centre. 1.5 px cut
+ * the gap only from 82 to 66 ms; Matt compared 1.5 and 4 px by eye (24 Nov) and saw no snap.
+ */
+const LAND_PX = 4;
 /** Regions up to this many pixels render on one backend worker (SMALL_REGION_PX in pdfium.rs). */
 const SMALL_REGION_PX = 512 * 1024;
 
@@ -279,9 +292,17 @@ export class Viewer {
   private lastScaleInput = -Infinity;
   /** A pan moved the view since the last plan: re-plan on the next frame, without waiting. */
   private panPending = false;
-  private anim: { target: number; ax: number; ay: number } | null = null;
-  /** An eased move to a whole new view (fit, a typed zoom, actual size): see animateTo. */
-  private flight: { from: View; to: View; t0: number; dur: number } | null = null;
+  /**
+   * A wheel ease towards `target` about the screen point (ax, ay). `rs` is the render scale its
+   * landing view is being rendered at while it eases (null: none); `hidden` holds every render
+   * scale started for this gesture's notches, kept off screen until it lands (see draw).
+   */
+  private anim: { target: number; ax: number; ay: number; rs: number | null; hidden: Set<number> } | null = null;
+  /**
+   * An eased move to a whole new view (fit, a typed zoom, actual size): see animateTo. `rs`
+   * is the render scale its destination is being rendered at while it flies (null: none).
+   */
+  private flight: { from: View; to: View; t0: number; dur: number; rs: number | null } | null = null;
   /** The fit the view is at, if it hasn't been moved since: refitted when the window resizes. */
   private fitted: FitMode | null = null;
   /** A pinch held at a sticky zoom stop: the zoom factor gathered since it stopped. */
@@ -296,8 +317,36 @@ export class Viewer {
   }
 
   private stopAnimations(): void {
-    this.anim = null;
+    this.cancelWheel();
+    this.cancelFlight();
+  }
+
+  /** The render scale being rendered ahead for a flight or a wheel ease (null: none). */
+  private get aheadRs(): number | null {
+    return this.flight?.rs ?? this.anim?.rs ?? null;
+  }
+
+  /**
+   * End a flight before it lands: drop the renders started for its destination, unless they
+   * are at the scale on screen (then they're still useful).
+   */
+  private cancelFlight(): void {
+    const f = this.flight;
     this.flight = null;
+    if (f?.rs != null) this.dropRendersAt(f.rs);
+  }
+
+  /** End a wheel ease before it lands, dropping the renders started for its landing view. */
+  private cancelWheel(): void {
+    const a = this.anim;
+    this.anim = null;
+    if (a?.rs != null) this.dropRendersAt(a.rs);
+  }
+
+  private dropRendersAt(rs: number): void {
+    if (rs === this.renderScale) return;
+    this.queue = this.queue.filter((j) => j.rs !== rs);
+    for (const j of this.active) if (j.rs === rs) j.ac?.abort();
   }
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private settleAt = 0;
@@ -673,7 +722,7 @@ export class Viewer {
     // The drawing stays put relative to the window: refit if it was at a fit, else keep the
     // point at the centre of the view at the centre (not the top-left corner).
     if (this.doc && (oldW !== cssW || oldH !== cssH) && oldW > 1 && oldH > 1) {
-      this.flight = null;
+      this.cancelFlight();
       const r = this.fitted ? this.fitRectFor(this.fitted) : null;
       if (this.fitted && r) {
         const kept = keepCentre(this.view, oldW, oldH, cssW, cssH);
@@ -706,7 +755,7 @@ export class Viewer {
   }
 
   panBy(dx: number, dy: number): void {
-    this.flight = null;
+    this.cancelFlight();
     this.fitted = null;
     if (this.anim) {
       // Keep the zoom anchor glued to the content while panning mid-animation.
@@ -795,16 +844,23 @@ export class Viewer {
    * cross one lands on it, and a pinch holds there until it has gone 8% further.
    */
   zoomAt(sx: number, sy: number, factor: number, animate: boolean): void {
-    this.flight = null;
+    this.cancelFlight();
     this.fitted = null;
     if (animate) {
-      const base = this.anim ? this.anim.target : this.view.scale;
+      const prev = this.anim;
+      const base = prev ? prev.target : this.view.scale;
       const target = stickyZoomTarget(base, clampScale(base * factor), this.zoomStops());
-      this.anim = { target, ax: sx, ay: sy };
+      // The landing render scale (the same choice updateRenderRs makes on landing), chosen
+      // before inputActivity so renders already running at it are kept, not aborted.
+      const rs = this.doc ? chooseRenderScale(this.renderRs || null, scaleKey(target * this.dpr)) : null;
+      const hidden = prev?.hidden ?? new Set<number>();
+      if (rs !== null) hidden.add(rs);
+      this.anim = { target, ax: sx, ay: sy, rs, hidden };
       this.inputActivity(true);
+      this.renderWheelAhead();
       this.requestFrame();
     } else {
-      this.anim = null;
+      this.cancelWheel();
       const now = performance.now();
       if (this.pinchHold && now - this.pinchHold.t > 300) this.pinchHold = null; // a new gesture
       let next = this.view.scale * factor;
@@ -826,13 +882,47 @@ export class Viewer {
     }
   }
 
-  /** Ease to a whole new view over `ms` (fit, a typed zoom, actual size). */
+  /**
+   * Ease to a whole new view over `ms` (fit, a typed zoom, actual size). The destination is
+   * known from the start, so it renders while the view moves (see renderAhead) and the
+   * picture is usually sharp, or nearly, when it lands.
+   */
   animateTo(target: View, ms = 220): void {
-    this.anim = null;
+    this.cancelWheel();
     const to = this.doc ? constrainView(target, this.layout.bounds, this.vw, this.vh) : target;
-    this.flight = { from: { ...this.view }, to, t0: performance.now(), dur: ms };
+    this.flight = { from: { ...this.view }, to, t0: performance.now(), dur: ms, rs: null };
     this.inputActivity(true);
+    this.renderAhead();
     this.requestFrame();
+  }
+
+  /**
+   * Plan and start the flight's destination at the render scale it will land on (the same
+   * choice updateRenderRs makes on landing). Its tiles go into the cache but stay off screen
+   * until the flight lands (see draw), so the picture swaps cleanly instead of sharpening in
+   * patches while it moves. Any other input ends the flight, and a change of scale aborts
+   * renders at other scales as usual.
+   */
+  private renderAhead(): void {
+    const f = this.flight;
+    if (!f || !this.doc) return;
+    f.rs = chooseRenderScale(this.renderRs || null, scaleKey(f.to.scale * this.dpr));
+    this.plan(f.to, f.rs);
+    this.pump();
+  }
+
+  /**
+   * Plan and start a wheel ease's landing view, as renderAhead does for a flight. Each notch
+   * moves the landing view, so each re-plans; renders at the previous notch's scale are
+   * aborted by inputActivity, and renders already running at this one are kept (see plan).
+   * A pan during the ease moves the anchor, and so the landing view: the frame re-plans.
+   */
+  private renderWheelAhead(): void {
+    const a = this.anim;
+    if (!a || a.rs === null || !this.doc) return;
+    const to = constrainView(zoomAt(this.view, a.ax, a.ay, a.target), this.layout.bounds, this.vw, this.vh);
+    this.plan(to, a.rs);
+    this.pump();
   }
 
   zoomStep(dir: 1 | -1): void {
@@ -1196,6 +1286,9 @@ export class Viewer {
    * carries on throughout a drag and the newly uncovered strip fills in as you go.
    */
   private get renderBlocked(): boolean {
+    // A flight's destination, or a wheel ease's landing view, is known: render it while the
+    // view moves (renderAhead, renderWheelAhead).
+    if (this.aheadRs !== null) return false;
     return this.animating || performance.now() - this.lastScaleInput < this.scaleSettleMs;
   }
 
@@ -1237,7 +1330,8 @@ export class Viewer {
       if (!this.animating) this.updateRenderRs();
       if (scaleChanged) {
         const rs = this.renderScale;
-        for (const j of this.active) if (j.rs !== rs) j.ac?.abort();
+        const ahead = this.aheadRs;
+        for (const j of this.active) if (j.rs !== rs && j.rs !== ahead) j.ac?.abort();
       }
     }
     this.scheduleSettle();
@@ -1274,15 +1368,23 @@ export class Viewer {
     return tileRangeForRect(l.x, l.y, l.x + l.w, l.y + l.h, size.w, size.h, grid, rs, margin);
   }
 
-  /** Work out which tiles are missing at the current scale and queue region renders. */
-  private plan(): void {
+  /**
+   * Work out which tiles are missing at render scale `rs` for `view` (by default the current
+   * ones) and queue region renders. Tiles already being rendered at that scale by a job that
+   * hasn't been aborted are left out: a flight's renders are still running when it lands.
+   */
+  private plan(view: View = this.view, rs: number = this.renderScale): void {
     if (!this.doc) return;
-    const rs = this.renderScale;
-    const vis = visibleWorldRect(this.view, this.vw, this.vh);
+    const vis = visibleWorldRect(view, this.vw, this.vh);
     const cx = this.vw / 2;
     const cy = this.vh / 2;
     const jobs: Job[] = [];
     const maxSide = Math.max(1, Math.floor(this.opts.maxRegion / TILE));
+    const busy = new Set<string>();
+    for (const a of this.active) {
+      if (a.kind !== "tiles" || a.rs !== rs || a.ac?.signal.aborted) continue;
+      for (const t of a.req.tiles) busy.add(tileKey(a.page, a.rs, t.i, t.j));
+    }
 
     for (const p of pagesInRect(this.layout, vis)) {
       const rect = this.layout.rects[p]!;
@@ -1295,7 +1397,7 @@ export class Viewer {
       const missingRing: { i: number; j: number }[] = [];
       for (let j = ring.j0; j <= ring.j1; j++) {
         for (let i = ring.i0; i <= ring.i1; i++) {
-          if (this.cache.peek(p, rs, i, j)) continue;
+          if (this.cache.peek(p, rs, i, j) || busy.has(tileKey(p, rs, i, j))) continue;
           const inCore = i >= core.i0 && i <= core.i1 && j >= core.j0 && j <= core.j1;
           (inCore ? missingCore : missingRing).push({ i, j });
         }
@@ -1310,8 +1412,8 @@ export class Viewer {
               if (set.has(i * 100003 + j)) tiles.push(tileSpec(grid, i, j));
           const req = regionRequest(p, rs, grid, reg, tiles);
           const [X, Y] = rotatePoint((req.x + req.w / 2) / rs, (req.y + req.h / 2) / rs, size, this.rotationDeg);
-          const sx = (rect.x + X) * this.view.scale + this.view.tx;
-          const sy = (rect.y + Y) * this.view.scale + this.view.ty;
+          const sx = (rect.x + X) * view.scale + view.tx;
+          const sy = (rect.y + Y) * view.scale + view.ty;
           jobs.push({ kind: "tiles", page: p, rs, req, prio, dist: Math.hypot(sx - cx, sy - cy) });
         }
       }
@@ -1371,19 +1473,20 @@ export class Viewer {
   }
 
   /**
-   * Find out how many workers a running render occupies (see idleForThumbnails). Small
-   * regions always use one. A large one asks the backend, which knows once it has planned
-   * the page's first large render: retried a few times, since this can beat the plan.
+   * Find out how many workers a running render occupies (see idleForThumbnails). The
+   * backend decides (a small region on a very heavy page is banded too) and knows once it
+   * has planned the page's first render: retried a few times, since this can beat the plan.
+   * A renderer that can't say is assumed to keep small regions on one worker.
    */
   private learnBands(job: Job, tries = 5): void {
-    if (job.req.w * job.req.h <= SMALL_REGION_PX) {
-      job.bands = 1;
+    const doc = this.doc;
+    if (!doc) return;
+    if (!this.renderer.knownBands) {
+      if (job.req.w * job.req.h <= SMALL_REGION_PX) job.bands = 1;
       return;
     }
-    const doc = this.doc;
-    if (!doc || !this.renderer.knownBands) return;
     this.renderer
-      .knownBands(doc.docId, job.page)
+      .knownBands(doc.docId, job.page, job.req.w, job.req.h)
       .then((n) => {
         if (!this.active.has(job)) return;
         if (n !== null) job.bands = n;
@@ -1626,14 +1729,19 @@ export class Viewer {
     }
     if (this.flight) {
       const f = this.flight;
-      const e = easeOutCubic((performance.now() - f.t0) / f.dur);
+      let e = easeOutCubic((performance.now() - f.t0) / f.dur);
       this.view = interpolateView(f.from, f.to, e, this.vw, this.vh);
+      if (e < 1 && remainingMove(this.view, f.to, this.vw, this.vh) * this.dpr < LAND_PX) e = 1; // see LAND_PX
       if (e >= 1) {
         this.view = f.to;
         this.flight = null;
+        // Keeps the renders started for this destination (same scale), drops the rest.
         this.inputActivity(true);
-        this.scaleSettleMs = Math.min(WHEEL_SETTLE_MS, this.opts.settleMs);
-        this.scheduleSettle();
+        // No settle delay: it waits for another wheel notch, and a flight has none to come.
+        if (this.settleTimer) clearTimeout(this.settleTimer);
+        this.settleTimer = null;
+        this.scaleSettleMs = 0;
+        this.onSettle();
       } else {
         this.lastInput = performance.now();
         this.requestFrame();
@@ -1641,17 +1749,32 @@ export class Viewer {
       this.emitUi();
     }
     if (this.anim) {
-      const s = approachScale(this.view.scale, this.anim.target, dt);
-      this.view = constrainView(
-        zoomAt(this.view, this.anim.ax, this.anim.ay, s),
-        this.layout.bounds, this.vw, this.vh,
-      );
+      const a = this.anim;
+      let s = approachScale(this.view.scale, a.target, dt);
+      const to = constrainView(zoomAt(this.view, a.ax, a.ay, a.target), this.layout.bounds, this.vw, this.vh);
+      this.view = constrainView(zoomAt(this.view, a.ax, a.ay, s), this.layout.bounds, this.vw, this.vh);
+      if (s !== a.target && remainingMove(this.view, to, this.vw, this.vh) * this.dpr < LAND_PX) {
+        // See LAND_PX: land now rather than creep through the last pixel or two.
+        s = a.target;
+        this.view = to;
+      }
       if (s === this.anim.target) {
+        const ahead = this.anim.rs !== null;
         this.anim = null;
+        // Keeps the renders started for this landing view (same scale), drops the rest.
         this.inputActivity(true);
-        // The ease covered the wait for more notches: settle soon.
-        this.scaleSettleMs = Math.min(WHEEL_SETTLE_MS, this.opts.settleMs);
-        this.scheduleSettle();
+        if (ahead) {
+          // Rendering began during the ease, which also covered the wait for more notches
+          // (a notch mid-ease retargets it): settle now, as a flight does.
+          if (this.settleTimer) clearTimeout(this.settleTimer);
+          this.settleTimer = null;
+          this.scaleSettleMs = 0;
+          this.onSettle();
+        } else {
+          // The ease covered the wait for more notches: settle soon.
+          this.scaleSettleMs = Math.min(WHEEL_SETTLE_MS, this.opts.settleMs);
+          this.scheduleSettle();
+        }
       } else {
         this.lastInput = performance.now();
         this.requestFrame();
@@ -1676,7 +1799,8 @@ export class Viewer {
     // and keep the renderer busy. Cheap: a few tile-range loops per visible page.
     if (this.panPending && this.doc && !this.renderBlocked) {
       this.panPending = false;
-      this.plan();
+      if (this.anim?.rs != null) this.renderWheelAhead();
+      else this.plan();
     }
     // Kick the queue if a render was waiting for a zoom to end.
     if (this.queue.length && !this.renderBlocked && this.canStart(this.queue[0])) this.pump();
@@ -1706,6 +1830,11 @@ export class Viewer {
     const target = this.renderScale;
     const vis = visibleWorldRect(this.view, this.vw, this.vh);
     const pages = pagesInRect(this.layout, vis);
+    // Tiles rendered ahead for a flight or a wheel ease stay hidden until it lands (see
+    // renderAhead, renderWheelAhead), unless they are at the scale already on screen.
+    const hidden = new Set<number>(this.anim?.hidden);
+    if (this.flight?.rs != null) hidden.add(this.flight.rs);
+    hidden.delete(target);
 
     for (const p of pages) {
       const r = this.layout.rects[p]!;
@@ -1752,7 +1881,7 @@ export class Viewer {
 
       // Fallback layers (other scales) underneath, then bands still rendering at the target
       // scale, then the target's tiles. See fallbackScales: sharper copies go on top.
-      const scales = fallbackScales(this.cache.scalesFor(p), target);
+      const scales = fallbackScales(this.cache.scalesFor(p), target).filter((s) => !hidden.has(s));
       const drawTiles = (rs: number) => {
         const grid = tileGrid(size, rs);
         const range = this.pageRange(p, grid, rs, vis, 0);

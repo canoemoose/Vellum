@@ -50,12 +50,33 @@ changes. It is the one bit of maths everything else depends on, so it has the mo
 1. **Instant stage.** Every input changes the view and requests a frame. The compositor
    redraws from whatever bitmaps are cached, scaled to the new view. Nothing renders.
    Wheel notches animate (exponential ease, ~45 ms time constant) towards a target scale;
-   touchpad pinch and drags apply directly.
-2. **Sharp stage.** After the last input ("settle": 60 ms after a wheel zoom's ease lands,
-   150 ms after anything else, such as a pinch), `plan()` lists the tiles that cover the
-   viewport at the render scale for the current zoom, plus a one-tile prefetch ring, skips
-   any already cached, and queues region renders: visible tiles first, nearest the centre
-   first, then the ring, then a page preview if the page has none.
+   touchpad pinch and drags apply directly. The exception: a flight or a wheel ease renders
+   where it will land while it moves (below).
+2. **Sharp stage.** After the last input ("settle": at once when a flight or a wheel ease
+   lands, 150 ms after anything else, such as a pinch), `plan()` lists
+   the tiles that cover the viewport at the render scale for the current zoom, plus a
+   one-tile prefetch ring, skips any already cached or already rendering, and queues region
+   renders: visible tiles first, nearest the centre first, then the ring, then a page
+   preview if the page has none.
+
+**Flights and wheel eases render ahead.** A flight (fit, typed zoom, actual size:
+`animateTo`) knows where it will land, so it plans and starts that view's renders as it
+begins (`renderAhead`), at the render scale it will land on. Those tiles go into the cache
+but aren't drawn until it lands, so the picture swaps cleanly rather than sharpening in
+patches mid-flight. Landing keeps those renders; any other input ends the flight and drops
+them (`cancelFlight`). A wheel notch does the same for its ease (`renderWheelAhead`): the
+landing view is the target scale about the cursor. Each further notch re-plans for the new
+target and aborts renders at the previous one's scale (a band already running in PDFium
+still finishes); every scale started during the gesture stays hidden until it lands.
+Waiting for the notches to pause before rendering was tried and measured worse: on one
+notch it pushed the render past the end of the ease, and bursts gained nothing clear.
+Both kinds of ease land as soon as under 4 device pixels of movement would be left at the
+window's corners (`LAND_PX`, `remainingMove`), rather than creeping through the last pixel
+or two: measured from the screen, that creep left the picture still but soft for 60 to
+80 ms before the sharp tiles went in. The final snap is under 4 px, on the frame the sharp
+tiles appear. A pan
+mid-ease moves the anchor, so the frame re-plans. Since rendering began during the ease,
+which also covers the wait for another notch, there's no settle delay after it lands.
 
 **Render scales** (`chooseRenderScale` in `tiles.ts`) are quantised to steps of 2^¼, so
 zooming back and forth lands on scales already cached, and they run ahead of the display:
@@ -250,10 +271,15 @@ PDFium worker, like everything else. Scale detection reads one character per PDF
 index (`FPDFText_GetUnicode`), so match positions map straight to `FPDFText_GetCharBox`.
 The matching and ranking are pure (`src-tauri/src/scale.rs`, tested in `tests/scale.rs`):
 `1:NNN`, `1 : NNN`, `1∶NNN`, and `1/NNN` for standard ratios from 1/10 only; times,
-dates, paper sizes ("A1:50") and parts of larger numbers are rejected. Candidates outside
+dates, paper sizes ("A1:50") and parts of larger numbers are rejected. Imperial scales too:
+an inch length, "=", feet (and inches) or inches (`1/4" = 1'-0"` is 1:48, `1" = 20'` is
+1:240), with typographic quotes and primes and fraction characters. Before matching,
+`clean_text` drops the line breaks PDFium generates between two characters on the same line
+(on some pages, the Fieldwork set's site plan with its doubled map labels, it breaks between
+nearly every character); breaks between lines stay, as a space. Candidates outside
 1..100000 are dropped; the rest are ordered by a score: position (0 at the top-left, 2 at
 the bottom-right, since title blocks live there), +1.5 when "scale" appears in the 24
-characters before, +0.5 for a standard ratio, −1.5 for 1:1.
+characters before, +0.5 for a standard ratio (metric or common imperial), −1.5 for 1:1.
 
 ### Text layer, links and search (`text.rs`, `src/lib/text/`, editing phase 1)
 
@@ -485,8 +511,12 @@ formatting, shortcuts, theme maths, export size limits).
   teal, `#0d9488`): `--accent`, `--accent-soft` and `--accent-bd` on the root, plus a per-theme
   `--accent-text` for links. Components use tokens only.
 - **Drawing scale.** On open, `findScale(docId, 0)`; the best candidate is adopted only from
-  a title-block position (`shell/scale.ts`). Hand-set scales are remembered per file. The
-  tab's scale feeds the status bar and `PrintContext`.
+  a title-block position (`shell/scale.ts`). Every other page's title block is read the first
+  time it's viewed or measured on (`detectPageScale`), since a set's sheets each have their
+  own scale. A page measures at (`resolvePageScale`): a scale set for it alone; else one set
+  by hand for every page; else its own title block's; else page 1's, flagged as borrowed (the
+  status bar in amber, a one-time notice when measuring). Hand-set scales are remembered per
+  file. The tab's scale feeds `PrintContext`; the scale dialog shows the page in view's.
 - **Settings** are one validated object in localStorage (`vellum.settings.v1`); print
   presets are WP-Print's own keys.
 - **Installer.** NSIS, per user. `src-tauri/windows/installer-hooks.nsh` registers Vellum

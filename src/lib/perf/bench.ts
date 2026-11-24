@@ -3,7 +3,7 @@
 // tools/bench.mjs launches the release build repeatedly and aggregates the JSON.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Viewer } from "../engine/viewer";
+import type { SharpEvent, Viewer } from "../engine/viewer";
 import { fitRect } from "../view/viewMath";
 import {
   type LaunchArgs,
@@ -25,6 +25,36 @@ const REPS = 3;
 const PAN_MS = 2000;
 const PAN_RADIUS = 400; // CSS px; one lap per PAN_MS, about 1250 px/s
 const TIMEOUT = 120000;
+/** The viewer's default flight (Viewer.animateTo). */
+const FLIGHT_MS = 220;
+/** --bench-wheel: one notch, and the gap between notches in a spin. */
+const NOTCH = 1.25;
+const NOTCH_GAP_MS = 40;
+/** --bench-spin: ten notches in from 80% (to about 745%) at each gap, three times each. */
+const SPIN_GAPS_MS = [100, 200, 300];
+const SPIN_NOTCHES = 10;
+const SPIN_FROM_ZOOM = 0.8;
+
+interface SpinRep {
+  frames: number;
+  /** Frame intervals over 1.5 frames (a dropped frame), and over 50 ms (a visible hitch). */
+  dropped: number;
+  over50: number;
+  p95Ms: number;
+  maxMs: number;
+}
+
+/** Frame times from requestAnimationFrame until `stop` is called (the page's own frames). */
+function recordFrames(): { stop: () => number[] } {
+  const ts: number[] = [];
+  let on = true;
+  const tick = (t: number) => {
+    ts.push(t);
+    if (on) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return { stop: () => ((on = false), ts) };
+}
 
 interface PanResult {
   fps: number;
@@ -48,6 +78,23 @@ interface ZoomResult {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise<number>((r) => requestAnimationFrame(r));
+
+/**
+ * The first "sharp" report at or after `landed()` (ms, performance.now), with its time.
+ * Listens from the start, so a report in the frame right after landing isn't missed; one
+ * before landing is stale (a move ends any measurement) and is waited past.
+ */
+function sharpAfter(v: Viewer, landed: () => number): Promise<{ ev: SharpEvent; t: number }> {
+  return new Promise((res) => {
+    const listen = () =>
+      v.whenSharp().then((ev) => {
+        const t = performance.now();
+        if (t < landed()) listen();
+        else res({ ev, t });
+      });
+    listen();
+  });
+}
 
 function timeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([p, sleep(ms).then(() => null)]);
@@ -119,6 +166,9 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     // --no-progressive: whole-region renders, to compare against streaming.
     if ((args as unknown as { noProgressive?: boolean }).noProgressive) v.progressive = false;
     out.progressive = v.progressive;
+    const flight = !!args.benchFlight;
+    const notches = !flight && args.benchWheel ? Math.max(1, Math.round(args.benchWheel)) : 0;
+    out.zoomBy = flight ? "flight" : notches ? `wheel-${notches}` : "wheel";
     out.refreshHz = await measureRefresh();
     await resetMemoryPeak();
 
@@ -169,7 +219,48 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
     const results: ZoomResult[] = [];
     const snapDir = args.benchOut ? args.benchOut.replace(/\.json$/i, "") : null;
 
-    for (const z of ZOOMS) {
+    if (args.benchSpin) {
+      // --bench-spin: a steady wheel spin, as a mouse with a free-spinning wheel sends it.
+      // Each rep starts sharp at 80% on the page centre, from cold tiles, then sends ten
+      // notches at one gap and records every frame until 400 ms after the last notch.
+      const ax = v.vw / 2;
+      const ay = v.vh / 2;
+      const centred = (s: number) => ({ scale: s, tx: ax - (rect.x + rect.w / 2) * s, ty: ay - (rect.y + rect.h / 2) * s });
+      const budget = 1000 / (out.refreshHz as number);
+      const spin: { gapMs: number; reps: SpinRep[] }[] = [];
+      for (const gap of SPIN_GAPS_MS) {
+        const reps: SpinRep[] = [];
+        for (let rep = 0; rep < REPS; rep++) {
+          v.setView(centred(SPIN_FROM_ZOOM * (96 / 72)), "jump");
+          await v.whenIdle(TIMEOUT);
+          v.dropTiles();
+          v.setView(centred(SPIN_FROM_ZOOM * (96 / 72)), "jump");
+          await v.whenIdle(TIMEOUT);
+          await sleep(300);
+          const rec = recordFrames();
+          for (let k = 0; k < SPIN_NOTCHES; k++) {
+            if (k) await sleep(gap);
+            v.zoomAt(ax, ay, NOTCH, true);
+          }
+          await sleep(400);
+          const ts = rec.stop();
+          const iv = ts.slice(1).map((t, i) => t - ts[i]);
+          reps.push({
+            frames: ts.length,
+            dropped: iv.filter((d) => d > budget * 1.5).length,
+            over50: iv.filter((d) => d > 50).length,
+            p95Ms: pct(iv, 0.95),
+            maxMs: Math.max(0, ...iv),
+          });
+          await v.whenIdle(TIMEOUT);
+          sampleHeap();
+        }
+        spin.push({ gapMs: gap, reps });
+      }
+      out.spin = spin;
+    }
+
+    for (const z of args.benchSpin ? [] : ZOOMS) {
       const targetScale = z.zoom === "fit" ? fitScale : z.zoom * (96 / 72);
       const r: ZoomResult = {
         label: z.label,
@@ -181,22 +272,69 @@ export async function runBench(v: Viewer, args: LaunchArgs, shownEpochMs: number
         pan: [],
       };
       for (let rep = 0; rep < REPS; rep++) {
-        // Start 1.25x out from the target, centred on the page centre, and let it go sharp.
+        // Start 1.25x out from the target (1.25x per notch for --bench-wheel), centred on the
+        // page centre, and let it go sharp.
+        const out0 = notches ? NOTCH ** notches : 1.25;
         v.fit("page");
         const ax = v.vw / 2;
         const ay = v.vh / 2;
         v.setView(
-          { scale: targetScale / 1.25, tx: ax - (rect.x + rect.w / 2) * (targetScale / 1.25), ty: ay - (rect.y + rect.h / 2) * (targetScale / 1.25) },
+          { scale: targetScale / out0, tx: ax - (rect.x + rect.w / 2) * (targetScale / out0), ty: ay - (rect.y + rect.h / 2) * (targetScale / out0) },
           "jump",
         );
         await v.whenIdle(TIMEOUT);
         // Earlier reps cached the target scale; drop tiles so every rep renders from cold
         // (previews stay, as they would in real use).
         v.dropTiles();
+        // Two frames, so a "sharp" report from the step before has gone out before we listen
+        // (one frame let it through on the aerial drawing).
         await frame();
+        await frame();
+        if (notches) {
+          // --bench-wheel N: N notches 40 ms apart (one, or a quick spin), timed from the
+          // frame the ease lands to sharp: the still, blurry wait a user sees. A "sharp"
+          // report can't come mid-ease (the ease ends any measurement), so one that arrives
+          // before landing is stale and is waited past.
+          const moving = () => (v as unknown as { animating: boolean }).animating;
+          let landed = Infinity;
+          const got = timeout(sharpAfter(v, () => landed), TIMEOUT);
+          for (let k = 0; k < notches; k++) {
+            if (k) await sleep(NOTCH_GAP_MS);
+            v.zoomAt(ax, ay, NOTCH, true);
+          }
+          while (moving()) await frame();
+          landed = performance.now();
+          const s = await got;
+          const ev = s?.ev ?? null;
+          r.settleToSharpMs.push(s ? s.t - landed : null);
+          r.settleToFirstBandMs.push(ev ? ev.settleToFirstBandMs : null);
+          r.complete.push(ev ? ev.complete : false);
+          r.regions.push(ev ? ev.regions : 0);
+          await v.whenIdle(TIMEOUT);
+          sampleHeap();
+          continue;
+        }
         // One animated zoom step to the target (like a couple of wheel notches), then
         // measure settle -> all visible tiles sharp.
         const sharp = v.whenSharp();
+        if (flight) {
+          // --bench-flight: the same step as a flight (as typed zoom, fit and the zoom box
+          // do), timed from when it lands to sharp: the still, blurry wait a user sees. The
+          // landing is taken as start + FLIGHT_MS; the real one is up to a frame later.
+          const to = { scale: targetScale, tx: ax - (rect.x + rect.w / 2) * targetScale, ty: ay - (rect.y + rect.h / 2) * targetScale };
+          const t0 = performance.now();
+          const got = timeout(sharpAfter(v, () => t0 + FLIGHT_MS), TIMEOUT);
+          v.animateTo(to, FLIGHT_MS);
+          const s = await got;
+          const ev = s?.ev ?? null;
+          r.settleToSharpMs.push(s ? s.t - t0 - FLIGHT_MS : null);
+          r.settleToFirstBandMs.push(ev ? ev.settleToFirstBandMs : null);
+          r.complete.push(ev ? ev.complete : false);
+          r.regions.push(ev ? ev.regions : 0);
+          await v.whenIdle(TIMEOUT);
+          sampleHeap();
+          continue;
+        }
         v.zoomAt(ax, ay, 1.25, true);
         const ev = await timeout(sharp, TIMEOUT);
         r.settleToSharpMs.push(ev ? ev.settleToSharpMs : null);

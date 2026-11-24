@@ -72,3 +72,22 @@ fn cancelling_a_queued_render_skips_its_strips() {
     assert_eq!(pdfium().render(doc, region(103)).unwrap(), None);
     assert_eq!(pdfium().render(doc, region(104)).unwrap().unwrap(), whole);
 }
+
+#[test]
+fn cancelling_a_first_render_skips_parsing_its_page() {
+    let (doc, _) = open_fixture("cancel-profile", &make_pdf(vec![page(200.0, 100.0, &[(0.0, 0.0, 200.0, 100.0)])]));
+    // The page's first render has to ask its worker to parse and describe the page. Queue that
+    // behind busy workers, then cancel: the worker skips it, so nothing is learned.
+    let gates = block_workers();
+    let (done_tx, done_rx) = channel();
+    std::thread::spawn(move || done_tx.send(pdfium().render(doc, region(201))).unwrap());
+    std::thread::sleep(Duration::from_millis(200));
+    pdfium().cancel(201);
+    drop(gates);
+    assert_eq!(done_rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap(), None);
+    assert_eq!(pdfium().known_bands(doc, 0, 400, 200), None, "a cancelled profile isn't remembered");
+
+    // The next render parses the page and learns it: a small region of a light page is one band.
+    assert!(pdfium().render(doc, region(202)).unwrap().is_some());
+    assert_eq!(pdfium().known_bands(doc, 0, 400, 200), Some(1));
+}

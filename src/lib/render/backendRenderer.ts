@@ -167,8 +167,8 @@ export abstract class BackendRenderer implements Renderer {
     return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 0, w * h * 4), w, h));
   }
 
-  knownBands(docId: number, page: number): Promise<number | null> {
-    return invoke<number | null>("doc_known_bands", { docId, page });
+  knownBands(docId: number, page: number, w: number, h: number): Promise<number | null> {
+    return invoke<number | null>("doc_known_bands", { docId, page, w, h });
   }
 
   async cachedPreview(docId: number, page: number): Promise<ImageBitmap | null> {

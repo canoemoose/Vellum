@@ -9,9 +9,73 @@ import type { Units } from "./paper";
 /** Page index (0-based) to its own scale. */
 export type PageOverrides = Record<number, DocScale>;
 
-/** The scale that applies to a page: its own, else the document's, else none. */
-export function scaleForPage(doc: DocScale | null, pages: PageOverrides | undefined, page: number): DocScale | null {
-  return pages?.[page] ?? doc;
+/**
+ * What each page's own title block says: page index to the scale found there, or null when
+ * the page has been read and states none. A page not yet read is absent.
+ */
+export type DetectedPages = Record<number, number | null>;
+
+/**
+ * Where a page's scale came from:
+ * - "this page": set for that page alone (This page only, or Calibrate on it);
+ * - "document": set by hand for every page;
+ * - "title block": the page's own title block;
+ * - "borrowed": the page states none, so it takes the document's (page 1's title block):
+ *   shown as a warning, since that may well be wrong (a detail sheet in a site-plan set);
+ * - "pending": the page hasn't been read yet, so the document's stands in for now.
+ */
+export type ScaleFrom = "this page" | "document" | "title block" | "borrowed" | "pending";
+
+export interface PageScale {
+  scale: DocScale | null;
+  from: ScaleFrom | null;
+}
+
+/**
+ * The scale that applies to a page and where it came from. A scale set for the page wins;
+ * then one set by hand for the whole document (an explicit "every page"); then the page's
+ * own title block; then the document's, flagged as borrowed (Matt, 24 Nov: page 1's, with a
+ * warning, rather than no scale).
+ */
+export function resolvePageScale(doc: DocScale | null, pages: PageOverrides | undefined, page: number, detected?: DetectedPages): PageScale {
+  const own = pages?.[page];
+  if (own) return { scale: own, from: "this page" };
+  if (doc?.source === "manual") return { scale: doc, from: "document" };
+  const d = detected?.[page];
+  if (typeof d === "number") return { scale: { ratio: d, source: "detected" }, from: "title block" };
+  if (!doc) return { scale: null, from: null };
+  return { scale: doc, from: d === null ? "borrowed" : "pending" };
+}
+
+/** The scale that applies to a page: see resolvePageScale. */
+export function scaleForPage(doc: DocScale | null, pages: PageOverrides | undefined, page: number, detected?: DetectedPages): DocScale | null {
+  return resolvePageScale(doc, pages, page, detected).scale;
+}
+
+/**
+ * The status bar's scale for the page in view, and whether to show it as a warning: a
+ * borrowed scale ("Scale 1:5000 (from page 1)") or none ("Scale not set").
+ */
+export function pageScaleStatus(
+  doc: DocScale | null,
+  pages: PageOverrides | undefined,
+  page: number,
+  units: Units = "metric",
+  detected?: DetectedPages,
+): { text: string; warn: boolean } {
+  const r = resolvePageScale(doc, pages, page, detected);
+  if (!r.scale) return { text: "Scale not set", warn: true };
+  const n = formatRatio(r.scale.ratio, units);
+  switch (r.from) {
+    case "this page":
+      return { text: `Scale ${n} (this page)`, warn: false };
+    case "title block":
+      return { text: `Scale ${n} (from title block)`, warn: false };
+    case "borrowed":
+      return { text: `Scale ${n} (from page 1)`, warn: true };
+    default:
+      return { text: scaleStatusText(r.scale, units), warn: false };
+  }
 }
 
 /** Overrides with one page's set (or, with null, removed). */

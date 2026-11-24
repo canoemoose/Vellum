@@ -238,6 +238,21 @@ export function interpolateView(a: View, b: View, e: number, vw: number, vh: num
 }
 
 /**
+ * How far (CSS px) anything on screen still has to move to get from view `v` to view `f`:
+ * the largest displacement of the world points under the viewport's four corners. For a
+ * zoom or a pan the corners move most, so this bounds every point in the view.
+ */
+export function remainingMove(v: View, f: View, vw: number, vh: number): number {
+  let m = 0;
+  for (const [sx, sy] of [[0, 0], [vw, 0], [0, vh], [vw, vh]]) {
+    const [wx, wy] = screenToWorld(v, sx, sy);
+    const [fx, fy] = worldToScreen(f, wx, wy);
+    m = Math.max(m, Math.hypot(fx - sx, fy - sy));
+  }
+  return m;
+}
+
+/**
  * Fit the page's width, keeping the point at the vertical centre of the view where it is
  * (so fitting width doesn't jump to the top), unless that point isn't on the page: then the
  * page's top, as `fitRect` does.

@@ -18,12 +18,32 @@ installed copies update themselves: see Releasing below and
 - `npm run gen:synthetic`: write the synthetic stress PDFs to `bench-output/synthetic/`.
 - `npm run bench -- --runs 3 [--pdfium-threads 8] [--dpr 2] [--only name] [--exe path] [files...]`
   (PDFium is the only renderer; `--renderer pdfium` is accepted). Honours `CARGO_TARGET_DIR`.
+  Zoom modes: `--flight` (zoom as a flight, timed landing to sharp), `--wheel N` (N notches
+  40 ms apart, landing to sharp), `--spin --page N` (a steady wheel spin, counting long frames).
 - `VELLUM_PDFIUM_TIMING=1` logs per-strip render times; `VELLUM_IMAGE_LOD=1` turns on the
   experimental image level of detail (off: it measured slower, see docs/v0.1-handoff/lod.md).
+  `VELLUM_PERF_LOG=1` logs every settle-to-sharp time to perf-log.csv without the debug
+  overlay (viewer-bench sets it).
   Image swaps (`pdfium_swap.rs`) are always on and log each swap and colour-profile check
   as `[swap]` lines on stderr.
 - Speed work: start from [docs/speed-handoff.md](docs/speed-handoff.md) (state, numbers,
-  ideas ranked, how to measure).
+  ideas ranked, how to measure). The current baseline, the comparison with other viewers and
+  the agreed order of fixes are in [docs/speed-diagnosis-scope.md](docs/speed-diagnosis-scope.md)
+  (current truth; its dated log is [docs/speed-diagnosis-log.md](docs/speed-diagnosis-log.md)).
+- `tools/viewer-bench` (C#, `dotnet build -c Release` in that folder): times Vellum and six
+  other viewers from outside by watching the screen. `ViewerBench.exe run [--apps a,b]
+  [--runs 3] [--quiet 10000] files...` for cold opens, fit page and fit width, and a Ctrl+wheel
+  zoom at the middle of the sheet; `--whole-sheet` for launch to the whole sheet drawn;
+  `--notches [--frames] [--keep-raw] [--tolerance 2] [--quiet 2500] [--no-warm]` for single
+  wheel notches, timed from the zoom finishing to sharp (`analyse <run dir> [--why]` re-checks
+  saved grabs). Results in `bench-output/viewers/`. Always set `VELLUM_EXE`
+  to a known build, and check the saved frames by eye before quoting a figure. It takes over
+  the mouse and keyboard on the primary monitor. Traps and what is parked: the scope doc above.
+- `node tools/screenshots.mjs [--only name] [--theme dark|light|both]`: homepage screenshots,
+  unattended, into `bench-output/screenshots/`. Drives the release exe through WebView2's
+  DevTools port with a throwaway profile (your own settings untouched) and captures with
+  CaptureGraphicsWin2D (Microsoft Store). Needs `test-files/fieldwork-festival-drawing-set.pdf`,
+  made by `test-files/drawing-set.mjs` (both gitignored). Windows open on screen while it runs.
 - `node tools/fetch-pdfium.mjs`: download `pdfium.dll` into `src-tauri/pdfium/`.
 - `node tools/make-notices.mjs`: write `src-tauri/licenses/THIRD-PARTY-NOTICES.txt` (every
   shipped crate, front-end package and PDFium library with its licence). `tauri build` runs it;
@@ -31,8 +51,10 @@ installed copies update themselves: see Releasing below and
   `node tools/fetch-pdfium-licences.mjs` and commit `src-tauri/licenses/pdfium/`.
 - `node tools/make-crops.mjs`: re-cut the homepage feature close-ups from the screenshots in
   `site/img` (needs ffmpeg). Run after replacing a capture.
-- `node tools/make-icons.mjs`: rebuild the app icon set in `src-tauri/icons` from the SVGs in
+- `node tools/make-icons.mjs [--only app|document]`: rebuild the app icon set and
+  `document.ico` (the icon of PDFs that open in Vellum) in `src-tauri/icons` from the SVGs in
   `src-tauri/icons/source` (rendered with headless Edge; 16 and 24 px have their own drawings).
+  Edge occasionally hangs on one size: run it again.
 
 ## Releasing
 

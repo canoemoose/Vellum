@@ -18,6 +18,10 @@ zoom, plus multi-second stalls when zoomed out. Landed on main today:
 | `1ccad08` | *10 Nov:* every cached scale is drawn under a rendering zoom, not just the two nearest, so scraps from cancelled renders no longer push a complete earlier render out and let the blurry preview show through |
 | `9929e0a`, `847df53` | *10 Nov:* sidebar thumbnails render top-down, up to half the workers at once, drop pages scrolled away, and run beside a render that holds a single worker (Bayou's thumbnails no longer wait 6 s) |
 | `acd32d2`, `7767993` | *10 and 11 Nov:* image swaps (`pdfium_swap.rs`): images PDFium would decode on every render are decoded once, with a per-profile colour check; Bayou fit 4.3 s → about 100 ms (idea 2) |
+| (23 Nov) | Pages of 200k+ objects banded even when the region is small; the page profile (one band? object count?) is asked once per page, skipped if its render is cancelled; thumbnails always one worker; the front end asks the backend how many workers a render uses. Aerial fit 2339 → 450 ms (idea 2a) |
+| `9bf1a90` (23 Nov, branch `land-sharp`) | A flight (typed zoom, fit, actual size) renders its destination during the ease, held off screen until it lands, and settles on landing with no 60 ms wait. Landing to sharp on ordinary drawings about 150 to 200 ms → about 30 ms. Checked by Matt: good |
+| `d90b120` (23 Nov, branch `wheel-sharp`) | The same for the wheel: each notch renders where its ease lands, hidden until it lands, and settles on landing. One notch to sharp on ordinary drawings about 150 to 200 ms → 16 ms. Watch: a faint jerk on a slow free-spin (speed-diagnosis-scope.md, 3d) |
+| `cc93208` (24 Nov) | Wheel eases and flights land once under 4 px of movement is left at the window's corners, instead of creeping through the last pixel or two with the sharp tiles held back. From the screen: stage plan zoom finished to sharp 82 → 33 ms; every zoom ends 70 to 80 ms sooner. Matt saw no snap |
 
 Matt confirmed the zoom-out and pan stalls are fixed. *10 Nov:* he also judged thin lines at
 up to 1.6x downscale (`RS_MAX_DOWN` in `src/lib/render/tiles.ts`) fine, so it stays.
@@ -102,7 +106,12 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
    or an image estimated at 150 ms or more to decode, render as one band. Bayou fit
    4,283 → about 100 ms. Colour still differs from Acrobat and Foxit (both richer); parked.
 2a. **The aerial drawing (`projectlayoutmarch2021.pdf`) is slow at fit, and only at fit.**
-   *Probed 10 and 11 Nov; parked by Matt, may revisit with the native surface.* One
+   *Done 23 Nov: pages of 200,000 objects or more are
+   banded even for a small region (`HEAVY_PAGE_OBJECTS`, `bands_for` in `pdfium.rs`).
+   Aerial drawing, before / after: fit 2339 / 450 ms, first band 3432 / 1464 ms, peak
+   memory 4998 / 3221 MB. Ordinary drawings unchanged. Details and the threshold's
+   reasoning: speed-diagnosis-log.md, "Step 1 of Next steps". The notes below are the
+   original probe.* *Probed 10 and 11 Nov; parked by Matt, may revisit with the native surface.* One
    746 × 14400 pt page with 327,207 objects (280,109 paths, 46,202 text, 896 images: 730
    DeviceRGB JPEG tiles of about 1 MP, 166 small Indexed images). Bench: first page about
    3.5 s, settle at fit 2.3 to 2.6 s, peak memory about 5 GB; 400% and 1600% are in line with

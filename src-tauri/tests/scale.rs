@@ -197,3 +197,150 @@ fn a_stated_sheet_ranks_above_a_bare_ratio_in_the_same_place() {
     let stated = RawCandidate { sheet: Some(1), ratio: 100.0, text: "1:100".into(), ..bare.clone() };
     assert!(score(&stated, w, h) > score(&bare, w, h));
 }
+
+mod clean {
+    use vellum_lib::scale::{TextChar, clean_text, find_scale_matches, same_line};
+
+    /// Characters laid out left to right from `x` on a line whose baseline is `y` (user
+    /// space, y up), 10 pt high, 6 pt wide each. `|` is a PDFium-generated line break.
+    fn line(s: &str, x: f64, y: f64) -> Vec<TextChar> {
+        let mut out = Vec::new();
+        let mut cx = x;
+        for c in s.chars() {
+            if c == '|' {
+                out.push(TextChar { c: '\r', generated: true, bbox: None });
+                out.push(TextChar { c: '\n', generated: true, bbox: None });
+            } else {
+                out.push(TextChar { c, generated: false, bbox: Some([cx, y, cx + 6.0, y + 10.0]) });
+                cx += 6.0;
+            }
+        }
+        out
+    }
+
+    fn brk() -> Vec<TextChar> {
+        vec![TextChar { c: '\r', generated: true, bbox: None }, TextChar { c: '\n', generated: true, bbox: None }]
+    }
+
+    #[test]
+    fn same_line_needs_half_the_height_to_overlap() {
+        assert!(same_line([0.0, 0.0, 6.0, 10.0], [6.0, 2.0, 12.0, 12.0]));
+        assert!(!same_line([0.0, 0.0, 6.0, 10.0], [6.0, 6.0, 12.0, 16.0]));
+        assert!(!same_line([0.0, 0.0, 6.0, 10.0], [0.0, -20.0, 6.0, -10.0]));
+    }
+
+    #[test]
+    fn drops_breaks_pdfium_put_inside_a_line() {
+        // The Fieldwork site plan's title block as PDFium reports it: a break between nearly
+        // every character, the label above the scale and the date below it on other lines.
+        let mut t = line("S|C|A|L|E", 0.0, 40.0);
+        t.extend(brk());
+        t.extend(line("1|:|5|0|0|0| |@| |A|1", 0.0, 20.0));
+        t.extend(brk());
+        t.extend(line("2|0|2|6|-|1|1|-|1|7", 0.0, 0.0));
+        let (chars, map) = clean_text(&t);
+        let s: String = chars.iter().collect();
+        assert_eq!(s, "SCALE 1:5000 @ A1 2026-11-17");
+        let m = find_scale_matches(&chars);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].ratio, 5000.0);
+        assert!(m[0].labelled);
+        assert_eq!(m[0].sheet, Some(1));
+        // Every matched char maps back to a real PDFium char (for its box).
+        assert!((m[0].start..m[0].end).all(|i| map[i].is_some_and(|k| !t[k].generated)));
+    }
+
+    #[test]
+    fn keeps_clean_text_as_it_was() {
+        let mut t = line("SCALE", 0.0, 40.0);
+        t.extend(brk());
+        t.extend(line("1:200 @ A3", 0.0, 20.0));
+        let (chars, _) = clean_text(&t);
+        assert_eq!(chars.iter().collect::<String>(), "SCALE 1:200 @ A3");
+    }
+
+    #[test]
+    fn a_break_with_nothing_on_one_side_is_a_space() {
+        let mut t = brk();
+        t.extend(line("1:50", 0.0, 0.0));
+        t.extend(brk());
+        let (chars, _) = clean_text(&t);
+        assert_eq!(chars.iter().collect::<String>(), "1:50 ");
+    }
+}
+
+mod imperial {
+    use vellum_lib::scale::find_scale_matches;
+
+    fn found(s: &str) -> Vec<(String, f64)> {
+        find_scale_matches(&s.chars().collect::<Vec<_>>()).into_iter().map(|m| (m.text, m.ratio)).collect()
+    }
+    fn ratios(s: &str) -> Vec<f64> {
+        found(s).into_iter().map(|(_, r)| r).collect()
+    }
+
+    #[test]
+    fn reads_architectural_scales() {
+        assert_eq!(ratios("SCALE: 1/4\" = 1'-0\""), vec![48.0]);
+        assert_eq!(ratios("1/8\"=1'-0\""), vec![96.0]);
+        assert_eq!(ratios("3/16\" = 1'-0\""), vec![64.0]);
+        assert_eq!(ratios("3/32\" = 1'-0\""), vec![128.0]);
+        assert_eq!(ratios("1/2\" = 1'-0\""), vec![24.0]);
+        assert_eq!(ratios("3/4\" = 1'-0\""), vec![16.0]);
+        assert_eq!(ratios("1\" = 1'-0\""), vec![12.0]);
+        assert_eq!(ratios("1 1/2\" = 1'-0\""), vec![8.0]);
+        assert_eq!(ratios("1-1/2\" = 1'-0\""), vec![8.0]);
+        assert_eq!(ratios("3\" = 1'-0\""), vec![4.0]);
+        assert_eq!(ratios("1/4\" = 1' 0\""), vec![48.0]);
+        assert_eq!(ratios("1/4\" = 1'"), vec![48.0]);
+    }
+
+    #[test]
+    fn reads_engineering_scales() {
+        assert_eq!(ratios("SCALE 1\" = 20'"), vec![240.0]);
+        assert_eq!(ratios("1\" = 20'-0\""), vec![240.0]);
+        assert_eq!(ratios("1\"=10'"), vec![120.0]);
+        assert_eq!(ratios("1\" = 100'-0\""), vec![1200.0]);
+        assert_eq!(ratios("1 in = 50 ft"), vec![600.0]);
+    }
+
+    #[test]
+    fn takes_typographic_marks_and_fraction_characters() {
+        assert_eq!(ratios("¼″ = 1′-0″"), vec![48.0]);
+        assert_eq!(ratios("1/4\u{201d} = 1\u{2019}-0\u{201d}"), vec![48.0]);
+        assert_eq!(ratios("1½\" = 1'-0\""), vec![8.0]);
+        assert_eq!(ratios("⅛\" = 1'-0\""), vec![96.0]);
+        assert_eq!(ratios("1/4'' = 1'-0''"), vec![48.0]);
+    }
+
+    #[test]
+    fn keeps_the_text_and_the_label() {
+        let m = find_scale_matches(&"SCALE: 1/4\" = 1'-0\" NOTES".chars().collect::<Vec<_>>());
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].text, "1/4\" = 1'-0\"");
+        assert!(m[0].labelled);
+    }
+
+    #[test]
+    fn finds_ratios_and_imperial_scales_together_in_order() {
+        assert_eq!(ratios("PLAN 1:100   DETAIL 1/4\" = 1'-0\"   SECTION 1:20"), vec![100.0, 48.0, 20.0]);
+    }
+
+    #[test]
+    fn leaves_lengths_and_other_equations_alone() {
+        assert!(ratios("1/4\" DIA. BOLT").is_empty());
+        assert!(ratios("WALL 6\" THICK, 12'-0\" LONG").is_empty());
+        assert!(ratios("6\" = 150 mm").is_empty());
+        assert!(ratios("x = 1'").is_empty());
+        assert!(ratios("A1/4\" = 1'-0\"").is_empty()); // part of a word
+        assert!(ratios("2'-0\" = 1\"").is_empty()); // real side smaller than paper
+    }
+}
+
+#[test]
+fn ranks_common_imperial_scales_like_standard_ratios() {
+    use vellum_lib::scale::{RawCandidate, score};
+    let at = |ratio: f64| RawCandidate { ratio, text: String::new(), bbox: [500.0, 500.0, 520.0, 510.0], labelled: false, sheet: None };
+    assert_eq!(score(&at(48.0), 1000.0, 1000.0), score(&at(50.0), 1000.0, 1000.0));
+    assert!(score(&at(47.0), 1000.0, 1000.0) < score(&at(48.0), 1000.0, 1000.0));
+}

@@ -1,7 +1,57 @@
 //! Band splitting: every byte of a region buffer is written by exactly one band, and no band
 //! writes outside the buffer. An off-by-one here corrupts memory rather than drawing a seam.
 
-use vellum_lib::pdfium::{BandPart, split_region};
+use vellum_lib::pdfium::{BandPart, HEAVY_PAGE_OBJECTS, PageProfile, bands_for, split_region};
+
+fn light() -> PageProfile {
+    PageProfile { one_band: false, objects: 88_244 } // Curtis Hall p48, the densest ordinary sheet
+}
+
+fn heavy() -> PageProfile {
+    PageProfile { one_band: false, objects: 327_207 } // the aerial drawing
+}
+
+#[test]
+fn small_region_of_an_ordinary_page_stays_on_one_worker() {
+    // Zoomed out with many pages on screen: banding would make every worker parse every page.
+    assert_eq!(bands_for(400, 300, light(), 8), 1);
+    assert_eq!(bands_for(512, 1024, light(), 8), 1, "exactly 0.5 MP is still small");
+}
+
+#[test]
+fn large_region_of_an_ordinary_page_is_banded() {
+    assert_eq!(bands_for(512, 1025, light(), 8), 8);
+    assert_eq!(bands_for(1600, 960, light(), 8), 8);
+}
+
+#[test]
+fn small_region_of_a_heavy_page_is_banded() {
+    // The aerial drawing's fit view, about 56 x 1071 px: one worker took 2.3 s.
+    assert_eq!(bands_for(56, 1071, heavy(), 8), 8);
+    assert_eq!(bands_for(1600, 960, heavy(), 8), 8);
+}
+
+#[test]
+fn heavy_threshold_is_inclusive() {
+    let at = PageProfile { one_band: false, objects: HEAVY_PAGE_OBJECTS };
+    let below = PageProfile { one_band: false, objects: HEAVY_PAGE_OBJECTS - 1 };
+    assert_eq!(bands_for(56, 1071, at, 8), 8);
+    assert_eq!(bands_for(56, 1071, below, 8), 1);
+}
+
+#[test]
+fn one_band_pages_stay_on_one_worker_at_any_size() {
+    // A swapped or slow-to-decode image, however heavy or large.
+    let p = PageProfile { one_band: true, objects: 400_000 };
+    assert_eq!(bands_for(56, 1071, p, 8), 1);
+    assert_eq!(bands_for(4000, 3000, p, 8), 1);
+}
+
+#[test]
+fn band_count_is_never_zero() {
+    assert_eq!(bands_for(1600, 960, heavy(), 0), 1);
+    assert_eq!(bands_for(1600, 960, heavy(), 1), 1);
+}
 
 /// Mark every pixel each part covers (by its offset and stride) and check each is covered
 /// exactly once, all inside the buffer.

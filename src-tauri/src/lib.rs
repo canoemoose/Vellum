@@ -45,6 +45,15 @@ pub struct LaunchArgs {
     pub pdfium_threads: Option<usize>,
     /// Render whole regions instead of streaming bands (benchmark comparison).
     pub no_progressive: bool,
+    /// Zoom by a flight (as typed zoom, fit and the zoom box do) instead of a wheel step, and
+    /// time from the flight landing to sharp (benchmarking the blur after a zoom lands).
+    pub bench_flight: bool,
+    /// Zoom by this many wheel notches (1.25x each, 40 ms apart) and time from the ease
+    /// landing to sharp. 1 is one notch, more is a quick spin.
+    pub bench_wheel: Option<u32>,
+    /// Instead of the zoom steps: spin the wheel from 80% (ten notches in at fixed gaps) and
+    /// time every frame, to see whether rendering during a spin makes it stutter.
+    pub bench_spin: bool,
     /// Benchmark this page (zero-based) instead of the first.
     pub bench_page: Option<usize>,
     /// Benchmark window size in logical pixels, "WxH" (default 1600x1000).
@@ -52,6 +61,9 @@ pub struct LaunchArgs {
     /// Wall-clock time (ms since epoch) when `run` started; lets the front end
     /// split cold start into process/Rust init and WebView startup.
     pub process_start_epoch_ms: f64,
+    /// VELLUM_PERF_LOG set: log every settle-to-sharp event to perf-log.csv, as the debug
+    /// overlay does, but without the overlay (tools/viewer-bench watches the screen).
+    pub perf_log: bool,
 }
 
 pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
@@ -68,6 +80,9 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
             }
             "--debug" => out.debug = true,
             "--no-progressive" => out.no_progressive = true,
+            "--bench-flight" => out.bench_flight = true,
+            "--bench-spin" => out.bench_spin = true,
+            "--bench-wheel" => out.bench_wheel = it.next().and_then(|v| v.parse().ok()),
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
             "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
             "--bench-page" => out.bench_page = it.next().and_then(|v| v.parse().ok()),
@@ -271,15 +286,18 @@ async fn doc_thumbnail(
     Ok(tauri::ipc::Response::new(buf))
 }
 
-/// How many bands a page's large renders use, or null if not known yet. Never waits on a worker.
+/// How many workers a `w` x `h` region of a page renders on, or null if not known yet. Never
+/// waits on a worker.
 #[tauri::command]
 fn doc_known_bands(
     pdf: tauri::State<'_, PdfiumState>,
     docs: tauri::State<'_, Arc<Docs>>,
     doc_id: u64,
     page: usize,
+    w: i32,
+    h: i32,
 ) -> Result<Option<usize>, String> {
-    docs.known_bands(&pdf, doc_id, page)
+    docs.known_bands(&pdf, doc_id, page, w, h)
 }
 
 /// The page's text (empty for images).
@@ -398,6 +416,7 @@ fn exit_app(app: tauri::AppHandle, code: i32) {
 pub fn run() {
     let mut args = parse_args(std::env::args());
     args.process_start_epoch_ms = epoch_ms();
+    args.perf_log = std::env::var_os("VELLUM_PERF_LOG").is_some();
     let bench = args.bench;
     let bench_size = args.bench_size.unwrap_or((1600.0, 1000.0));
     let pdfium_threads = args.pdfium_threads;

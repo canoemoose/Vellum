@@ -1,11 +1,14 @@
 // Builds the app icon set in src-tauri/icons from the SVG sources in src-tauri/icons/source.
 //
-//   node tools/make-icons.mjs [--edge "C:\path\to\msedge.exe"]
+//   node tools/make-icons.mjs [--only app|document] [--edge "C:\path\to\msedge.exe"]
 //
 // vellum.svg is the icon from 32 px up; vellum-24.svg and vellum-16.svg are hand-drawn for those sizes and
 // go into the .ico (the taskbar, title bar and Explorer use them). Rendering uses Microsoft Edge headless,
 // which every Windows 10/11 machine has, so the script needs no npm packages. It writes:
 //   32x32.png, 128x128.png, 128x128@2x.png, icon.png (512), icon.ico (16-256), icon.icns (16-1024).
+// It also writes document.ico (16-256), the icon of PDFs that open in Vellum, from document-full.svg
+// (64 px up, the full app icon as its badge), document.svg (32-48), document-24.svg and document-16.svg
+// (docs/document-icon-brief.md). `--only` builds one of the two.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -30,8 +33,15 @@ if (!edge) {
   process.exit(1);
 }
 
-/** Which drawing each size uses. */
-const sourceFor = (size) => (size <= 16 ? "vellum-16.svg" : size <= 24 ? "vellum-24.svg" : "vellum.svg");
+const onlyArg = process.argv.indexOf("--only");
+const only = onlyArg > 0 ? process.argv[onlyArg + 1] : null;
+if (only !== null && only !== "app" && only !== "document") {
+  console.error("make-icons: --only takes app or document");
+  process.exit(1);
+}
+
+/** Which drawing each size uses, for the app icon ("vellum") or the document icon ("document"). */
+const sourceFor = (size, name = "vellum") => (size <= 16 ? `${name}-16.svg` : size <= 24 ? `${name}-24.svg` : `${name}.svg`);
 
 const work = mkdtempSync(join(tmpdir(), "vellum-icons-"));
 const profile = join(work, "edge-profile");
@@ -39,7 +49,7 @@ mkdirSync(profile);
 
 /** Renders one SVG at `size` px square with a transparent background; returns the PNG bytes. */
 function render(svgFile, size) {
-  const html = join(work, `r${size}.html`);
+  const html = join(work, `r${size}-${svgFile}.html`);
   const png = join(work, `r${size}-${svgFile}.png`);
   const src = pathToFileURL(join(srcDir, svgFile)).href;
   writeFileSync(
@@ -210,7 +220,7 @@ function buildIcns(entries) {
 
 // ------------------------------------------------------------------ build
 
-try {
+function buildApp() {
   const sizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
   const png = {};
   for (const s of sizes) {
@@ -235,6 +245,24 @@ try {
     ]),
   );
   console.log(`make-icons: wrote the icon set to ${iconsDir}`);
+}
+
+/** document.ico: every size Explorer asks for, at 100% to 200% display scale. */
+function buildDocument() {
+  const sizes = [16, 20, 24, 32, 40, 48, 64, 96, 256];
+  const images = sizes.map((size) => {
+    const file = size >= 64 ? "document-full.svg" : sourceFor(size, "document");
+    const png = render(file, size);
+    console.log(`make-icons: rendered document ${size} px from ${file}`);
+    return { size, png };
+  });
+  writeFileSync(join(iconsDir, "document.ico"), buildIco(images));
+  console.log(`make-icons: wrote document.ico to ${iconsDir}`);
+}
+
+try {
+  if (only !== "document") buildApp();
+  if (only !== "app") buildDocument();
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
