@@ -197,3 +197,74 @@ fn a_stated_sheet_ranks_above_a_bare_ratio_in_the_same_place() {
     let stated = RawCandidate { sheet: Some(1), ratio: 100.0, text: "1:100".into(), ..bare.clone() };
     assert!(score(&stated, w, h) > score(&bare, w, h));
 }
+
+mod clean {
+    use vellum_lib::scale::{TextChar, clean_text, find_scale_matches, same_line};
+
+    /// Characters laid out left to right from `x` on a line whose baseline is `y` (user
+    /// space, y up), 10 pt high, 6 pt wide each. `|` is a PDFium-generated line break.
+    fn line(s: &str, x: f64, y: f64) -> Vec<TextChar> {
+        let mut out = Vec::new();
+        let mut cx = x;
+        for c in s.chars() {
+            if c == '|' {
+                out.push(TextChar { c: '\r', generated: true, bbox: None });
+                out.push(TextChar { c: '\n', generated: true, bbox: None });
+            } else {
+                out.push(TextChar { c, generated: false, bbox: Some([cx, y, cx + 6.0, y + 10.0]) });
+                cx += 6.0;
+            }
+        }
+        out
+    }
+
+    fn brk() -> Vec<TextChar> {
+        vec![TextChar { c: '\r', generated: true, bbox: None }, TextChar { c: '\n', generated: true, bbox: None }]
+    }
+
+    #[test]
+    fn same_line_needs_half_the_height_to_overlap() {
+        assert!(same_line([0.0, 0.0, 6.0, 10.0], [6.0, 2.0, 12.0, 12.0]));
+        assert!(!same_line([0.0, 0.0, 6.0, 10.0], [6.0, 6.0, 12.0, 16.0]));
+        assert!(!same_line([0.0, 0.0, 6.0, 10.0], [0.0, -20.0, 6.0, -10.0]));
+    }
+
+    #[test]
+    fn drops_breaks_pdfium_put_inside_a_line() {
+        // The Fieldwork site plan's title block as PDFium reports it: a break between nearly
+        // every character, the label above the scale and the date below it on other lines.
+        let mut t = line("S|C|A|L|E", 0.0, 40.0);
+        t.extend(brk());
+        t.extend(line("1|:|5|0|0|0| |@| |A|1", 0.0, 20.0));
+        t.extend(brk());
+        t.extend(line("2|0|2|6|-|1|1|-|1|7", 0.0, 0.0));
+        let (chars, map) = clean_text(&t);
+        let s: String = chars.iter().collect();
+        assert_eq!(s, "SCALE 1:5000 @ A1 2026-11-17");
+        let m = find_scale_matches(&chars);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].ratio, 5000.0);
+        assert!(m[0].labelled);
+        assert_eq!(m[0].sheet, Some(1));
+        // Every matched char maps back to a real PDFium char (for its box).
+        assert!((m[0].start..m[0].end).all(|i| map[i].is_some_and(|k| !t[k].generated)));
+    }
+
+    #[test]
+    fn keeps_clean_text_as_it_was() {
+        let mut t = line("SCALE", 0.0, 40.0);
+        t.extend(brk());
+        t.extend(line("1:200 @ A3", 0.0, 20.0));
+        let (chars, _) = clean_text(&t);
+        assert_eq!(chars.iter().collect::<String>(), "SCALE 1:200 @ A3");
+    }
+
+    #[test]
+    fn a_break_with_nothing_on_one_side_is_a_space() {
+        let mut t = brk();
+        t.extend(line("1:50", 0.0, 0.0));
+        t.extend(brk());
+        let (chars, _) = clean_text(&t);
+        assert_eq!(chars.iter().collect::<String>(), "1:50 ");
+    }
+}

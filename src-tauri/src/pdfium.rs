@@ -733,20 +733,28 @@ impl PdfiumState {
             let frame = crate::text::page_frame(b, p);
             with_text_page(b, p, |tp| {
                 let n = unsafe { b.FPDFText_CountChars(tp) }.max(0);
-                // One char per PDFium char index, so match positions map straight to char boxes.
-                let chars: Vec<char> = (0..n)
-                    .map(|i| char::from_u32(unsafe { b.FPDFText_GetUnicode(tp, i) }).unwrap_or('\u{FFFD}'))
+                let char_box = |i: i32| {
+                    let (mut l, mut r, mut bo, mut t) = (0f64, 0f64, 0f64, 0f64);
+                    let ok = unsafe { b.FPDFText_GetCharBox(tp, i, &mut l, &mut r, &mut bo, &mut t) };
+                    (ok != 0 && !((r - l).abs() < 1e-9 && (t - bo).abs() < 1e-9)).then_some([l, bo, r, t])
+                };
+                let text: Vec<crate::scale::TextChar> = (0..n)
+                    .map(|i| crate::scale::TextChar {
+                        c: char::from_u32(unsafe { b.FPDFText_GetUnicode(tp, i) }).unwrap_or('\u{FFFD}'),
+                        generated: unsafe { b.FPDFText_IsGenerated(tp, i) } == 1,
+                        bbox: char_box(i),
+                    })
                     .collect();
+                // Spurious line breaks out (see clean_text); `map` takes match positions back to
+                // PDFium char indices for their boxes.
+                let (chars, map) = crate::scale::clean_text(&text);
                 let raw = crate::scale::find_scale_matches(&chars)
                     .into_iter()
                     .filter_map(|m| {
                         let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-                        for i in m.start..m.end {
-                            let (mut l, mut r, mut bo, mut t) = (0f64, 0f64, 0f64, 0f64);
-                            let ok = unsafe { b.FPDFText_GetCharBox(tp, i as i32, &mut l, &mut r, &mut bo, &mut t) };
-                            if ok == 0 || (r - l).abs() < 1e-9 && (t - bo).abs() < 1e-9 {
-                                continue; // generated or invisible char
-                            }
+                        for k in m.start..m.end {
+                            // Generated, invisible or added chars have no box.
+                            let Some([l, bo, r, t]) = map[k].and_then(|i| text[i].bbox) else { continue };
                             // Report page points, y down from the top of the page as shown.
                             let q = frame.rect(l, bo, r, t);
                             x0 = x0.min(q[0] as f64);

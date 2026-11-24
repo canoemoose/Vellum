@@ -68,6 +68,56 @@ pub struct ScaleCandidate {
     pub sheet: Option<String>,
 }
 
+/// One character of a page's text layer as PDFium reports it: the character, whether PDFium
+/// generated it (a space or line break it guessed, not in the content), and its box in user
+/// space (left, bottom, right, top), if it has one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextChar {
+    pub c: char,
+    pub generated: bool,
+    pub bbox: Option<[f64; 4]>,
+}
+
+/// Whether two character boxes (left, bottom, right, top) sit on one line: their vertical
+/// extents overlap by at least half the shorter one's height.
+pub fn same_line(a: [f64; 4], b: [f64; 4]) -> bool {
+    let (a0, a1) = (a[1].min(a[3]), a[1].max(a[3]));
+    let (b0, b1) = (b[1].min(b[3]), b[1].max(b[3]));
+    let overlap = a1.min(b1) - a0.max(b0);
+    let h = (a1 - a0).min(b1 - b0);
+    h > 0.0 && overlap >= 0.5 * h
+}
+
+/// The page's characters ready for `find_scale_matches`, each with the PDFium index it came
+/// from (None for one this added). A line break PDFium generated between two characters on
+/// the same line is dropped: on some pages (the Fieldwork set's site plan, whose map labels are
+/// drawn twice) PDFium breaks the line between nearly every character, so "1:5000" reaches
+/// the matcher as "1\r\n:\r\n5\r\n0\r\n0\r\n0". Other generated breaks stay, as one space, so
+/// text on different lines ("SCALE" over "1:5000", the date under it) doesn't run together.
+pub fn clean_text(chars: &[TextChar]) -> (Vec<char>, Vec<Option<usize>>) {
+    let real = |i: usize| !chars[i].generated && chars[i].bbox.is_some();
+    let mut out = Vec::with_capacity(chars.len());
+    let mut map = Vec::with_capacity(chars.len());
+    for (i, ch) in chars.iter().enumerate() {
+        if ch.generated && (ch.c == '\r' || ch.c == '\n') {
+            let prev = (0..i).rev().find(|&k| real(k));
+            let next = (i + 1..chars.len()).find(|&k| real(k));
+            let spurious = match (prev, next) {
+                (Some(p), Some(n)) => same_line(chars[p].bbox.unwrap(), chars[n].bbox.unwrap()),
+                _ => false,
+            };
+            if !spurious && out.last().is_some_and(|c: &char| !c.is_whitespace()) {
+                out.push(' ');
+                map.push(None);
+            }
+            continue;
+        }
+        out.push(ch.c);
+        map.push(Some(i));
+    }
+    (out, map)
+}
+
 fn is_space(c: char) -> bool {
     c == ' ' || c == '\u{a0}' || c == '\u{2009}' || c == '\u{202f}'
 }
