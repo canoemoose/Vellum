@@ -86,14 +86,32 @@ these opens; the whole-sheet table replaces it.
 512%: Vellum 503 and 521 ms last notch to settled, Chrome 180 and 182 ms. Typed zoom figures
 across viewers are not usable.
 
-## Proposed homepage number (for Matt, 23 Nov)
+## Homepage number: "Zoom to sharp in 16 ms" (Matt, 23 Nov, provisional)
 
-1. **"Shows the whole drawing about twice as fast as Adobe Acrobat."** True on all five
-   drawings (1.65x to 3.9x, median 2.0x), from launch to the whole sheet drawn, measured the
-   same way in both. The working is the table above. Recommended.
-2. "The whole sheet in about a second": 0.82 to 1.07 s on four drawings from launch, 2.7 s on
-   a 5 m aerial drawing. True, but needs the caveat and invites the question "on what?".
-3. Not claimable: "fastest PDF viewer". PDF-XChange is quicker on three of five drawings.
+Matt wanted a number that feels small. Chosen: **"Zoom to sharp in 16 ms."** From the app
+bench after the flight and wheel fixes (`tools/bench.mjs --wheel 1` and `--flight`),
+landing to sharp, fit / 400% / 1600%:
+
+| | One wheel notch (ms) | Typed zoom or fit (ms) |
+|---|---|---|
+| Curtis Hall | 16 / 17 / 17 | 31 / 31 / 28 |
+| Stage plan | 17 / 17 / 17 | 31 / 29 / 27 |
+
+Provisional until:
+
+1. **It is measured from the screen**, as the Acrobat comparison was (`tools/viewer-bench`).
+   The figure above is the in-app bench, whose floor is one frame. The cross-viewer zoom
+   comparison (next steps, 4) is to do this, and to say whether other viewers manage it.
+2. **"On typical drawings" goes with it** (a subline or footnote): the aerial drawing lands
+   sharp 50 to 500 ms after a zoom, its large bands being slow to reach the screen.
+3. **16 ms is one frame at 60 Hz**: on a faster screen it is one frame, less than 16 ms.
+4. Typed zooms and fits measure about 30 ms, not 16: "zoom" on the homepage should mean the
+   wheel, or the line says "a frame or two".
+
+Not chosen: "Shows the whole drawing about twice as fast as Adobe Acrobat" (true on all five
+drawings, 1.65x to 3.9x, median 2.0x; still usable elsewhere); "the whole sheet in about a
+second" (the stage plan takes 1,066 ms). Not claimable: "fastest PDF viewer" (PDF-XChange is
+quicker on three of five drawings).
 
 ## What is open
 
@@ -113,7 +131,7 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
 
 1. ~~Fix the one-worker rule~~ **Done 23 Nov.**
 2. ~~Re-run the open tests, launch to whole sheet as one timed step~~ **Done overnight
-   23 Nov.** Homepage number proposed above; Matt to choose.
+   23 Nov.** Homepage number chosen (provisional): see above.
 3. **The blur fix, for flights (typed zoom, fit, actual size): done, merged into main
    23 Nov (`9bf1a90`) after Matt tried it and judged it good.** No settle delay after a flight, and its destination renders during the
    220 ms ease, held off screen until it lands. Tests: 5 new (each fails on the old code), all
@@ -131,7 +149,8 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
    The aerial drawing's renders outlast the flight, so it lands part way through. Its 400%
    figure is a bench artefact (two of three runs caught the previous step's "sharp" report:
    the flight bench needs a frame's wait after `dropTiles` before `whenSharp`; one real run
-   read 232 ms). Matt tried it on 23 Nov and judged it good. 2c (ease length) still needs his go-ahead.
+   read 232 ms). Matt tried it on 23 Nov and judged it good. 2c (ease length) dropped 23 Nov: it was
+   my guess that big jumps move too fast to follow, never something Matt saw.
    **3d. The wheel: done, option (a), Matt's choice 23 Nov after the (b) comparison
    below; merged into main 23 Nov, with one thing to watch (the free-spin jerk, below).** Each notch renders
    its landing view during the ease, held off screen until it lands, with no 60 ms wait once
@@ -194,7 +213,7 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
      jerk is faint). If it comes back in use, the fix is (d): a notch within 500 ms of the
      last behaves as before (no render during the ease, 60 ms settle), so a spin is the
      old code by construction and a single notch keeps the gain.
-4. **Then finish the cross-viewer zoom comparison** (parked, below).
+4. **The cross-viewer zoom comparison, as single notches** (agreed 23 Nov, below).
 
 ## Overnight run, 22 to 23 Nov (autonomous): done
 
@@ -212,23 +231,90 @@ Matt away; asked for next step 2, then next step 3. Commits split by concern, no
 - A suspected Vellum bug (a soft picture after fit page pressed during an open) turned out
   to be the tool's comparison: see the Vellum bullet above.
 
-## The cross-viewer wheel zoom test: parked 22 Nov, about an hour from usable
+## The cross-viewer zoom test: single notches (agreed 23 Nov, run 23 to 24 Nov)
 
-Design (Matt's choices): Ctrl+wheel with the pointer on the middle of the sheet, from fit
-page to 4x the viewer's own fit-width level; main figure is last notch to settled.
+Replaces the parked 4x wheel gesture (22 Nov; its notes are in the log and git history).
+The figure behind "Zoom to sharp in 16 ms", measured from the screen in every viewer.
 
-- **Works:** finding the sheet's centre for any PDF from the screen (`Centre.cs`); per-viewer
-  notch count from the warm-up launch; Vellum (42 notches, lands on the exact centre);
-  Chrome (15 notches; its landing spot not checked against Vellum's); SumatraPDF's
-  fit-width level in its own units.
-- **To do:** Foxit and SumatraPDF drop notches sent 50 ms apart, so the warm-up count does
-  not hold in the timed gesture: slow the pace (150 to 200 ms) or calibrate with whole
-  gestures at pace (Matt to choose). PDF-XChange reached its target but was voided by the
-  blank-view test, which needs sharp edges and so rejects soft aerial imagery: void only a
-  flat view. The first summary table still prints an empty typed-zoom column.
-- **Parked for good unless asked:** Acrobat (ignores injected wheels three ways; raises an
-  error box during runs) and Edge (shows no zoom level). Both stay in the open table.
-- **Not built:** drag, reopen time, running a folder of PDFs by default.
+**Measure (Matt, 23 Nov): from the zoom finishing to sharp.** The ease is the zoom, not a
+wait (the view moves on the next frame), so each viewer is timed from when its picture
+stops moving, whether it eases (Vellum) or jumps (Chrome). Also reported: notch to first
+change, and notch to sharp (the total).
+
+**Single notches, not a gesture** (Matt, 23 Nov): a multi-notch gesture makes the pace a
+hidden variable (more time between notches lets viewers render intermediate zooms, which
+helps or hurts each differently), and Foxit and SumatraPDF dropped notches sent 50 ms
+apart. One notch at a time from a settled, sharp view has no pace, and matches the in-app
+figure.
+
+Design (as built, 23 Nov; `ViewerBench.exe run --notches`, code in `tools/viewer-bench/Notch.cs`):
+
+1. Per launch: open, fit page, find the sheet's centre (`Centre.Find`), pointer there. Then
+   six times: one Ctrl+wheel notch, record until still for the quiet time. Each notch starts
+   settled and sharp; six cover fit page up to several times fit, at each viewer's own step.
+2. Every screen grab during a notch is kept with its time (about every 20 ms). **Sharp** =
+   the last change. **Zoom finished** = the first picture from which every later one has
+   the final picture's geometry, sharp or not: the **alignment test**. The view is cut into
+   3 x 3 regions; in each, the shift that best lines the picture up with the final one is
+   found by correlation, first on every third pixel (up to 12 px), then on full-resolution
+   pixels (up to 3 px). A region has moved only on a confident shift (a good match that
+   clearly beats no shift) of more than the tolerance.
+3. **Tolerance 2 px (Matt, 23 Nov):** Chrome's stretched frames (the old picture scaled to
+   the new zoom, then replaced by a sharp one) sit 1 to 2 px from the final position; Matt
+   judged one "in place". The same rule applied to Vellum counts the last 25 to 67 ms of its
+   ease (within 1 to 2 px, drawn from the previous tiles scaled) as finished, so its screen
+   figure is sometimes above its in-app 17 ms. 1 px and 2 px gave identical results.
+4. **What failed first, so it isn't tried again:** block means within 6 levels (a soft
+   render's thin lines come out lighter or darker, so soft counted as moving); block-by-block
+   correlation (sparse line work in 24 px blocks is too fragile: Chrome's stretched frame had
+   a quarter of blocks under 0.4); exact alignment (misses stretched frames 1 to 2 px off).
+   The check that exposed them: Matt reading saved frames. Vellum's in-app figure alone
+   can't validate the test, because Vellum never shows a soft stage.
+5. **Check on the method:** Vellum runs with `VELLUM_PERF_LOG`, logging each landing to sharp
+   from inside the app; `analyse <run dir> [--tolerance px] [--why]` re-runs the test on a
+   run's saved grabs (`--keep-raw`) and prints each picture's verdict. `--frames` saves every
+   changed grab full size in colour, marked FINISHED and SHARP.
+6. Viewers: Vellum, Chrome, SumatraPDF, Foxit, PDF-XChange; Edge tried separately (it ignores
+   the fit-page key, which `Centre.Find` uses). Acrobat stays out: it ignores injected wheel
+   events. Run (Matt, 23 Nov: two hours was too long): Curtis Hall, the stage plan and the
+   aerial drawing, two launches each, no warm-up (it only ever helped open times), quiet
+   2.5 s; about 20 minutes.
+
+**Results (23 to 24 Nov; per-notch data in `bench-output/viewers/notches-*`).** Zoom finished
+to sharp / notch to sharp, median of 12 notches (two launches of six), from the screen:
+
+| | Curtis Hall | Stage plan | Aerial drawing |
+|---|---|---|---|
+| Vellum, ease landing at 4 px (24 Nov) | 0 / 114 ms | 33 / 115 | 49 / 146 |
+| Vellum before (formal landing) | 0 / 182 | 82 / 196 | 101 / 199 |
+| Chrome | 0 / 447 | 133 / 164 | 209 / 382 |
+| SumatraPDF | 0 / 81 | 132 / 181 | 1,400 / 1,448 |
+| Foxit | 0 / 64 | 0 / 98 | 215 / 465 |
+| PDF-XChange | 15 / 64 | 66 / 113 | 166 / 231 |
+
+Edge could not be measured (it ignores the fit-page key `Centre.Find` uses). Vellum's own
+landing-to-sharp is 17 ms throughout; the screen adds its grab interval (about 20 ms). On the
+aerial drawing four of Vellum's twelve notches take 480 to 720 ms (its in-app log agrees):
+band delivery, see 3d.
+
+**Found by it, and fixed (24 Nov): the ease's tail.** Vellum's exponential wheel ease spent
+its last 60 to 80 ms creeping through the final couple of pixels with the sharp tiles held
+back, so from the screen the stage plan went sharp about 80 ms after the zoom looked
+finished. Revealing the tiles early changed nothing measurable (the bench's "sharp" is the
+last change, and the creep kept changing pixels). Landing once under `LAND_PX` device pixels
+are left at the window's corners did: 1.5 px cut 82 to 66 ms; 4 px to 33 ms, and every zoom
+ends 70 to 80 ms sooner. Matt compared 1.5 and 4 px by eye and saw no snap. Flights use the
+same rule.
+
+**For the homepage line:** "Zoom to sharp in 16 ms" is Vellum's in-app figure; from the screen
+it is a frame or two (33 ms on the stage plan, grab resolution included). Only Foxit matches
+it there, by holding the old picture until the new one is ready (98 ms from the notch against
+Vellum's 115). On the whole wait from the notch, Foxit and PDF-XChange are quicker on light
+drawings (no ease); Vellum is quickest on the heavy one.
+
+Trial (Curtis Hall, Vellum and Chrome, six notches each): Chrome's real cost there is the
+wait before anything moves (up to 700 ms; Vellum 13 to 50 ms); soft stages are occasional
+in both (Chrome 33 and 118 ms; Vellum 25 to 67 ms on three notches, 0 on the rest).
 
 ## Running the tools: traps found the hard way
 

@@ -147,7 +147,7 @@ J. **Journey test in `tools/viewer-bench`** (Matt agreed to changing the tool fo
      in patches while it moves. Target: landing → sharp from about 200 ms to near zero when
      the render fits inside the ease. Risk: band IPC on the webview main thread making the
      ease stutter; Matt judges by eye.
-   - **2c. Ease length, by feel.** On a big jump (82% to 328%) the content moves too fast to
+   - ~~**2c. Ease length, by feel.**~~ *Dropped 23 Nov (Matt): a guess, not an observed problem.* On a big jump (82% to 328%) the content moves too fast to
      follow, so the ease keeps your bearings less than on fit page to fit width. Try a shorter
      ease for large zoom ratios or for typed numbers (one constant); Matt judges.
    - **2d. Wheel zoom, if 2b works.** The same idea for the wheel: render for the ease's
@@ -169,7 +169,7 @@ J. **Journey test in `tools/viewer-bench`** (Matt agreed to changing the tool fo
 ## Open questions for Matt
 
 1. ~~The ease: keep it or jump?~~ **Answered 18 Nov:** keep it, measure landing → sharp, render
-   during it (step 2). Its length is tuned by feel in 2c.
+   during it (step 2). ~~Its length is tuned by feel in 2c.~~ (2c dropped 23 Nov.)
 2. **Step 1's scope:** today's build only, and build the spike commit only if the numbers moved
    by more than about 20% (the working assumption unless Matt says otherwise).
 3. ~~What have people said feels slow?~~ **Answered 18 Nov:** nothing; it feels fast (see
