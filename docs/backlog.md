@@ -74,6 +74,13 @@ that work's brief or scope file and comes off this list.
 - **An easter egg.**
 - **Investigate KillerPDF** (another PDF viewer): what it does, and anything worth learning.
 
+## Releases
+
+- **Release candidates that update to newer release candidates.** Today an RC install is
+  offered nothing until the full release. Worth building once there are enough users that a
+  staged rollout matters; until then, full releases and patch releases. Scoped, nothing built:
+  [rc-updates-scope.md](rc-updates-scope.md).
+
 ## Look
 
 - **Dialogs**: their styling overall is heavy, with a large header and footer each.

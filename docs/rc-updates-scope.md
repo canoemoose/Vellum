@@ -1,7 +1,10 @@
 # Release candidates that update to newer release candidates: scope
 
-Status: scoped 24 Nov 2026, nothing built. Asked for by Matt while the homepage gained a
-"Try the release candidate" line: once strangers can install an RC, it should not strand them.
+Status: scoped 24 Nov 2026, nothing built, and not scheduled: it is in the
+[backlog](backlog.md). Matt chose to release 0.2.0 and follow it with patch releases instead.
+
+Asked for by Matt while the homepage gained a "Try the release candidate" line: once strangers
+can install an RC, it should not strand them.
 
 ## Objective
 
