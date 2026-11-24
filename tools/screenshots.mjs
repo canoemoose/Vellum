@@ -39,6 +39,9 @@ const SET = join(root, "test-files", "fieldwork-festival-drawing-set.pdf");
 // For the "Images too" shot: sheet 001 as a PNG (test-files/drawing-set.mjs output, printed by Edge).
 const IMAGE = join(root, "test-files", "fieldwork-site-plan.png");
 const PORT = 9333;
+// The name on the Approved stamp in the markup shot. A role, not a person: without it the app
+// uses the Windows user name, which would put whoever ran this on the homepage.
+const AUTHOR = "Production Manager";
 
 // Sheet sizes (mm) of the drawing set, by page number.
 const SHEETS = { 1: [841, 594], 2: [841, 594], 3: [841, 594], 4: [420, 297] };
@@ -284,7 +287,11 @@ async function runTheme(theme) {
       await sleep(500);
     }
     // Settings for clean, repeatable shots, then reload so the app starts with them.
-    await cdp.evaluate(`localStorage.setItem("vellum.settings.v1", JSON.stringify({ theme: "${theme}", layoutMode: "single", updateCheck: false, sidebarOpen: true, sidebarTab: "pages" }))`);
+    const SETTINGS = JSON.stringify({ theme, layoutMode: "single", updateCheck: false, sidebarOpen: true, sidebarTab: "pages", markup: { author: AUTHOR } });
+    // Written as the reloaded page starts, before the app reads it: written from the running
+    // page, the app's own save on the way out can replace it.
+    await cdp.send("Page.enable", {});
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `localStorage.setItem("vellum.settings.v1", ${JSON.stringify(SETTINGS)});` });
     await cdp.send("Page.reload", {});
     await sleep(4000);
     const hwnd = await mainWindow(proc.pid);
