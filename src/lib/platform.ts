@@ -20,6 +20,8 @@ export interface LaunchArgs {
   /** Spin the wheel at fixed gaps and time every frame (see bench.ts). */
   benchSpin?: boolean;
   processStartEpochMs: number;
+  /** VELLUM_PERF_LOG: log settle-to-sharp events without the debug overlay. */
+  perfLog?: boolean;
 }
 
 export interface MemSample {

@@ -61,6 +61,9 @@ pub struct LaunchArgs {
     /// Wall-clock time (ms since epoch) when `run` started; lets the front end
     /// split cold start into process/Rust init and WebView startup.
     pub process_start_epoch_ms: f64,
+    /// VELLUM_PERF_LOG set: log every settle-to-sharp event to perf-log.csv, as the debug
+    /// overlay does, but without the overlay (tools/viewer-bench watches the screen).
+    pub perf_log: bool,
 }
 
 pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
@@ -413,6 +416,7 @@ fn exit_app(app: tauri::AppHandle, code: i32) {
 pub fn run() {
     let mut args = parse_args(std::env::args());
     args.process_start_epoch_ms = epoch_ms();
+    args.perf_log = std::env::var_os("VELLUM_PERF_LOG").is_some();
     let bench = args.bench;
     let bench_size = args.bench_size.unwrap_or((1600.0, 1000.0));
     let pdfium_threads = args.pdfium_threads;

@@ -2419,9 +2419,11 @@
         },
       });
 
-      // Log every settle-to-sharp event while the debug overlay is up.
+      // Log every settle-to-sharp event while the debug overlay is up, or always with
+      // VELLUM_PERF_LOG (tools/viewer-bench reads it). After a wheel or flight landing the
+      // settle is the landing itself, so this is landing to sharp.
       v.onSharp = (e) => {
-        if (!debug || args.bench) return;
+        if ((!debug && !args.perfLog) || args.bench) return;
         const st = v.stats();
         memoryStats()
           .then((m) =>
