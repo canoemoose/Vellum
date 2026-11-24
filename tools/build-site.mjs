@@ -8,6 +8,15 @@
 // If the call fails or finds no installer the build still succeeds: the button links to the
 // releases page instead and a warning is logged. A broken API call must never take the page down.
 //
+// The hero pill's text ("Markup, measuring and signatures") comes from a line in the release
+// notes: "Highlights: Markup, measuring and signatures". It is read from the newest published
+// release of the same feature version (0.2.x) that has one, so patch releases needn't repeat it.
+// With no such line the pill shows only "New in 0.2".
+//
+// When a published prerelease is newer than the latest release, a line under the download
+// button offers it ("Try the 0.2.0-rc1 release candidate"). It goes when the full release is
+// published. Drafts never show: only what the public can already see on GitHub.
+//
 // SITE_URL (the Pages workflow sets it from actions/configure-pages) makes the Open Graph image and
 // page address absolute, which link previews need. Without it they stay relative, which is fine
 // for looking at the page locally. Nothing here names the host, so a custom domain needs no change.
@@ -21,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const REPO = "canoemoose/Vellum";
 export const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const LIST_URL = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
 
 /** The installer among a release's assets: the `_x64-setup.exe`, never its `.sig`. */
 export function pickInstaller(release) {
@@ -104,6 +114,95 @@ export function downloadInfo(release) {
   };
 }
 
+/**
+ * The "Highlights: ..." line of a release's notes, as plain text for the hero pill: list
+ * marker, emphasis, links and a closing full stop stripped, cut at a word to `max` characters.
+ * null when the notes have no such line.
+ */
+export function highlights(body, max = 60) {
+  const m = /^[ \t]*(?:[-*+][ \t]+)?[*_]*highlights[*_]*[ \t]*:[*_]*[ \t]*(.+)$/im.exec(typeof body === "string" ? body : "");
+  if (!m) return null;
+  const text = m[1]
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\.$/, "");
+  if (!text) return null;
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > max / 2 ? cut.slice(0, at) : cut).replace(/[\s,;:.]+$/, "")}…`;
+}
+
+/**
+ * The pill's feature text for `version`, from the API's list of releases: the Highlights line
+ * of the newest published release (no drafts, no prereleases) in the same feature version.
+ * "" when there is none, which leaves the pill as just "New in 0.2".
+ */
+export function pillText(releases, version) {
+  if (!Array.isArray(releases) || !version) return "";
+  const feature = featureVersion(version);
+  const found = releases
+    .filter((r) => r && !r.draft && !r.prerelease && featureVersion(versionFromTag(r.tag_name)) === feature && highlights(r.body))
+    .sort((a, b) => (Date.parse(b.published_at) || 0) - (Date.parse(a.published_at) || 0))[0];
+  return found ? highlights(found.body) : "";
+}
+
+/** [major, minor, patch] of a version, ignoring any pre-release part; null if it isn't one. */
+function core(version) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version ?? "");
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** Whether version a's numbers are higher than b's (pre-release parts ignored). */
+function isAhead(a, b) {
+  const x = core(a);
+  const y = core(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+/**
+ * The release candidate to offer beside the download button: the most recently published
+ * prerelease (never a draft) that has an installer and is ahead of `version`, the latest full
+ * release. 0.2.0-rc1 is ahead of 0.1.4 but not of 0.2.0, so the line goes when 0.2.0 is out.
+ * Returns { version, url } or null. The link is the release's own page on GitHub.
+ */
+export function candidate(releases, version) {
+  if (!Array.isArray(releases) || !core(version)) return null;
+  const found = releases
+    .filter((r) => r && !r.draft && r.prerelease && pickInstaller(r) && isAhead(versionFromTag(r.tag_name), version))
+    .filter((r) => typeof r.html_url === "string" && r.html_url.startsWith(`https://github.com/${REPO}/`))
+    .sort((a, b) => (Date.parse(b.published_at) || 0) - (Date.parse(a.published_at) || 0))[0];
+  return found ? { version: versionFromTag(found.tag_name), url: found.html_url } : null;
+}
+
+/**
+ * Keeps the page's release candidate line (between <!-- candidate:start --> and :end) when
+ * there is one to offer, and removes it when there isn't. The markers never reach the page.
+ */
+export function fillCandidate(html, cand) {
+  const block = /[ \t]*<!-- candidate:start -->([\s\S]*?)<!-- candidate:end -->\r?\n?/;
+  const m = block.exec(html);
+  if (!m) throw new Error("build-site: the page has no <!-- candidate:start --> block");
+  return html.replace(block, cand ? m[1].replace(/^\r?\n/, "") : "");
+}
+
+/** Every {{placeholder}} value the page uses. */
+export function pageValues(info, releases, base) {
+  const cand = candidate(releases, info.values.version);
+  return {
+    ...info.values,
+    pillText: pillText(releases, info.values.version),
+    rcVersion: cand?.version ?? "",
+    rcUrl: cand?.url ?? RELEASES_URL,
+    siteUrl: base || "./",
+    ogImage: `${base}img/og.png`,
+  };
+}
+
 export function escapeHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -124,18 +223,18 @@ export function siteBase(url) {
 }
 
 /** Fetches the latest release, or returns null (with the reason logged) on any failure. */
-async function fetchLatest(token) {
+async function fetchApi(url, token) {
   const headers = { Accept: "application/vnd.github+json", "User-Agent": "vellum-site-build", "X-GitHub-Api-Version": "2022-11-28" };
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
-    const res = await fetch(API_URL, { headers, signal: AbortSignal.timeout(20000) });
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(20000) });
     if (!res.ok) {
-      console.warn(`build-site: warning: ${API_URL} answered ${res.status} ${res.statusText}`);
+      console.warn(`build-site: warning: ${url} answered ${res.status} ${res.statusText}`);
       return null;
     }
     return await res.json();
   } catch (e) {
-    console.warn(`build-site: warning: ${API_URL} failed: ${e?.message ?? e}`);
+    console.warn(`build-site: warning: ${url} failed: ${e?.message ?? e}`);
     return null;
   }
 }
@@ -146,7 +245,9 @@ async function main() {
   const out = resolve(root, outArg > 0 ? process.argv[outArg + 1] : "site-dist");
   if (out === root || !out.startsWith(root)) throw new Error(`build-site: refusing to write to ${out}`);
 
-  const info = downloadInfo(await fetchLatest(process.env.GITHUB_TOKEN));
+  const token = process.env.GITHUB_TOKEN;
+  const [latest, list] = await Promise.all([fetchApi(API_URL, token), fetchApi(LIST_URL, token)]);
+  const info = downloadInfo(latest);
   if (!info.ok) {
     const msg = `${info.warning}; the button links to ${RELEASES_URL}`;
     console.warn(`build-site: warning: ${msg}`);
@@ -166,7 +267,13 @@ async function main() {
 
   const base = siteBase(process.env.SITE_URL);
   const page = join(out, "index.html");
-  const html = fillTemplate(readFileSync(page, "utf8"), { ...info.values, siteUrl: base || "./", ogImage: `${base}img/og.png` });
+  const values = pageValues(info, list, base);
+  if (info.ok && !values.pillText) {
+    console.warn(`build-site: warning: no "Highlights:" line in the ${featureVersion(info.values.version)} release notes; the pill shows no feature text`);
+  }
+  const cand = candidate(list, info.values.version);
+  if (cand) console.log(`build-site: offering the ${cand.version} release candidate`);
+  const html = fillTemplate(fillCandidate(readFileSync(page, "utf8"), cand), values);
   writeFileSync(page, html);
 
   const what = info.ok ? `Vellum ${info.values.version}, ${info.values.installerSize || "size unknown"}` : "fallback link";

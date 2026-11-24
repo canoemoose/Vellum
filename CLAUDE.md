@@ -47,13 +47,18 @@ publishing the draft is what makes installed copies offer the update. In order:
    (`git push origin :refs/tags/v0.2.0`, `git tag -d v0.2.0`) and tag again.
 4. On GitHub, open the draft, write the notes ("What's new" in the app opens this page), and
    publish. Or: `gh release edit v0.2.0 --draft=false --latest --notes "..."`.
+   For a feature release (0.2.0, 0.3.0), put a line `Highlights: Markup, measuring and
+   signatures` in the notes: the homepage's hero pill shows it beside "New in 0.2". Patch
+   releases needn't repeat it; with no such line the pill shows only the version.
 5. GitHub serves the previous version's update file for up to a minute after publishing, so
    wait before testing with Help > Check for updates.
 
 Notes:
 
 - A version with a pre-release part (`0.2.0-rc1`) makes a draft marked prerelease, which is
-  never offered to installed copies even if published. Use one to try the workflow.
+  never offered to installed copies even if published. Use one to try the workflow. Once
+  published, the homepage offers it under the download button ("Try the 0.2.0-rc1 release
+  candidate") until the full release is out; a draft is never shown.
 - Updates are signed. The private key and its password live only in the repository's Actions
   secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) and Matt's
   password manager. Never commit or paste the key. The public half is in

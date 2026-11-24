@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { RELEASES_URL, downloadInfo, featureVersion, escapeHtml, fillTemplate, formatDate, formatSize, pickInstaller, siteBase, versionFromTag } from "./build-site.mjs";
+import { RELEASES_URL, candidate, downloadInfo, fillCandidate, featureVersion, escapeHtml, fillTemplate, highlights, pageValues, pillText, formatDate, formatSize, pickInstaller, siteBase, versionFromTag } from "./build-site.mjs";
 
 const read = (p) => readFileSync(fileURLToPath(new URL(`../${p}`, import.meta.url)), "utf8");
 
@@ -136,13 +136,117 @@ describe("siteBase", () => {
   });
 });
 
+describe("highlights", () => {
+  it("reads the Highlights line as plain text", () => {
+    expect(highlights("Highlights: Markup, measuring and signatures\n\n- Added clouds")).toBe("Markup, measuring and signatures");
+    expect(highlights("## 0.2.0\r\n\r\n**Highlights:** [Markup](https://x.test), `measuring` and signatures.\r\n- More")).toBe("Markup, measuring and signatures");
+    expect(highlights("- highlights : Faster zoom")).toBe("Faster zoom");
+  });
+  it("gives nothing when there's no such line", () => {
+    expect(highlights("- Fixed a crash\n- The highlights: are not at the start")).toBeNull();
+    expect(highlights("Highlights:")).toBeNull();
+    expect(highlights(null)).toBeNull();
+  });
+  it("cuts a long line at a word", () => {
+    const out = highlights("Highlights: Markup, measuring, signatures, stamps, printing to scale and a good deal more besides", 40);
+    expect(out.length).toBeLessThanOrEqual(40);
+    expect(out).toBe("Markup, measuring, signatures, stamps…");
+  });
+});
+
+describe("pillText", () => {
+  const rel = (tag, date, body, extra = {}) => ({ tag_name: tag, published_at: date, body, ...extra });
+  const list = [
+    rel("v0.2.1", "2026-12-02T10:00:00Z", "- Fixed a crash"),
+    rel("v0.2.0", "2026-12-01T10:00:00Z", "Highlights: Markup, measuring and signatures\n- Lots"),
+    rel("v0.3.0-rc1", "2026-12-03T10:00:00Z", "Highlights: Not out yet", { prerelease: true }),
+    rel("v0.2.2", "2026-12-04T10:00:00Z", "Highlights: A draft", { draft: true }),
+    rel("v0.1.4", "2026-11-14T10:00:00Z", "Highlights: The first release"),
+  ];
+  it("takes the line from the same feature version, so a patch release needn't repeat it", () => {
+    expect(pillText(list, "0.2.1")).toBe("Markup, measuring and signatures");
+    expect(pillText(list, "0.2.0")).toBe("Markup, measuring and signatures");
+    expect(pillText(list, "0.1.4")).toBe("The first release");
+  });
+  it("lets a later patch release replace it", () => {
+    const later = [rel("v0.2.3", "2026-12-05T10:00:00Z", "Highlights: Now with layers"), ...list];
+    expect(pillText(later, "0.2.3")).toBe("Now with layers");
+  });
+  it("gives nothing without a line, a version or a list", () => {
+    expect(pillText(list, "0.3.0")).toBe("");
+    expect(pillText(list, "")).toBe("");
+    expect(pillText(null, "0.2.0")).toBe("");
+    expect(pillText({ message: "API rate limit exceeded" }, "0.2.0")).toBe("");
+  });
+});
+
+describe("candidate", () => {
+  const page = (tag) => `https://github.com/canoemoose/Vellum/releases/tag/${tag}`;
+  const rel = (tag, date, extra = {}) => ({ tag_name: tag, published_at: date, prerelease: true, html_url: page(tag), assets: [exe], ...extra });
+  const list = [
+    rel("v0.2.0-rc1", "2026-11-16T20:21:44Z"),
+    rel("v0.2.0-rc3", "2026-11-22T10:00:00Z", { draft: true }),
+    rel("v0.1.4", "2026-11-14T00:21:57Z", { prerelease: false }),
+  ];
+  it("offers a published prerelease that's ahead of the latest release", () => {
+    expect(candidate(list, "0.1.4")).toEqual({ version: "0.2.0-rc1", url: page("v0.2.0-rc1") });
+  });
+  it("takes the most recently published one", () => {
+    const more = [rel("v0.2.0-rc2", "2026-11-17T02:27:10Z"), ...list];
+    expect(candidate(more, "0.1.4").version).toBe("0.2.0-rc2");
+  });
+  it("stops once the full release is out, or a later one", () => {
+    expect(candidate(list, "0.2.0")).toBeNull();
+    expect(candidate(list, "0.2.1")).toBeNull();
+    expect(candidate(list, "1.0.0")).toBeNull();
+  });
+  it("never offers a draft, a full release, one with no installer or a link off GitHub", () => {
+    expect(candidate([rel("v0.2.0-rc3", "2026-11-22T10:00:00Z", { draft: true })], "0.1.4")).toBeNull();
+    expect(candidate([rel("v0.2.0", "2026-11-22T10:00:00Z", { prerelease: false })], "0.1.4")).toBeNull();
+    expect(candidate([rel("v0.2.0-rc1", "2026-11-16T20:21:44Z", { assets: [sig] })], "0.1.4")).toBeNull();
+    expect(candidate([rel("v0.2.0-rc1", "2026-11-16T20:21:44Z", { html_url: "https://evil.test/" })], "0.1.4")).toBeNull();
+  });
+  it("offers nothing when the release or the list couldn't be read", () => {
+    expect(candidate(list, "")).toBeNull();
+    expect(candidate(null, "0.1.4")).toBeNull();
+    expect(candidate({ message: "API rate limit exceeded" }, "0.1.4")).toBeNull();
+  });
+});
+
+describe("fillCandidate", () => {
+  const page = "<div>\n  <!-- candidate:start -->\n  <p>{{rcVersion}}</p>\n  <!-- candidate:end -->\n</div>";
+  it("keeps the line when there's a candidate and drops the markers", () => {
+    expect(fillCandidate(page, { version: "0.2.0-rc1", url: "x" })).toBe("<div>\n  <p>{{rcVersion}}</p>\n  </div>");
+  });
+  it("removes the line when there isn't", () => {
+    expect(fillCandidate(page, null)).toBe("<div>\n</div>");
+  });
+  it("throws if the page has lost its markers", () => {
+    expect(() => fillCandidate("<div></div>", null)).toThrow(/candidate/);
+  });
+});
+
+describe("pageValues", () => {
+  it("adds the pill text and the page's addresses", () => {
+    const info = downloadInfo(release([exe]));
+    const v = pageValues(info, [{ tag_name: "v0.2.0", published_at: "2026-11-20T00:21:57Z", body: "Highlights: Markup & measuring" }], "https://x.test/");
+    expect(v.pillTag).toBe("New in 0.2");
+    expect(v.pillText).toBe("Markup & measuring");
+    expect(v.ogImage).toBe("https://x.test/img/og.png");
+    expect(pageValues(downloadInfo(null), null, "")).toMatchObject({ pillTag: "What's new", pillText: "", siteUrl: "./" });
+  });
+});
+
 describe("the real page", () => {
   const html = read("site/index.html");
-  const values = { ...downloadInfo(null).values, siteUrl: "./", ogImage: "img/og.png" };
+  const values = pageValues(downloadInfo(null), null, "");
 
   it("uses only placeholders the build fills, and none survive", () => {
-    const out = fillTemplate(html, values);
-    expect(out).not.toMatch(/\{\{/);
+    for (const cand of [null, { version: "0.2.0-rc1", url: RELEASES_URL }]) {
+      const out = fillTemplate(fillCandidate(html, cand), values);
+      expect(out).not.toMatch(/\{\{|candidate:/);
+      expect(out.includes("release candidate")).toBe(Boolean(cand));
+    }
   });
   it("hard-codes no host, so a custom domain needs no change", () => {
     expect(html).not.toMatch(/github\.io/);
