@@ -802,8 +802,7 @@ li {
 }
 .ld span {
   position: absolute;
-  transform: translate(-50%, -100%);
-  margin-top: -4px;
+  transform: translate(-50%, -100%); /* hung from its bottom centre, where the line ends */
   font: 600 12px var(--font-num);
   color: #fff;
   background: var(--accent-bd);
@@ -811,6 +810,13 @@ li {
   padding: 4px 8px;
   border-radius: 6px;
   white-space: nowrap;
+}
+/* A label that sits below its target: hung from its top edge, near the left end, so the line
+   comes down into it, rather than from its bottom centre. */
+.ld span.below {
+  /* Never lower than fits: on a phone the picture is short, and the label covers the line's end. */
+  top: min(var(--top), calc(100% - 28px));
+  transform: translate(-12%, 0);
 }
 .only-narrow {
   display: none;

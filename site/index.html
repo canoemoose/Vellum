@@ -170,7 +170,7 @@
                 <img src="img/crop-print-light.webp" width="1830" height="600" loading="lazy" decoding="async" alt="The print dialog set to print an A3 stage plan on A4 at exactly 1:200, with the preview beside it.">
               </picture>
               <span class="dm" aria-hidden="true"><span>5</span><span>5</span></span>
-              <span class="ld" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="24" y1="84" x2="14" y2="49"/></svg><i style="left:14%;top:49%"></i><span style="left:24%;top:84%">A3 on A4, exactly 1:200</span></span>
+              <span class="ld" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="24" y1="92" x2="19" y2="68"/></svg><i style="left:19%;top:68%"></i><span class="below" style="left:24%;--top:92%">A3 on A4, exactly 1:200</span></span>
             </div>
             <div class="txt">
               <h3>Prints to scale</h3>
@@ -218,7 +218,7 @@
             in public</a>. No admin rights needed. If your browser warns you about the download, choose <strong>Keep</strong>.</p>
         </div>
         <figure class="dialog">
-          <img src="img/smartscreen.webp" width="800" height="740" loading="lazy" decoding="async" alt="The Windows protected your PC dialog after More info, with the Run anyway button.">
+          <img src="img/smartscreen.webp" width="534" height="500" loading="lazy" decoding="async" alt="The Windows protected your PC dialog after More info, with the Run anyway button.">
         </figure>
       </div>
     </section>
@@ -288,8 +288,9 @@
       var system = matchMedia(DARK);
       function apply(theme) {
         document.documentElement.dataset.theme = theme;
-        var forced = theme === "dark" ? "(min-width: 0px)" : "(max-width: 0.001px)";
-        sources.forEach(function (s) { s.media = s.dataset.media.replace(DARK, forced); });
+        // Dark: the dark sources always apply (their other conditions, like a width, still hold).
+        // Light: they never do, so each picture falls through to its light one.
+        sources.forEach(function (s) { s.media = theme === "dark" ? s.dataset.media.replace(DARK, "(min-width: 0px)") : "not all"; });
         var colour = theme === "dark" ? "#0c0d0f" : "#f7f7f5";
         metas.forEach(function (m) { m.content = colour; });
         mark(theme);
