@@ -27,6 +27,13 @@ that work's brief or scope file and comes off this list.
 - **Ctrl and the mouse wheel**: Ctrl held swaps what the wheel does, in either navigation mode:
   zooming where it scrolls, scrolling where it zooms.
 
+## Speed
+
+- **Fastest in every scenario**: what it would take (start-up, band delivery to the webview,
+  the ease, and measuring the untested scenarios), and why "fastest on big CAD drawings" is
+  the defensible claim instead. Parked by Matt, 24 Nov:
+  [fastest-everywhere.md](fastest-everywhere.md).
+
 ## Look
 
 - **Dialogs**: their styling overall is heavy, with a large header and footer each.
