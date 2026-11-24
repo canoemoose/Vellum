@@ -40,6 +40,9 @@ that work's brief or scope file and comes off this list.
   you're trying to click on. The loupe should show the drawing only.
 - **Object snap for dimensions**: snap to what's in the drawing (line ends, corners,
   intersections) while placing a dimension.
+- **Measuring scales, round two**: the PDF's own scale (viewports), the title block and
+  metadata disagreeing, clearing one page, re-reading every page, and the items below.
+  Scoped in [measuring-scales-scope.md](measuring-scales-scope.md).
 - **A scale for one measurement, or one area of a sheet**, for pages that hold views at
   different scales (a plan at 1:100 with details at 1:20). Today a page has one scale (each
   page's own title block, or one set by hand). A measurement already records its scale in
