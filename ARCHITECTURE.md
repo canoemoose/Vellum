@@ -271,10 +271,15 @@ PDFium worker, like everything else. Scale detection reads one character per PDF
 index (`FPDFText_GetUnicode`), so match positions map straight to `FPDFText_GetCharBox`.
 The matching and ranking are pure (`src-tauri/src/scale.rs`, tested in `tests/scale.rs`):
 `1:NNN`, `1 : NNN`, `1∶NNN`, and `1/NNN` for standard ratios from 1/10 only; times,
-dates, paper sizes ("A1:50") and parts of larger numbers are rejected. Candidates outside
+dates, paper sizes ("A1:50") and parts of larger numbers are rejected. Imperial scales too:
+an inch length, "=", feet (and inches) or inches (`1/4" = 1'-0"` is 1:48, `1" = 20'` is
+1:240), with typographic quotes and primes and fraction characters. Before matching,
+`clean_text` drops the line breaks PDFium generates between two characters on the same line
+(on some pages, the Fieldwork set's site plan with its doubled map labels, it breaks between
+nearly every character); breaks between lines stay, as a space. Candidates outside
 1..100000 are dropped; the rest are ordered by a score: position (0 at the top-left, 2 at
 the bottom-right, since title blocks live there), +1.5 when "scale" appears in the 24
-characters before, +0.5 for a standard ratio, −1.5 for 1:1.
+characters before, +0.5 for a standard ratio (metric or common imperial), −1.5 for 1:1.
 
 ### Text layer, links and search (`text.rs`, `src/lib/text/`, editing phase 1)
 
@@ -506,8 +511,12 @@ formatting, shortcuts, theme maths, export size limits).
   teal, `#0d9488`): `--accent`, `--accent-soft` and `--accent-bd` on the root, plus a per-theme
   `--accent-text` for links. Components use tokens only.
 - **Drawing scale.** On open, `findScale(docId, 0)`; the best candidate is adopted only from
-  a title-block position (`shell/scale.ts`). Hand-set scales are remembered per file. The
-  tab's scale feeds the status bar and `PrintContext`.
+  a title-block position (`shell/scale.ts`). Every other page's title block is read the first
+  time it's viewed or measured on (`detectPageScale`), since a set's sheets each have their
+  own scale. A page measures at (`resolvePageScale`): a scale set for it alone; else one set
+  by hand for every page; else its own title block's; else page 1's, flagged as borrowed (the
+  status bar in amber, a one-time notice when measuring). Hand-set scales are remembered per
+  file. The tab's scale feeds `PrintContext`; the scale dialog shows the page in view's.
 - **Settings** are one validated object in localStorage (`vellum.settings.v1`); print
   presets are WP-Print's own keys.
 - **Installer.** NSIS, per user. `src-tauri/windows/installer-hooks.nsh` registers Vellum
