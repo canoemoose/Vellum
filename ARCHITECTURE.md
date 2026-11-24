@@ -69,7 +69,12 @@ landing view is the target scale about the cursor. Each further notch re-plans f
 target and aborts renders at the previous one's scale (a band already running in PDFium
 still finishes); every scale started during the gesture stays hidden until it lands.
 Waiting for the notches to pause before rendering was tried and measured worse: on one
-notch it pushed the render past the end of the ease, and bursts gained nothing clear. A pan
+notch it pushed the render past the end of the ease, and bursts gained nothing clear.
+Both kinds of ease land as soon as under 4 device pixels of movement would be left at the
+window's corners (`LAND_PX`, `remainingMove`), rather than creeping through the last pixel
+or two: measured from the screen, that creep left the picture still but soft for 60 to
+80 ms before the sharp tiles went in. The final snap is under 4 px, on the frame the sharp
+tiles appear. A pan
 mid-ease moves the anchor, so the frame re-plans. Since rendering began during the ease,
 which also covers the wait for another notch, there's no settle delay after it lands.
 

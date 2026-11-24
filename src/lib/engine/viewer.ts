@@ -26,6 +26,7 @@ import {
   interpolateView,
   keepCentre,
   nextZoomPreset,
+  remainingMove,
   stickyZoomTarget,
   scaleToZoom,
   screenToWorld,
@@ -145,6 +146,18 @@ const IDLE_AFTER_INPUT_MS = 300;
  * in the backend instead of running to completion.
  */
 const WHEEL_SETTLE_MS = 60;
+/**
+ * A flight or wheel ease lands as soon as less than this many device pixels of movement
+ * would be left anywhere on screen. An exponential wheel ease otherwise spends its last
+ * 60 to 80 ms creeping through the final couple of pixels, with the sharp tiles held back
+ * until it formally lands: from the screen, the stage plan was sharp about 80 ms after the
+ * zoom looked finished, against 17 ms from the formal landing (viewer-bench, 23 Nov).
+ * The last step is a snap of under this, on the frame the sharp tiles go in. 4 px, not
+ * less: the bench judges "finished" by the middle of the window (within 2 px), and the
+ * corners, which this measures, are about twice as far from the zoom's centre. 1.5 px cut
+ * the gap only from 82 to 66 ms; Matt compared 1.5 and 4 px by eye (24 Nov) and saw no snap.
+ */
+const LAND_PX = 4;
 /** Regions up to this many pixels render on one backend worker (SMALL_REGION_PX in pdfium.rs). */
 const SMALL_REGION_PX = 512 * 1024;
 
@@ -1716,8 +1729,9 @@ export class Viewer {
     }
     if (this.flight) {
       const f = this.flight;
-      const e = easeOutCubic((performance.now() - f.t0) / f.dur);
+      let e = easeOutCubic((performance.now() - f.t0) / f.dur);
       this.view = interpolateView(f.from, f.to, e, this.vw, this.vh);
+      if (e < 1 && remainingMove(this.view, f.to, this.vw, this.vh) * this.dpr < LAND_PX) e = 1; // see LAND_PX
       if (e >= 1) {
         this.view = f.to;
         this.flight = null;
@@ -1735,11 +1749,15 @@ export class Viewer {
       this.emitUi();
     }
     if (this.anim) {
-      const s = approachScale(this.view.scale, this.anim.target, dt);
-      this.view = constrainView(
-        zoomAt(this.view, this.anim.ax, this.anim.ay, s),
-        this.layout.bounds, this.vw, this.vh,
-      );
+      const a = this.anim;
+      let s = approachScale(this.view.scale, a.target, dt);
+      const to = constrainView(zoomAt(this.view, a.ax, a.ay, a.target), this.layout.bounds, this.vw, this.vh);
+      this.view = constrainView(zoomAt(this.view, a.ax, a.ay, s), this.layout.bounds, this.vw, this.vh);
+      if (s !== a.target && remainingMove(this.view, to, this.vw, this.vh) * this.dpr < LAND_PX) {
+        // See LAND_PX: land now rather than creep through the last pixel or two.
+        s = a.target;
+        this.view = to;
+      }
       if (s === this.anim.target) {
         const ahead = this.anim.rs !== null;
         this.anim = null;

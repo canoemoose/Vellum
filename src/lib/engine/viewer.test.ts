@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StubRenderer, doc, flush, installFakes, openViewer, stubCanvas, until } from "./testkit";
 import { Viewer } from "./viewer";
+import { type View, remainingMove } from "../view/viewMath";
 
 beforeEach(installFakes);
 afterEach(() => {
@@ -13,7 +14,7 @@ afterEach(() => {
 
 /**
  * Start a move with `start`, and check that the tiles it renders ahead (at the scale it lands
- * on) were rendered while it moved but not drawn until it landed (about 190 ms later).
+ * on) were rendered while it moved but not drawn until it landed (it is moving for the first 160 ms).
  */
 async function expectHiddenUntilLanding(start: (v: Viewer) => void): Promise<void> {
   // Tag every bitmap with its render scale and record what the canvas draws.
@@ -41,7 +42,7 @@ async function expectHiddenUntilLanding(start: (v: Viewer) => void): Promise<voi
   await until(() => v.queueLength === 0 && !v.rendering);
   flying = true;
   start(v);
-  for (let k = 0; k < 12; k++) {
+  for (let k = 0; k < 10; k++) { // about 160 ms: a flight lands from about 190 ms (LAND_PX)
     await vi.advanceTimersByTimeAsync(16);
     if (!(v as unknown as { animating: boolean }).animating) throw new Error("landed too soon for this test");
   }
@@ -211,6 +212,28 @@ describe("Viewer scheduler", () => {
         v.zoomAt(400, 300, 1.6, true);
       });
     });
+
+    it("lands as soon as under 4 px of movement is left, not after creeping through it", async () => {
+      const { v } = await openViewer([{ w: 1190, h: 842 }], true);
+      await until(() => v.queueLength === 0 && !v.rendering);
+      const moving = () => (v as unknown as { animating: boolean }).animating;
+      const t0 = performance.now();
+      v.zoomAt(400, 300, 2, true);
+      const seen: View[] = [];
+      for (let k = 0; k < 200 && moving(); k++) {
+        await vi.advanceTimersByTimeAsync(4);
+        if (moving()) seen.push({ ...v.view });
+      }
+      const landed = performance.now() - t0;
+      const final = { ...v.view };
+      // Every frame shown while moving was still at least 4 px from the end (a closer one
+      // would have landed instead)...
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((x) => remainingMove(x, final, 800, 600) >= 4)).toBe(true);
+      // ...and the ease ends well before the exponential reaches its old cut-off (log scale
+      // within 1e-3 of the target: about 295 ms for a 2x notch).
+      expect(landed).toBeLessThan(270);
+    });
   });
 
   it("renders ahead on a wheel zoom in, so the next notch in needs no render", async () => {
@@ -277,12 +300,18 @@ describe("Viewer scheduler", () => {
       const { v, t0 } = await fly(true);
       let sharpAt: number | null = null;
       void v.whenSharp().then(() => (sharpAt = performance.now()));
+      const moving = () => (v as unknown as { animating: boolean }).animating;
+      for (let k = 0; k < 100 && moving(); k++) await vi.advanceTimersByTimeAsync(4);
+      const landedAt = performance.now();
       await until(() => sharpAt !== null, 1000);
       expect(sharpAt).not.toBeNull();
-      // Landing is 220 ms after the start (plus up to a frame); before this change the
-      // settle delay alone added 60 ms after it.
-      expect(sharpAt! - t0).toBeGreaterThanOrEqual(220);
-      expect(sharpAt! - t0 - 220).toBeLessThan(50);
+      // Landing is up to 220 ms after the start (sooner by the last few pixels, see LAND_PX).
+      // A "sharp" from before it would be stale; before this change the settle delay alone
+      // added 60 ms after it.
+      expect(landedAt - t0).toBeGreaterThan(150);
+      expect(landedAt - t0).toBeLessThanOrEqual(224);
+      expect(sharpAt!).toBeGreaterThanOrEqual(landedAt - 4);
+      expect(sharpAt! - landedAt).toBeLessThan(50);
     });
 
     it("drops the destination's renders when a pan ends it early", async () => {
