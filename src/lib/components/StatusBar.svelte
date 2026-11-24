@@ -3,6 +3,8 @@
   // A short notice (something that didn't work) takes the hint's place for a few seconds.
   interface Props {
     scaleText: string | null;
+    /** Show the scale as a warning: borrowed from page 1, or not set. */
+    scaleWarn?: boolean;
     hint: string;
     /** Shown instead of the hint while set. */
     notice?: string | null;
@@ -17,14 +19,19 @@
     /** The active file's "Edit file" lock is off (docs/edit-lock-brief.md, 3): a status, not a control. */
     unlocked?: boolean;
   }
-  let { scaleText, hint, notice = null, cursor, pageSize, onScale, measure = null, onCalibrate = null, unlocked = false }: Props = $props();
+  let { scaleText, scaleWarn = false, hint, notice = null, cursor, pageSize, onScale, measure = null, onCalibrate = null, unlocked = false }: Props = $props();
 </script>
 
 <footer class="bar">
   <!-- A fixed slot, so the hint doesn't move as the scale appears or changes width. -->
   <span class="slot">
     {#if scaleText}
-      <button type="button" class="scale" title="Set the drawing scale" onclick={onScale}>{scaleText}</button>
+      <button
+        type="button"
+        class="scale"
+        class:warn={scaleWarn}
+        title={scaleWarn ? "This page's scale isn't from its own title block, or isn't set: click to set it" : "Set the drawing scale"}
+        onclick={onScale}>{scaleText}</button>
     {/if}
   </span>
   {#if notice}
@@ -87,6 +94,16 @@
   }
   .scale:active {
     background: var(--press-soft);
+  }
+  /* Borrowed from page 1, or not set: amber, on a faint amber wash so it reads as a state. */
+  .scale.warn {
+    color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 14%, transparent);
+    margin: 0;
+  }
+  .scale.warn:hover {
+    background: color-mix(in srgb, var(--warn) 24%, transparent);
+    color: var(--warn);
   }
   .slot {
     min-width: 96px;

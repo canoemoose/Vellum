@@ -5,6 +5,7 @@
   import { formatRatio, parseScaleInput, SCALE_PRESETS, type DocScale } from "../../shell/scale";
   import { ARCHITECTURAL_SCALES, ENGINEERING_SCALES } from "../../markup/imperial"; // Imperial (stage 5 [A9])
   import type { Units } from "../../shell/paper";
+  import type { PageScale } from "../../shell/pageScale";
 
   interface Props {
     fileName: string;
@@ -17,18 +18,49 @@
     page?: number | null;
     pageScale?: DocScale | null;
     onApplyPage?: ((ratio: number | null) => void) | null;
+    /** The scale the page in view measures at, and where it came from (resolvePageScale). */
+    inView?: PageScale | null;
+    /**
+     * Go back to each page's own title block, dropping a scale set by hand for every page or a
+     * cleared one. Offered only when title blocks are being ignored (`ignoringTitleBlocks`).
+     */
+    onReadTitleBlocks?: (() => void) | null;
+    ignoringTitleBlocks?: boolean;
     // Imperial (stage 5 [A9])
     /** View > Units: imperial writes scales as 1/4" = 1'-0" and offers those. */
     units?: Units;
   }
-  let { fileName, current, candidates, onApply, onClose, page = null, pageScale = null, onApplyPage = null, units = "metric" }: Props = $props();
+  let { fileName, current, candidates, onApply, onClose, page = null, pageScale = null, onApplyPage = null, inView = null, onReadTitleBlocks = null, ignoringTitleBlocks = false, units = "metric" }: Props = $props();
   const fmt = (r: number) => formatRatio(r, units);
   // Measuring
+  // Ticked when the page in view has its own scale: set for it, read from its own title block,
+  // or borrowed from page 1. Setting "every page" there would override every sheet's title block.
   // svelte-ignore state_referenced_locally
-  let pageOnly = $state(!!pageScale);
+  let pageOnly = $state(!!pageScale || (page !== null && page > 1 && (inView?.from === "title block" || inView?.from === "borrowed")));
 
   // svelte-ignore state_referenced_locally
-  let text = $state((pageScale ?? current) ? fmt((pageScale ?? current)!.ratio) : "");
+  const shown = pageScale ?? inView?.scale ?? current;
+  // svelte-ignore state_referenced_locally
+  let text = $state(shown ? fmt(shown.ratio) : "");
+
+  /** Where the page in view's scale came from, in words, and whether it's a warning. */
+  const source = $derived.by(() => {
+    if (page === null || !inView) return null;
+    if (!inView.scale) return { text: `Page ${page}: no scale set.`, warn: true };
+    const n = fmt(inView.scale.ratio);
+    switch (inView.from) {
+      case "this page":
+        return { text: `Page ${page}: ${n}, set for this page.`, warn: false };
+      case "document":
+        return { text: `Page ${page}: ${n}, set for every page.`, warn: false };
+      case "title block":
+        return { text: `Page ${page}: ${n}, from its title block.`, warn: false };
+      case "borrowed":
+        return { text: `Page ${page}: ${n}, borrowed from page 1. This page doesn't state a scale of its own.`, warn: true };
+      default:
+        return { text: `Page ${page}: ${n}, from page 1 until this page has been read.`, warn: false };
+    }
+  });
   const parsed = $derived(parseScaleInput(text));
   const uniqueCands = $derived.by(() => {
     const seen = new Set<number>();
@@ -47,6 +79,16 @@
       The scale of <b class="selectable">{fileName}</b> as drawn, used for real-world coordinates in the status bar and for
       printing to scale.
     </p>
+
+    {#if source}
+      <p class="source" class:warn={source.warn}>{source.text}</p>
+    {/if}
+    {#if onReadTitleBlocks && ignoringTitleBlocks}
+      <p class="reread">
+        Title blocks are being ignored.
+        <button type="button" class="link" onclick={onReadTitleBlocks}>Read scales from title blocks</button>
+      </p>
+    {/if}
 
     {#if candidates === null}
       <p class="muted">Looking for a scale on the page…</p>
@@ -93,8 +135,9 @@
   {#snippet footer()}
     {#if pageOnly && onApplyPage && pageScale}
       <button type="button" class="btn ghost clear" onclick={() => onApplyPage(null)}>Clear this page's scale</button>
-    {:else if current && !pageOnly}
-      <button type="button" class="btn ghost clear" onclick={() => onApply(null)}>Clear scale</button>
+    {:else if current || inView?.scale}
+      <!-- Clears every page, whatever "This page only" says: the label says so. -->
+      <button type="button" class="btn ghost clear" onclick={() => onApply(null)}>{page !== null ? "Clear every page" : "Clear scale"}</button>
     {/if}
     <button type="button" class="btn" onclick={onClose}>Cancel</button>
     <button type="submit" form="scaleform" class="btn primary" disabled={parsed === null}>Set scale</button>
@@ -106,6 +149,13 @@
     margin: 0 0 16px;
     line-height: 1.45;
     color: var(--tx2);
+  }
+  .source {
+    margin: 0 0 16px;
+    color: var(--tx);
+  }
+  .source.warn {
+    color: var(--warn);
   }
   .muted {
     color: var(--tx3);
@@ -156,6 +206,19 @@
   }
   .clear {
     margin-right: auto;
+  }
+  .reread {
+    margin: -8px 0 16px;
+    color: var(--tx2);
+  }
+  .link {
+    border: none;
+    background: none;
+    padding: 0 0 0 4px;
+    color: var(--accent-text);
+  }
+  .link:hover {
+    text-decoration: underline;
   }
   /* Measuring */
   .pageonly {

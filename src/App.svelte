@@ -50,7 +50,7 @@
   import { type Measurement, hasEnds, relook } from "./lib/markup/measurements";
   import { type DimensionLook, setDimensionLook } from "./lib/markup/dimension";
   import { calibratePaperMm } from "./lib/markup/kinds/measureCalibrate";
-  import { type PageOverrides, fromRemembered, pageScaleText, rememberPages, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
+  import { type DetectedPages, type PageOverrides, fromRemembered, pageScaleStatus, rememberPages, resolvePageScale, revaluedText, scaleForPage, withPageScale } from "./lib/shell/pageScale";
 
   // Stamps
   import SignaturesDialog, { type SignaturesView } from "./lib/components/signature/SignaturesDialog.svelte";
@@ -106,7 +106,7 @@
   } from "./lib/shell/tabs";
   import type { Menu, MenuItem } from "./lib/shell/menuNav";
   import { cursorText, pageSizeText } from "./lib/shell/paper";
-  import { pickDetectedScale, rememberScale, scaleStatusText, type DocScale } from "./lib/shell/scale";
+  import { formatRatio, pickDetectedScale, rememberScale, type DocScale } from "./lib/shell/scale";
   import { addRecent, formatZoom } from "./lib/shell/format";
   import { navHint } from "./lib/shell/shortcuts";
   import { resolveTheme, type ThemePref } from "./lib/shell/theme";
@@ -131,7 +131,16 @@
     scale: DocScale | null;
     /** The scale adopted automatically on open, if any. */
     detected: number | null;
+    /** What each page's own title block says (read as pages come into view; see detectPageScale). */
+    detectedPages: DetectedPages;
+    /**
+     * Clear scale was used: every page measures on paper, title blocks ignored, until a scale
+     * is set again. Not remembered across opens (a cleared scale never was).
+     */
+    scaleCleared: boolean;
     candidates: ScaleCandidate[] | null;
+    /** What each later page's text offered as a scale (page 1's are `candidates`). */
+    pageCandidates: Record<number, ScaleCandidate[]>;
     password: string | null;
     token: number;
     /** This tab's markups (engine/markupDoc.ts). */
@@ -456,11 +465,80 @@
   /** /UserUnit per page, by tab id: read when measuring first starts on a tab (empty while read). */
   let userUnits = $state<Record<number, number[]>>({});
 
-  /** How a page of a tab measures: its scale (own or the document's) and its /UserUnit. */
+  /**
+   * How a page of a tab measures: its scale (see resolvePageScale: its own, the document's set
+   * by hand, its title block's, else page 1's, flagged) and its /UserUnit. Asks for the page's
+   * title block to be read if it hasn't been.
+   */
+  /** What the tab's title blocks say, or nothing once Clear scale has been used. */
+  function titleBlocks(t: Tab): DetectedPages | undefined {
+    return t.scaleCleared ? undefined : t.detectedPages;
+  }
+
   function pageMeasure(t: Tab | null | undefined, page: number): PageMeasure {
     if (!t) return { ratio: null, userUnit: 1 };
-    return { ratio: scaleForPage(t.scale, pagesOf(t), page)?.ratio ?? null, userUnit: userUnits[t.id]?.[page] ?? 1 };
+    detectPageScale(t, page);
+    return { ratio: scaleForPage(t.scale, pagesOf(t), page, titleBlocks(t))?.ratio ?? null, userUnit: userUnits[t.id]?.[page] ?? 1 };
   }
+
+  /** Pages whose title block is being read, as "tab id:page". */
+  const detecting = new Set<string>();
+
+  /**
+   * Read page `page`'s title block for its scale, once, in the background (page 1's is read on
+   * open, by detectScale). Each sheet of a set can be at its own scale (the Fieldwork set:
+   * 1:5000, 1:2500, 1:500, 1:100).
+   */
+  function detectPageScale(t: Tab, page: number) {
+    if (t.status !== "open" || !t.info || t.info.kind !== "pdf" || page === 0 || t.detectedPages[page] !== undefined) return;
+    const key = `${t.id}:${page}`;
+    const r = rendererFor(t.path);
+    if (detecting.has(key) || !r.findScale || page >= t.info.numPages) return;
+    detecting.add(key);
+    const { id } = t;
+    const info = t.info;
+    r.findScale(info.docId, page)
+      .catch((e) => {
+        console.warn("scale detection failed on page", page + 1, String(e));
+        return [] as ScaleCandidate[];
+      })
+      .then((c) => {
+        const auto = pickDetectedScale(c, info.sizes[page].w, info.sizes[page].h);
+        const cur = tabById(id);
+        if (cur) updateTab(id, { detectedPages: { ...cur.detectedPages, [page]: auto }, pageCandidates: { ...cur.pageCandidates, [page]: c } });
+      })
+      .finally(() => detecting.delete(key));
+  }
+
+  // The page in view gets its title block read, so the status bar can show its own scale.
+  $effect(() => {
+    const t = active;
+    const page = ui.page;
+    if (t) untrack(() => detectPageScale(t, page));
+  });
+
+  /** The status bar's scale for the page in view (a warning when borrowed or not set). */
+  const scaleStatus = $derived.by(() => {
+    const t = active;
+    return t ? pageScaleStatus(t.scale, pagesOf(t), ui.page, settings.units, titleBlocks(t)) : null;
+  });
+
+  /** Pages already warned about measuring at a borrowed scale, as "tab id:page". */
+  const borrowWarned = new Set<string>();
+
+  // Measuring on a page that states no scale of its own, at page 1's: say so once, as well as
+  // in the status bar (Matt, 24 Nov), since a number at the wrong scale is the risk.
+  $effect(() => {
+    const t = active;
+    if (!t || !measuring) return;
+    const page = ui.page;
+    const r = resolvePageScale(t.scale, pagesOf(t), page, titleBlocks(t));
+    const key = `${t.id}:${page}`;
+    if (r.from !== "borrowed" || !r.scale || borrowWarned.has(key)) return;
+    borrowWarned.add(key);
+    const n = formatRatio(r.scale.ratio, settings.units);
+    untrack(() => notify(`Page ${page + 1} has no scale of its own: measuring at page 1's ${n}`));
+  });
 
   // New measurements take their page's scale, and the format and label size set in the bar.
   // Imperial (stage 5 [A9]): the format comes with View > Units as what Auto resolves to.
@@ -549,7 +627,7 @@
     const t = active;
     const v = viewer;
     if (!t || t.status !== "open" || !v || !markupTool) return;
-    const sig = JSON.stringify([t.scale?.ratio ?? null, settings.measure.pageScales[pathKey(t.path)] ?? null, userUnits[t.id] ?? null]);
+    const sig = JSON.stringify([t.scale?.ratio ?? null, settings.measure.pageScales[pathKey(t.path)] ?? null, userUnits[t.id] ?? null, titleBlocks(t) ?? null]);
     const units = settings.units; // Imperial (stage 5 [A9]): Auto follows View > Units
     untrack(() => {
       const r = revalue(t.marks.markups, null, (p) => pageMeasure(t, p));
@@ -672,7 +750,6 @@
     }
     const noScale = measuring && pageMeasure(t, ui.page).ratio === null;
     return {
-      scaleText: pageScaleText(t.scale, pagesOf(t), ui.page, settings.units),
       measure: line,
       onCalibrate: noScale && toolNow !== "measureCalibrate" ? () => setTool("measureCalibrate") : null,
     };
@@ -685,6 +762,9 @@
     return {
       page: page + 1,
       pageScale: pagesOf(t)[page] ?? null,
+      // The page in view's scale and where it came from, and what its own text offered.
+      inView: resolvePageScale(t.scale, pagesOf(t), page, titleBlocks(t)),
+      candidates: page === 0 ? t.candidates : (t.pageCandidates[page] ?? null),
       onApplyPage: (r: number | null) => {
         setPageScale(t, page, r);
         dialog = null;
@@ -1572,7 +1652,7 @@
   function newTab(path: string): Tab {
     return {
       id: nextTabId++, path, title: fileName(path), kind: rendererFor(path).name === "image" ? "image" : "pdf",
-      status: "pending", error: null, view: null, info: null, scale: null, detected: null, candidates: null,
+      status: "pending", error: null, view: null, info: null, scale: null, detected: null, detectedPages: {}, scaleCleared: false, candidates: null, pageCandidates: {},
       password: null, token: 0, marks: new MarkupDoc(), stamp: null,
     };
   }
@@ -1792,12 +1872,26 @@
       updateTab(id, {
         candidates: c,
         detected: auto,
-        scale: cur.scale ?? (auto ? { ratio: auto, source: "detected" } : null),
+        detectedPages: { ...cur.detectedPages, 0: auto },
+        scale: cur.scale ?? (auto && !cur.scaleCleared ? { ratio: auto, source: "detected" } : null),
       });
     } catch (e) {
       console.warn("scale detection failed", String(e));
       updateTab(id, { candidates: [] });
     }
+  }
+
+  /**
+   * Back to each page's own title block (page 1's for the document): drops a scale set by hand
+   * for every page, or a cleared one. Scales set for single pages stay.
+   */
+  function readTitleBlocks() {
+    const t = active;
+    if (!t) return;
+    settings.scales = rememberScale(settings.scales, pathKey(t.path), null);
+    save();
+    updateTab(t.id, { scale: t.detected ? { ratio: t.detected, source: "detected" } : null, scaleCleared: false });
+    dialog = null;
   }
 
   function applyScale(ratio: number | null) {
@@ -1806,7 +1900,7 @@
     const auto = ratio !== null && ratio === t.detected;
     settings.scales = rememberScale(settings.scales, pathKey(t.path), auto ? null : ratio);
     save();
-    updateTab(t.id, { scale: ratio === null ? null : { ratio, source: auto ? "detected" : "manual" } });
+    updateTab(t.id, { scale: ratio === null ? null : { ratio, source: auto ? "detected" : "manual" }, scaleCleared: ratio === null });
     dialog = null;
   }
 
@@ -2793,7 +2887,8 @@
 
   {#if chrome}
     <StatusBar
-      scaleText={hasDoc ? scaleStatusText(active?.scale ?? null, settings.units) : null}
+      scaleText={hasDoc ? (scaleStatus?.text ?? null) : null}
+      scaleWarn={hasDoc && !!scaleStatus?.warn}
       hint={hasDoc ? textUi.link || navHint(ui.navMode) : ""}
       {notice}
       cursor={cursorLabel}
@@ -2875,7 +2970,7 @@
 {/if}
 
 {#if dialog === "scale" && active?.info}
-  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} {...measureScaleDialog} units={settings.units} />
+  <ScaleDialog fileName={active.title} current={active.scale} candidates={active.candidates} onApply={applyScale} onClose={() => (dialog = null)} {...measureScaleDialog} onReadTitleBlocks={active.info?.kind === "pdf" ? readTitleBlocks : null} ignoringTitleBlocks={(active.scaleCleared || active.scale?.source === "manual") && Object.values(active.detectedPages).some((d) => typeof d === "number")} units={settings.units} />
 {:else if dialog === "properties" && active?.info}
   <PropertiesDialog
     path={active.path}
