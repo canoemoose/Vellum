@@ -18,8 +18,12 @@ installed copies update themselves: see Releasing below and
 - `npm run gen:synthetic`: write the synthetic stress PDFs to `bench-output/synthetic/`.
 - `npm run bench -- --runs 3 [--pdfium-threads 8] [--dpr 2] [--only name] [--exe path] [files...]`
   (PDFium is the only renderer; `--renderer pdfium` is accepted). Honours `CARGO_TARGET_DIR`.
+  Zoom modes: `--flight` (zoom as a flight, timed landing to sharp), `--wheel N` (N notches
+  40 ms apart, landing to sharp), `--spin --page N` (a steady wheel spin, counting long frames).
 - `VELLUM_PDFIUM_TIMING=1` logs per-strip render times; `VELLUM_IMAGE_LOD=1` turns on the
   experimental image level of detail (off: it measured slower, see docs/v0.1-handoff/lod.md).
+  `VELLUM_PERF_LOG=1` logs every settle-to-sharp time to perf-log.csv without the debug
+  overlay (viewer-bench sets it).
   Image swaps (`pdfium_swap.rs`) are always on and log each swap and colour-profile check
   as `[swap]` lines on stderr.
 - Speed work: start from [docs/speed-handoff.md](docs/speed-handoff.md) (state, numbers,
@@ -29,7 +33,10 @@ installed copies update themselves: see Releasing below and
 - `tools/viewer-bench` (C#, `dotnet build -c Release` in that folder): times Vellum and six
   other viewers from outside by watching the screen. `ViewerBench.exe run [--apps a,b]
   [--runs 3] [--quiet 10000] files...` for cold opens, fit page and fit width, and a Ctrl+wheel
-  zoom at the middle of the sheet; results in `bench-output/viewers/`. Always set `VELLUM_EXE`
+  zoom at the middle of the sheet; `--whole-sheet` for launch to the whole sheet drawn;
+  `--notches [--frames] [--keep-raw] [--tolerance 2] [--quiet 2500] [--no-warm]` for single
+  wheel notches, timed from the zoom finishing to sharp (`analyse <run dir> [--why]` re-checks
+  saved grabs). Results in `bench-output/viewers/`. Always set `VELLUM_EXE`
   to a known build, and check the saved frames by eye before quoting a figure. It takes over
   the mouse and keyboard on the primary monitor. Traps and what is parked: the scope doc above.
 - `node tools/screenshots.mjs [--only name] [--theme dark|light|both]`: homepage screenshots,

@@ -13,6 +13,9 @@ follows the release.
 
 ## Where Vellum stands (main `2eab73b`, 23 Nov)
 
+From before the zoom fixes (flights, wheel, the 4 px landing): the settle-to-sharp row is
+out of date; for zoom, see "The cross-viewer zoom test" below. The open figures stand.
+
 Vellum's own bench (`tools/bench.mjs --runs 3 --pdfium-threads 8 --size 1600x960`, cold
 renders, median of 3 launches):
 
@@ -100,8 +103,11 @@ landing to sharp, fit / 400% / 1600%:
 Provisional until:
 
 1. **It is measured from the screen**, as the Acrobat comparison was (`tools/viewer-bench`).
-   The figure above is the in-app bench, whose floor is one frame. The cross-viewer zoom
-   comparison (next steps, 4) is to do this, and to say whether other viewers manage it.
+   *Done 24 Nov (single notches, below):* from the zoom finishing to sharp, Vellum 0 / 33 /
+   49 ms on Curtis Hall / the stage plan / the aerial drawing (16 to 17 ms in-app plus the
+   screen's grab interval), after the 4 px landing fix it exposed. From the screen the
+   honest wording is "a frame or two". Only Foxit matches it, on the stage plan only. Still
+   to do: the same run with every viewer in one session, on all five drawings.
 2. **"On typical drawings" goes with it** (a subline or footnote): the aerial drawing lands
    sharp 50 to 500 ms after a zoom, its large bands being slow to reach the screen.
 3. **16 ms is one frame at 60 Hz**: on a faster screen it is one frame, less than 16 ms.
@@ -115,15 +121,21 @@ quicker on three of five drawings).
 
 ## What is open
 
-1. **The still blur after a zoom lands**: the ease, then a 60 ms settle delay that exists only
-   for wheel notches, then the render. Design, not regression. **Fixed for flights, merged 23 Nov**
-   (see "Next steps", 3). Wheel zoom fixed and merged 23 Nov.
-2. **Stage plan at 1600%**: 198 ms on 18 Nov, 82 to 83 ms on both old and new builds on
+1. **The zoom comparison in one session.** The other viewers' zoom figures were taken before
+   Vellum's 4 px landing; Bayou and Silverstone were left out to keep the run short. Rerun
+   all five viewers on all five drawings with the final build (about 35 minutes, machine
+   unusable) before quoting any zoom figure. Matt: later.
+2. **Watch: a jerk on a slow free-spin** of the wheel (3d below). Fix (d) if it comes back.
+3. **Band delivery on heavy drawings:** after a zoom on the aerial drawing, a third of
+   notches take 480 to 720 ms to sharpen, spent getting bands of up to 20 MB to the webview
+   (handoff idea 1), not in PDFium.
+4. **Stage plan at 1600%**: 198 ms on 18 Nov, 82 to 83 ms on both old and new builds on
    23 Nov. Probably a bench artefact (stale same-scale renders), not proven. Watch, don't chase.
-3. **Unexplained, low priority:** repeat fit renders of the aerial drawing took 1.26 s inside
+5. **Unexplained, low priority:** repeat fit renders of the aerial drawing took 1.26 s inside
    the app at `e337efb` but 2.3 s in a standalone PDFium probe; and the memory shift above.
 
-Closed: the regression on very long pages (fixed 23 Nov, `2eab73b`: pages of 200,000+ objects
+Closed: the still blur after a zoom lands (flights `9bf1a90`, wheel `d90b120`, both 23 Nov;
+the ease's soft tail `cc93208`, 24 Nov). The regression on very long pages (fixed 23 Nov, `2eab73b`: pages of 200,000+ objects
 are banded even at fit; aerial fit 2339 → 450 ms). The suspected PDFium cost step between
 render scales does not exist. Details in the log, "Step 1 of Next steps".
 
@@ -213,7 +225,13 @@ render scales does not exist. Details in the log, "Step 1 of Next steps".
      jerk is faint). If it comes back in use, the fix is (d): a notch within 500 ms of the
      last behaves as before (no render during the ease, 60 ms settle), so a spin is the
      old code by construction and a single notch keeps the gain.
-4. **The cross-viewer zoom comparison, as single notches** (agreed 23 Nov, below).
+4. ~~**The cross-viewer zoom comparison, as single notches**~~ **Run 23 to 24 Nov** (below);
+   it found and fixed the ease's soft tail. One same-session rerun left (open, 1).
+5. **Then, if speed work continues: band delivery to the webview** (handoff idea 1), the
+   biggest gain left; scope it first.
+   Being fastest in every scenario (start-up, band delivery, the ease, untested scenarios)
+   was thought through on 24 Nov and parked: [fastest-everywhere.md](fastest-everywhere.md),
+   in the backlog.
 
 ## Overnight run, 22 to 23 Nov (autonomous): done
 

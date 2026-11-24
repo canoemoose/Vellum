@@ -750,3 +750,14 @@ page on one PDFium instance, with the app's matrix and flags, at 12 scales from 
   The aerial drawing's small gain is band delivery to the webview, not the wheel. Matt felt
   a faint jerk on a slow free-spin; a new spin bench found no dropped frames in either
   build. Merged as is, with the jerk as a watch item (scope doc, 3d).
+- 23 Nov: 2c (ease length) dropped: Claude's guess, never seen. Homepage line chosen,
+  provisional: "Zoom to sharp in 16 ms" (from the zoom finishing; the ease is the zoom, not
+  a wait: Matt).
+- 23 to 24 Nov: viewer-bench single-notch test built (`a1ef992`). Its "zoom finished" test
+  failed twice on Chrome's stretched frames, caught only by Matt reading saved frames (block
+  means, then block correlation); the alignment test with a 2 px tolerance passed his
+  labels. Run on five viewers, three drawings (Edge can't be measured). It showed Vellum's
+  ease creeping through its last pixels for 60 to 80 ms with the sharp tiles held back; an
+  early reveal changed nothing measurable; landing at 4 px (`cc93208`) cut the stage plan
+  from 82 to 33 ms and ends every zoom 70 to 80 ms sooner. Matt saw no snap. Committed;
+  same-session rerun of all viewers left.
