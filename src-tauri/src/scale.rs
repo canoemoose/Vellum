@@ -20,6 +20,12 @@ pub const STANDARD_RATIOS: &[f64] = &[
     500.0, 750.0, 1000.0, 1250.0, 1500.0, 2000.0, 2500.0, 5000.0, 10000.0, 25000.0, 50000.0,
 ];
 
+/// The common imperial scales as ratios: architectural (3/32" to 3" = 1'-0") and engineering
+/// (1" = 10' to 1" = 100'). The same lists as the scale box offers (src/lib/markup/imperial.ts).
+pub const IMPERIAL_RATIOS: &[f64] = &[
+    128.0, 96.0, 64.0, 48.0, 32.0, 24.0, 16.0, 12.0, 8.0, 4.0, 120.0, 240.0, 360.0, 480.0, 600.0, 720.0, 1200.0,
+];
+
 /// Long sides of ISO A sheets in mm, A0 to A5.
 pub const A_SERIES_LONG_MM: [f64; 6] = [1189.0, 841.0, 594.0, 420.0, 297.0, 210.0];
 
@@ -131,8 +137,21 @@ fn skip_spaces(chars: &[char], mut i: usize, max: usize) -> usize {
     i
 }
 
-/// Every scale note in `chars`, in text order.
+/// Every scale note in `chars`, in text order: ratios ("1:100") and imperial scales
+/// (1/4" = 1'-0", 1" = 20'), see `find_imperial_matches`.
 pub fn find_scale_matches(chars: &[char]) -> Vec<ScaleMatch> {
+    let mut out = find_ratio_matches(chars);
+    for m in find_imperial_matches(chars) {
+        if !out.iter().any(|r| m.start < r.end && r.start < m.end) {
+            out.push(m);
+        }
+    }
+    out.sort_by_key(|m| m.start);
+    out
+}
+
+/// Ratios: "1:NNN", "1 : NNN", "1∶NNN", and "1/NNN" for standard ratios from 1/10.
+fn find_ratio_matches(chars: &[char]) -> Vec<ScaleMatch> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < chars.len() {
@@ -247,6 +266,155 @@ pub fn rescale_for_page(ratio: f64, sheet_long_mm: f64, page_long_mm: f64) -> f6
 }
 
 /// "scale" (any case) within the 24 characters before `start`.
+// ------------------------------------------------------------------ imperial scales
+
+const QUOTES: [char; 4] = ['"', '\u{2033}', '\u{201d}', '\u{201c}'];
+const PRIMES: [char; 3] = ['\'', '\u{2019}', '\u{2032}'];
+
+/// Inch marks: ", two apostrophes, the typographic and prime forms, or "in". The index after.
+fn inch_mark(chars: &[char], i: usize) -> Option<usize> {
+    let c = *chars.get(i)?;
+    if QUOTES.contains(&c) {
+        return Some(i + 1);
+    }
+    if PRIMES.contains(&c) && chars.get(i + 1).is_some_and(|n| PRIMES.contains(n)) {
+        return Some(i + 2);
+    }
+    if matches!(c, 'i' | 'I') && matches!(chars.get(i + 1), Some('n' | 'N')) && !chars.get(i + 2).is_some_and(|n| n.is_alphabetic()) {
+        return Some(if chars.get(i + 2) == Some(&'.') { i + 3 } else { i + 2 });
+    }
+    None
+}
+
+/// Foot marks: ', the typographic and prime forms, or "ft". The index after.
+fn foot_mark(chars: &[char], i: usize) -> Option<usize> {
+    let c = *chars.get(i)?;
+    if PRIMES.contains(&c) && !chars.get(i + 1).is_some_and(|n| PRIMES.contains(n)) {
+        return Some(i + 1);
+    }
+    if matches!(c, 'f' | 'F') && matches!(chars.get(i + 1), Some('t' | 'T')) && !chars.get(i + 2).is_some_and(|n| n.is_alphabetic()) {
+        return Some(if chars.get(i + 2) == Some(&'.') { i + 3 } else { i + 2 });
+    }
+    None
+}
+
+/// A single vulgar-fraction character's value: ½ ¼ ¾ ⅛ ⅜ ⅝ ⅞ and the thirds.
+fn vulgar(c: char) -> Option<f64> {
+    Some(match c {
+        '½' => 0.5,
+        '¼' => 0.25,
+        '¾' => 0.75,
+        '⅛' => 0.125,
+        '⅜' => 0.375,
+        '⅝' => 0.625,
+        '⅞' => 0.875,
+        '⅓' => 1.0 / 3.0,
+        '⅔' => 2.0 / 3.0,
+        _ => return None,
+    })
+}
+
+/// Digits, with an optional decimal part ("1.5"), and the index after.
+fn number(chars: &[char], i: usize) -> Option<(f64, usize)> {
+    let mut j = i;
+    while chars.get(j).is_some_and(char::is_ascii_digit) {
+        j += 1;
+    }
+    if j == i {
+        return None;
+    }
+    if chars.get(j) == Some(&'.') && chars.get(j + 1).is_some_and(char::is_ascii_digit) {
+        j += 1;
+        while chars.get(j).is_some_and(char::is_ascii_digit) {
+            j += 1;
+        }
+    }
+    let v: f64 = chars[i..j].iter().collect::<String>().parse().ok()?;
+    Some((v, j))
+}
+
+/// A length as written on a drawing: 3, 1.5, 1/4, 1 1/2, 1-1/2, ½, 1½. The index after.
+fn length_number(chars: &[char], i: usize) -> Option<(f64, usize)> {
+    if let Some(v) = chars.get(i).and_then(|&c| vulgar(c)) {
+        return Some((v, i + 1));
+    }
+    let (whole, j) = number(chars, i)?;
+    if chars.get(j) == Some(&'/') {
+        let (den, k) = number(chars, j + 1)?;
+        return (den > 0.0).then_some((whole / den, k));
+    }
+    if let Some(v) = chars.get(j).and_then(|&c| vulgar(c)) {
+        return Some((whole + v, j + 1));
+    }
+    // A mixed number: "1 1/2" or "1-1/2".
+    if matches!(chars.get(j), Some(' ' | '-')) {
+        if let Some((num, k)) = number(chars, j + 1) {
+            if chars.get(k) == Some(&'/') {
+                if let Some((den, m)) = number(chars, k + 1) {
+                    if den > 0.0 && num < den {
+                        return Some((whole + num / den, m));
+                    }
+                }
+            }
+        }
+    }
+    Some((whole, j))
+}
+
+/// The real-world side, in inches: 1'-0", 1' 0", 1', 20'-0", 20 ft, 12". The index after.
+fn real_side(chars: &[char], i: usize) -> Option<(f64, usize)> {
+    let (n, j) = length_number(chars, i)?;
+    let j = skip_spaces(chars, j, 1); // "50 ft"
+    if let Some(k) = foot_mark(chars, j) {
+        // Inches after the feet are optional: "-0\"" or " 6\"".
+        let after = if matches!(chars.get(k), Some('-' | ' ')) { k + 1 } else { k };
+        if let Some((v, m)) = length_number(chars, after) {
+            if let Some(e) = inch_mark(chars, m) {
+                return Some((n * 12.0 + v, e));
+            }
+        }
+        return Some((n * 12.0, k));
+    }
+    let k = inch_mark(chars, j)?;
+    Some((n, k))
+}
+
+/// Imperial scales: an inch length on paper, "=", a real length in feet (and inches) or in
+/// inches. Architectural: 1/4" = 1'-0" (1:48), 1 1/2" = 1'-0" (1:8), 3" = 1'-0" (1:4).
+/// Engineering: 1" = 20' or 1" = 20'-0" (1:240). Typographic quotes and primes, "in" and
+/// "ft", and fraction characters (½ ¼ ¾ ⅛) are accepted. Mirrors `parseLengthScale` in
+/// src/lib/markup/imperial.ts, which reads what is typed in the scale box.
+pub fn find_imperial_matches(chars: &[char]) -> Vec<ScaleMatch> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if !((c.is_ascii_digit() || vulgar(c).is_some()) && boundary_before(chars, i)) {
+            i += 1;
+            continue;
+        }
+        let found = (|| {
+            let (paper, j) = length_number(chars, i)?;
+            let j = inch_mark(chars, skip_spaces(chars, j, 1))?;
+            let j = skip_spaces(chars, j, 2);
+            if chars.get(j) != Some(&'=') {
+                return None;
+            }
+            let (real, end) = real_side(chars, skip_spaces(chars, j + 1, 2))?;
+            (paper > 0.0 && real >= paper).then_some((real / paper, end))
+        })();
+        match found {
+            Some((ratio, end)) => {
+                let text: String = chars[i..end].iter().collect();
+                out.push(ScaleMatch { start: i, end, ratio, text, labelled: labelled(chars, i), sheet: None });
+                i = end;
+            }
+            None => i += 1,
+        }
+    }
+    out
+}
+
 fn labelled(chars: &[char], start: usize) -> bool {
     let from = start.saturating_sub(24);
     let before: String = chars[from..start].iter().collect::<String>().to_lowercase();
@@ -267,7 +435,7 @@ pub fn score(c: &RawCandidate, page_w: f64, page_h: f64) -> f64 {
     if c.labelled {
         s += 1.5;
     }
-    if STANDARD_RATIOS.contains(&c.ratio) {
+    if STANDARD_RATIOS.contains(&c.ratio) || IMPERIAL_RATIOS.contains(&c.ratio) {
         s += 0.5;
     }
     if c.sheet.is_some() {

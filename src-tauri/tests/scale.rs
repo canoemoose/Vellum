@@ -268,3 +268,79 @@ mod clean {
         assert_eq!(chars.iter().collect::<String>(), "1:50 ");
     }
 }
+
+mod imperial {
+    use vellum_lib::scale::find_scale_matches;
+
+    fn found(s: &str) -> Vec<(String, f64)> {
+        find_scale_matches(&s.chars().collect::<Vec<_>>()).into_iter().map(|m| (m.text, m.ratio)).collect()
+    }
+    fn ratios(s: &str) -> Vec<f64> {
+        found(s).into_iter().map(|(_, r)| r).collect()
+    }
+
+    #[test]
+    fn reads_architectural_scales() {
+        assert_eq!(ratios("SCALE: 1/4\" = 1'-0\""), vec![48.0]);
+        assert_eq!(ratios("1/8\"=1'-0\""), vec![96.0]);
+        assert_eq!(ratios("3/16\" = 1'-0\""), vec![64.0]);
+        assert_eq!(ratios("3/32\" = 1'-0\""), vec![128.0]);
+        assert_eq!(ratios("1/2\" = 1'-0\""), vec![24.0]);
+        assert_eq!(ratios("3/4\" = 1'-0\""), vec![16.0]);
+        assert_eq!(ratios("1\" = 1'-0\""), vec![12.0]);
+        assert_eq!(ratios("1 1/2\" = 1'-0\""), vec![8.0]);
+        assert_eq!(ratios("1-1/2\" = 1'-0\""), vec![8.0]);
+        assert_eq!(ratios("3\" = 1'-0\""), vec![4.0]);
+        assert_eq!(ratios("1/4\" = 1' 0\""), vec![48.0]);
+        assert_eq!(ratios("1/4\" = 1'"), vec![48.0]);
+    }
+
+    #[test]
+    fn reads_engineering_scales() {
+        assert_eq!(ratios("SCALE 1\" = 20'"), vec![240.0]);
+        assert_eq!(ratios("1\" = 20'-0\""), vec![240.0]);
+        assert_eq!(ratios("1\"=10'"), vec![120.0]);
+        assert_eq!(ratios("1\" = 100'-0\""), vec![1200.0]);
+        assert_eq!(ratios("1 in = 50 ft"), vec![600.0]);
+    }
+
+    #[test]
+    fn takes_typographic_marks_and_fraction_characters() {
+        assert_eq!(ratios("¼″ = 1′-0″"), vec![48.0]);
+        assert_eq!(ratios("1/4\u{201d} = 1\u{2019}-0\u{201d}"), vec![48.0]);
+        assert_eq!(ratios("1½\" = 1'-0\""), vec![8.0]);
+        assert_eq!(ratios("⅛\" = 1'-0\""), vec![96.0]);
+        assert_eq!(ratios("1/4'' = 1'-0''"), vec![48.0]);
+    }
+
+    #[test]
+    fn keeps_the_text_and_the_label() {
+        let m = find_scale_matches(&"SCALE: 1/4\" = 1'-0\" NOTES".chars().collect::<Vec<_>>());
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].text, "1/4\" = 1'-0\"");
+        assert!(m[0].labelled);
+    }
+
+    #[test]
+    fn finds_ratios_and_imperial_scales_together_in_order() {
+        assert_eq!(ratios("PLAN 1:100   DETAIL 1/4\" = 1'-0\"   SECTION 1:20"), vec![100.0, 48.0, 20.0]);
+    }
+
+    #[test]
+    fn leaves_lengths_and_other_equations_alone() {
+        assert!(ratios("1/4\" DIA. BOLT").is_empty());
+        assert!(ratios("WALL 6\" THICK, 12'-0\" LONG").is_empty());
+        assert!(ratios("6\" = 150 mm").is_empty());
+        assert!(ratios("x = 1'").is_empty());
+        assert!(ratios("A1/4\" = 1'-0\"").is_empty()); // part of a word
+        assert!(ratios("2'-0\" = 1\"").is_empty()); // real side smaller than paper
+    }
+}
+
+#[test]
+fn ranks_common_imperial_scales_like_standard_ratios() {
+    use vellum_lib::scale::{RawCandidate, score};
+    let at = |ratio: f64| RawCandidate { ratio, text: String::new(), bbox: [500.0, 500.0, 520.0, 510.0], labelled: false, sheet: None };
+    assert_eq!(score(&at(48.0), 1000.0, 1000.0), score(&at(50.0), 1000.0, 1000.0));
+    assert!(score(&at(47.0), 1000.0, 1000.0) < score(&at(48.0), 1000.0, 1000.0));
+}
