@@ -1,7 +1,10 @@
 # Builds the homepage (site/) and deploys it to GitHub Pages. tools/build-site.mjs fills in the
 # latest published release (version, size, installer link), so publishing a release redeploys
 # the page with nothing added to the release checklist. Needs Settings > Pages > Source set to
-# GitHub Actions. See docs/homepage-brief.md.
+# GitHub Actions, and Settings > Environments > github-pages to allow tags named v* as well as
+# main: a release runs this at its tag, and the environment refuses a tag it doesn't list. A tag
+# cut before this file existed starts nothing; run the workflow by hand after publishing one.
+# See docs/homepage-brief.md.
 name: Homepage
 
 on:
@@ -34,7 +37,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # Always the default branch's page. A release runs this workflow at the release's tag,
+      # which would otherwise publish the page as it was when the tag was cut.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       # Node at the version pinned in package.json ("volta"). No packages: the script needs none.
       - uses: volta-cli/action@615a78f6c83e116339c53b94f3f82b4d6c0b7d18 # v5.0.0
