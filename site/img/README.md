@@ -26,6 +26,14 @@ the placeholders, so they can be swapped one at a time.
 - The page credits the map data under every screenshot of the festival set, so nothing needs
   adding to the images themselves.
 
+## Feature close-ups
+
+The feature cards show close-ups, not whole windows: `crop-<name>-{dark,light}.webp`, cut
+from the captures above by `node tools/make-crops.mjs` (it uses ffmpeg). The crop boxes are
+at the top of that script. Run it again after replacing `detail`, `site`, `measure`, `markup`
+or `print`, then check each card's leader still lands on its target (the positions are in
+`site/index.html`, as percentages of the picture).
+
 ## The images
 
 | File | Shows | Capture size | Display | Themes |

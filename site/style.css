@@ -1,7 +1,8 @@
 /* The Vellum homepage. A dark product page first (the showcase), with a light set made to match
    rather than inverted. Colours come from the app (src/app.css): the Deep teal accent, its link
    teal and its darkened border; greys tuned for this page. Text contrast checked with APCA.
-   The theme follows the visitor's system setting; nothing here needs JavaScript. */
+   The theme follows the visitor's system setting; the theme buttons can override it
+   (data-theme on <html>). Nothing here needs JavaScript. */
 
 :root {
   /* Light */
@@ -14,18 +15,17 @@
   --tx: #16171a;
   --tx2: #3d3f45;
   --tx3: #5b5e65;
-  --dim: #a9abb0; /* the "no" dash: a mark, not text */
   --link: #0a6f66;
   --accent: #0d9488;
   --accent-bd: #0a6f66; /* filled buttons' visible border, as in the app */
   --accent-hover: #0f9f92;
-  --tint: rgba(13, 148, 136, 0.07); /* Vellum's column, the pill tag, the step numbers */
-  --tint2: rgba(13, 148, 136, 0.12);
+  --tint2: rgba(13, 148, 136, 0.12); /* the pill tag, the step numbers */
   --nav-bg: rgba(247, 247, 245, 0.78);
   --h-grad: linear-gradient(180deg, #16171a 35%, #45484f);
-  --glow: rgba(13, 148, 136, 0.13);
-  --glow2: rgba(45, 212, 191, 0.1);
-  --grid: rgba(0, 0, 0, 0.055);
+  --h-grad2: linear-gradient(180deg, #2e3035, #50535b); /* a section title's second line */
+  --glow: rgba(13, 148, 136, 0.16);
+  --glow2: rgba(45, 212, 191, 0.12);
+  --grid: rgba(0, 0, 0, 0.06);
   --shot-shadow: drop-shadow(0 30px 60px rgba(30, 40, 40, 0.16));
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
   --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 8px 22px rgba(13, 148, 136, 0.22);
@@ -34,8 +34,10 @@
   color-scheme: light;
 }
 
+/* Dark: when the system is dark and the page hasn't been set to light, or when the page has
+   been set to dark (the theme buttons). The two sets below must stay identical. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0c0d0f;
     --bg2: #121316;
     --card: #16171b;
@@ -45,20 +47,42 @@
     --tx: #f1f2f4;
     --tx2: #c9cbd1;
     --tx3: #b3b6bd; /* APCA Lc 60 on the page, for the small grey text */
-    --dim: #4e5158;
     --link: #2dd4bf;
-    --tint: rgba(20, 184, 166, 0.08);
     --tint2: rgba(20, 184, 166, 0.17);
     --nav-bg: rgba(12, 13, 15, 0.72);
     --h-grad: linear-gradient(180deg, #ffffff 30%, #a9adb5);
-    --glow: rgba(20, 184, 166, 0.22);
-    --glow2: rgba(45, 212, 191, 0.1);
-    --grid: rgba(255, 255, 255, 0.07);
+    --h-grad2: linear-gradient(180deg, #d6d8dd, #9da1a9);
+    --glow: rgba(20, 184, 166, 0.3);
+    --glow2: rgba(45, 212, 191, 0.14);
+    --grid: rgba(255, 255, 255, 0.075);
     --shot-shadow: drop-shadow(0 40px 80px rgba(0, 0, 0, 0.6));
     --card-shadow: none;
     --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 10px 30px rgba(20, 184, 166, 0.28);
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0d0f;
+  --bg2: #121316;
+  --card: #16171b;
+  --card2: #121316;
+  --bd: rgba(255, 255, 255, 0.08);
+  --bd2: rgba(255, 255, 255, 0.14);
+  --tx: #f1f2f4;
+  --tx2: #c9cbd1;
+  --tx3: #b3b6bd; /* APCA Lc 60 on the page, for the small grey text */
+  --link: #2dd4bf;
+  --tint2: rgba(20, 184, 166, 0.17);
+  --nav-bg: rgba(12, 13, 15, 0.72);
+  --h-grad: linear-gradient(180deg, #ffffff 30%, #a9adb5);
+  --h-grad2: linear-gradient(180deg, #d6d8dd, #9da1a9);
+  --glow: rgba(20, 184, 166, 0.3);
+  --glow2: rgba(45, 212, 191, 0.14);
+  --grid: rgba(255, 255, 255, 0.075);
+  --shot-shadow: drop-shadow(0 40px 80px rgba(0, 0, 0, 0.6));
+  --card-shadow: none;
+  --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 10px 30px rgba(20, 184, 166, 0.28);
+  color-scheme: dark;
 }
 
 * {
@@ -117,8 +141,19 @@ p {
   outline-offset: 2px;
 }
 
-q {
-  quotes: "\201C" "\201D";
+[hidden] {
+  display: none !important;
+}
+
+/* Headings break into even lines; paragraphs avoid a lone last word. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p,
+li {
+  text-wrap: pretty;
 }
 
 /* Visually hidden, still read out. */
@@ -225,38 +260,43 @@ q {
   color: var(--tx);
 }
 
-/* Hero: a soft teal glow and a faint grid that fades out behind the headline. */
+/* Hero. Narrow screens: stacked and centred, the window full width over a pool of glow. From
+   1280 px: text left and the window right, centred together as one block. */
 
 .hero {
   position: relative;
-  padding-top: 104px;
-  text-align: center;
   overflow-x: clip;
 }
-.hero::before,
-.hero::after {
+.hero::before {
   content: "";
   position: absolute;
-  inset: -64px 0 auto;
+  inset: -64px 0 0;
   pointer-events: none;
-}
-.hero::before {
-  height: 1100px;
   background:
     radial-gradient(ellipse 50% 40% at 50% 62%, var(--glow), transparent 70%),
-    radial-gradient(ellipse 30% 25% at 50% 12%, var(--glow2), transparent 70%);
+    radial-gradient(ellipse 35% 25% at 50% 10%, var(--glow2), transparent 70%);
 }
-.hero::after {
-  height: 760px;
+.hero-grid {
+  position: relative;
+  padding: 52px 24px 0;
+  text-align: center;
+}
+/* A faint drawing grid behind the text, fading out at its edges. */
+.hero-text {
+  position: relative;
+  isolation: isolate;
+}
+.hero-text::before {
+  content: "";
+  position: absolute;
+  inset: -160px -200px;
+  z-index: -1;
+  pointer-events: none;
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 64px 64px;
-  background-position: center top;
-  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 28%, #000, transparent 75%);
-  mask-image: radial-gradient(ellipse 60% 55% at 50% 28%, #000, transparent 75%);
-}
-.hero > * {
-  position: relative;
-  z-index: 1;
+  background-position: center;
+  -webkit-mask-image: radial-gradient(closest-side, #000 35%, transparent);
+  mask-image: radial-gradient(closest-side, #000 35%, transparent);
 }
 
 .pill {
@@ -271,8 +311,12 @@ q {
   font-size: 14px;
   color: var(--tx2);
   text-decoration: none;
-  margin-bottom: 30px;
+  margin-bottom: 22px;
   text-align: left;
+}
+/* No Highlights line in the release notes: the pill is just its tag and the arrow. */
+.pill span:empty {
+  display: none;
 }
 .pill:hover {
   border-color: var(--accent);
@@ -288,11 +332,11 @@ q {
 }
 
 .hero h1 {
-  font-size: clamp(40px, 7.4vw, 84px);
-  font-weight: 750;
+  font-size: clamp(40px, 5.4vw, 68px);
+  font-weight: 760;
   letter-spacing: -0.045em;
-  max-width: 13ch;
-  margin: 0 auto 26px;
+  max-width: 17ch;
+  margin: 0 auto 18px;
   color: var(--tx);
   background: var(--h-grad);
   -webkit-background-clip: text;
@@ -302,10 +346,10 @@ q {
 }
 
 .lede {
-  font-size: 21px;
+  font-size: 19px;
   color: var(--tx3);
-  max-width: 38ch;
-  margin: 0 auto 36px;
+  max-width: 60ch;
+  margin: 0 auto 26px;
 }
 
 .ctas {
@@ -318,14 +362,29 @@ q {
 .meta {
   font-size: 14px;
   color: var(--tx3);
-  margin: 18px 0 0;
+  margin: 14px 0 0;
+  text-wrap: pretty;
 }
-.notes {
+
+/* The release candidate line: there only while a published prerelease is ahead of the latest
+   release (tools/build-site.mjs). */
+.rc {
   font-size: 14px;
   margin: 6px 0 0;
 }
+.rc a {
+  color: var(--link);
+}
 
-/* Only where there's no mouse: phones and tablets, where the installer is no use. */
+/* Where the installer is no use. .phone-only: no mouse, so a phone or tablet (CSS alone).
+   .os-note: a Mac or Linux computer, which only the script can tell, so it starts hidden. */
+.os-note {
+  color: var(--tx);
+  font-size: 15px;
+  font-weight: 550;
+  max-width: 32ch;
+  margin: 12px auto 0;
+}
 .phone-only {
   display: none;
   color: var(--tx);
@@ -342,103 +401,248 @@ q {
 
 /* The hero screenshot: flat, as captured (its own corners and shadow), plus a soft lift. */
 .stage {
-  margin-top: 72px;
-  padding-inline: 16px;
+  position: relative;
+  margin-top: 44px;
+}
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 10% 8% -6%;
+  background: radial-gradient(closest-side, var(--glow), transparent);
+  filter: blur(30px);
+  transform: scale(1.15);
 }
 .stage img {
+  position: relative;
   width: 100%;
   max-width: 1180px;
   margin-inline: auto;
   filter: var(--shot-shadow);
 }
 
-/* Stats strip */
+@media (min-width: 1280px) {
+  .hero::before {
+    background:
+      radial-gradient(ellipse 40% 65% at 62% 50%, var(--glow), transparent 70%),
+      radial-gradient(ellipse 25% 45% at 24% 45%, var(--glow2), transparent 70%);
+  }
+  /* The nav runs the width of the hero block, so the mark sits over the headline and the
+     Download button over the window's right edge. --hero-text is wide enough for "Built for
+     drawings," on one line at the headline's size below. */
+  .nav-row,
+  .hero-grid {
+    --hero-text: clamp(440px, 36vw, 620px);
+    max-width: calc(var(--hero-text) + 56px + clamp(1180px, 50vw, 1500px) + 48px);
+  }
+  /* Text and window side by side, centred as one block. The window is 1180 px where there's
+     room (a little more on very wide screens) and shrinks to fit where there isn't. */
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, var(--hero-text)) minmax(0, 1fr);
+    column-gap: 56px;
+    align-items: center;
+    margin-inline: auto;
+    min-height: calc(100vh - 64px);
+    min-height: calc(100svh - 64px);
+    padding: 48px 24px;
+    text-align: left;
+  }
+  .hero h1 {
+    font-size: clamp(40px, 3.3vw, 58px);
+    max-width: none;
+    margin: 0 0 20px;
+  }
+  .hero .lede {
+    font-size: 20px;
+    margin: 0 0 30px;
+  }
+  .hero .ctas {
+    justify-content: flex-start;
+  }
+  .hero .phone-only,
+  .hero .os-note {
+    max-width: none;
+    margin: 12px 0 0;
+  }
+  .stage {
+    margin: 0;
+  }
+  .stage::before {
+    inset: 5%;
+  }
+  .stage img {
+    max-width: none;
+  }
+}
 
-.stats {
-  list-style: none;
-  margin: 72px 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-block: 1px solid var(--bd);
-}
-.stats > li {
-  padding: 40px 32px;
-}
-.stats > li + li {
-  border-left: 1px solid var(--bd);
-}
-.stats .n {
-  display: block;
-  font: 600 46px/1 var(--font-num);
-  color: var(--tx);
-  letter-spacing: -0.03em;
-}
-.stats .n small {
-  font-size: 20px;
-  color: var(--tx3);
-  margin-left: 4px;
-  letter-spacing: 0;
-}
-.stats p {
-  margin: 14px 0 0;
-  font-size: 15px;
-  color: var(--tx3);
-  max-width: 30ch;
-}
+/* One number, very large, dimensioned end to end like a drawing. The dimension line draws
+   itself in as the band scrolls into view, where the browser can do that in CSS; everywhere
+   else, and with reduced motion, it's simply drawn. */
 
-/* The one drawing nod: a dimension line under 97 ms, end ticks and 45-degree slashes. */
-.dimn {
+.big {
+  position: relative;
+  text-align: center;
+  padding: 56px 24px 20px;
+  overflow-x: clip;
+}
+.big::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 45% 55% at 50% 45%, var(--glow), transparent 70%);
+}
+.big > * {
+  position: relative;
+}
+.fig {
   display: inline-flex;
   flex-direction: column;
   align-items: stretch;
 }
-.dim-line {
+.big .n {
+  font: 650 clamp(120px, 22vw, 300px) / 0.9 var(--font-num);
+  letter-spacing: -0.06em;
+  color: var(--tx);
+  background: var(--h-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.big .n small {
+  font-size: 0.3em;
+  letter-spacing: 0;
+  margin-left: 0.1em;
+  -webkit-text-fill-color: var(--tx3);
+}
+.dim {
   position: relative;
   display: block;
-  height: 14px;
-  margin-top: 10px;
+  height: 24px;
+  margin-top: 18px;
   color: var(--link);
 }
-.dim-line::before {
+.dim::before {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  top: 7px;
-  border-top: 1px solid currentColor;
+  top: 12px;
+  border-top: 1.5px solid currentColor;
 }
-.dim-line i,
-.dim-line b {
+.dim i,
+.dim b {
   position: absolute;
   top: 0;
-  height: 14px;
+  height: 24px;
   background: currentColor;
 }
-.dim-line i {
-  width: 1px;
+.dim i {
+  width: 1.5px;
 }
-.dim-line i:first-child {
+.dim i:first-child {
   left: 0;
 }
-.dim-line i:last-child {
+.dim i:last-child {
   right: 0;
 }
-.dim-line b {
+.dim b {
+  top: 2px;
   width: 2px;
+  height: 20px;
   transform: rotate(45deg);
 }
-.dim-line b:nth-of-type(1) {
-  left: -0.5px;
+.dim b:nth-of-type(1) {
+  left: -1px;
 }
-.dim-line b:nth-of-type(2) {
-  right: -0.5px;
+.dim b:nth-of-type(2) {
+  right: -1px;
+}
+.dim span {
+  position: absolute;
+  left: 50%;
+  top: 22px;
+  transform: translateX(-50%);
+  font: 600 13px var(--font-num);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cap {
+  font-size: clamp(18px, 2vw, 24px);
+  color: var(--tx2);
+  max-width: 34ch;
+  margin: 48px auto 0;
+}
+.cap em {
+  font-style: normal;
+  color: var(--tx);
+}
+.cap-note {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--tx3);
+}
+/* The headline's break at the comma: only where the text has its own column. */
+.wide-br {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .wide-br {
+    display: inline;
+  }
+}
+.sub {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  gap: 16px 48px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 36px 0 0;
+  font-size: 15px;
+  color: var(--tx3);
+}
+.sub b {
+  display: block;
+  font: 600 28px var(--font-num);
+  color: var(--tx);
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .dim::before {
+      animation: dim-draw linear both;
+      animation-timeline: view();
+      animation-range: entry 60% cover 45%;
+    }
+    .dim i,
+    .dim b,
+    .dim span {
+      animation: dim-show linear both;
+      animation-timeline: view();
+      animation-range: cover 38% cover 46%;
+    }
+  }
+}
+@keyframes dim-draw {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes dim-show {
+  from {
+    opacity: 0;
+  }
 }
 
 /* Sections */
 
 .sec {
   padding-top: 128px;
+}
+/* The number band is a beat between the hero and the features, not a section of its own. */
+.big + .sec {
+  padding-top: 88px;
 }
 
 .eyebrow {
@@ -452,8 +656,21 @@ q {
   font-size: clamp(30px, 4.4vw, 52px);
   letter-spacing: -0.035em;
   font-weight: 720;
-  max-width: 18ch;
+  /* Room for the longest first line ("Everything you do with a drawing,"). Each heading's
+     break is set in the page with <br>; this only stops a line running the full width. */
+  max-width: 32ch;
   margin-bottom: 18px;
+}
+/* A section title's second line: a step dimmer than the first, with a gentle fade of its own.
+   Its own box, so the fade never cuts through the first line's descenders. */
+.sec-h .l2 {
+  display: inline-block;
+  color: var(--tx2);
+  background: var(--h-grad2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  padding-bottom: 0.06em; /* room for descenders under the clipped gradient */
 }
 .sec-p {
   font-size: 19px;
@@ -465,10 +682,11 @@ q {
   margin-bottom: 0;
 }
 
-/* Features: a bento grid. Screenshots are cropped inside the cards from the top left, so the
-   toolbar shows. */
+/* Features: close-ups, picture first. Each card spans two rows of the grid as a subgrid, so the
+   pictures in a row share one height whatever the text below them; a picture a little shorter
+   than its partner is cropped to fit. */
 
-.bento {
+.feats {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -476,250 +694,209 @@ q {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 16px;
 }
-.card {
-  display: flex;
-  flex-direction: column;
+.feat {
+  grid-row: span 2;
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: 0;
   overflow: hidden;
   border: 1px solid var(--bd);
   border-radius: 18px;
   background: linear-gradient(180deg, var(--card), var(--card2));
   box-shadow: var(--card-shadow);
 }
-.card .txt {
-  padding: 26px 28px 20px;
+.s2 {
+  grid-column: span 2;
 }
-.card h3 {
+.s3 {
+  grid-column: span 3;
+}
+.s4 {
+  grid-column: span 4;
+}
+.s6 {
+  grid-column: span 6;
+}
+.feat .pic {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--bd);
+}
+.feat picture {
+  display: block;
+  height: 100%;
+}
+.feat .pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.feat .txt {
+  padding: 22px 26px 26px;
+}
+.feat h3 {
   font-size: 22px;
   letter-spacing: -0.02em;
   margin-bottom: 8px;
 }
-.card p {
+.feat p {
   font-size: 15px;
   color: var(--tx3);
   margin: 0;
 }
-.card .pic {
-  display: block;
-  margin-top: auto;
-  padding-left: 28px;
+
+/* Detail marker: a circle split across the middle, card number over the total. */
+.dm {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1.5px solid var(--tx);
+  background: var(--card);
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  overflow: hidden;
+  font: 700 13px/1 var(--font-num);
+  color: var(--tx);
+  text-align: center;
 }
-.card .pic img {
+.dm span {
+  display: grid;
+  place-items: center;
+}
+.dm span + span {
+  border-top: 1.5px solid var(--tx);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--tx3);
+}
+
+/* Leader: a line from a label to a dot on the thing the card is about. */
+.ld {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ld svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  object-position: 0 0;
+  height: 100%;
 }
-.c-big {
-  grid-column: span 4;
-  grid-row: span 2;
+.ld line {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
-.c-big h3 {
-  font-size: 30px;
+.ld i {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.25);
 }
-.c-big p {
-  font-size: 16px;
-  max-width: 52ch;
+.ld span {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  margin-top: -4px;
+  font: 600 12px var(--font-num);
+  color: #fff;
+  background: var(--accent-bd);
+  border: 1px solid #07524b;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
 }
-.c-big .pic img {
-  aspect-ratio: 4 / 3;
-}
-.c-sm {
-  grid-column: span 2;
-}
-.c-sm .pic img {
-  aspect-ratio: 4 / 3;
-}
-.c-half {
-  grid-column: span 3;
+.only-narrow {
+  display: none;
 }
 
 .credit {
   font-size: 13px;
   color: var(--tx3);
-  margin-top: 24px;
-  max-width: 110ch;
+  margin: 24px 0 0;
 }
 .credit strong {
   color: var(--tx2);
   font-weight: 600;
 }
 
-/* Comparison table. On a narrow screen it scrolls sideways in its own box, feature column
-   pinned; the page itself never does. */
+/* Both themes: the hero capture in dark and light, cut on a fixed diagonal. --p is where the
+   cut crosses the middle, in percent. */
 
-.cmp-box {
-  border: 1px solid var(--bd);
-  border-radius: 18px;
-  background: var(--card);
-  box-shadow: var(--card-shadow);
-  overflow-x: auto;
-}
-.cmp {
-  width: 100%;
-  min-width: 860px;
-  border-collapse: collapse;
-  font-size: 15px;
-}
-.cmp th,
-.cmp td {
-  padding: 16px 10px;
-  text-align: center;
-  border-bottom: 1px solid var(--bd);
-}
-.cmp tbody tr:last-child > * {
-  border-bottom: 0;
-}
-.cmp thead th {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--tx3);
-  padding-top: 22px;
-  vertical-align: bottom;
-}
-.cmp tbody th {
-  text-align: left;
-  font-weight: 550;
-  color: var(--tx);
-  padding-left: 24px;
-  width: 28%;
-}
-.cmp tbody th small {
-  display: block;
-  color: var(--tx3);
-  font-weight: 400;
-  font-size: 13px;
-  margin-top: 2px;
-}
-.cmp th:first-child {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: var(--card);
-}
-.cmp .v {
-  background: var(--tint);
-}
-.cmp thead .v {
-  color: var(--link);
-  font-size: 15px;
-}
-
-/* Marks: yes is a filled accent dot with a tick, partly half filled, no a dim dash. */
-.m {
+.split {
+  --p: 50;
   position: relative;
-  display: inline-block;
-  vertical-align: middle;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  max-width: 1180px;
+  margin-inline: auto;
+  filter: var(--shot-shadow);
 }
-.m.y {
-  background: var(--accent);
-  border: 1px solid var(--accent-bd);
+.split img {
+  width: 100%;
 }
-.m.y::after {
-  content: "";
-  position: absolute;
-  left: 7px;
-  top: 3.5px;
-  width: 5px;
-  height: 10px;
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-.m.p {
-  border: 1.5px solid var(--tx3);
-  background: linear-gradient(90deg, var(--tx3) 50%, transparent 50%);
-}
-.m.n::after {
-  content: "";
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  top: 10px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--dim);
-}
-.m.q {
-  border: 1.5px dashed var(--tx3);
-}
-.m.q::after {
-  content: "?";
+.split .lt {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  font: 600 11px/1 var(--font-num);
-  color: var(--tx3);
+  /* The page's own theme leads on the left: light here, dark below. */
+  clip-path: polygon(0 0, calc((var(--p) + 7) * 1%) 0, calc((var(--p) - 7) * 1%) 100%, 0 100%);
 }
-.fn {
-  display: inline-block;
-  vertical-align: super;
-  margin-left: 3px;
-  margin-right: -10px; /* keeps the mark centred under its heading */
-  width: 10px;
-  font: 600 11px/1 var(--font-num);
-  text-decoration: none;
-  text-align: left;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .split .lt {
+    clip-path: polygon(calc((var(--p) + 7) * 1%) 0, 100% 0, 100% 100%, calc((var(--p) - 7) * 1%) 100%);
+  }
 }
-
-.legend {
+:root[data-theme="dark"] .split .lt {
+  clip-path: polygon(calc((var(--p) + 7) * 1%) 0, 100% 0, 100% 100%, calc((var(--p) - 7) * 1%) 100%);
+}
+.split > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.split line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+/* Dark and Light: a segmented pair; the pressed one is filled. */
+.theme-set {
   display: flex;
-  gap: 8px 22px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  color: var(--tx3);
-  margin-top: 18px;
+  justify-content: center;
+  margin-top: 32px;
 }
-.legend span {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-}
-.legend .m {
-  width: 16px;
-  height: 16px;
-}
-.legend .m.y::after {
-  left: 4.5px;
-  top: 1.5px;
-  width: 4px;
-  height: 8px;
-}
-.legend .m.n::after {
-  top: 7px;
-  left: 3px;
-  right: 3px;
-}
-.legend .m.q::after {
-  font-size: 9px;
-}
-
-.cmp-notes {
-  margin: 18px 0 0;
-  padding-left: 22px;
-  columns: 2 300px;
-  column-gap: 40px;
-  font-size: 14px;
-  color: var(--tx3);
-}
-.cmp-notes li {
-  break-inside: avoid;
-  margin-bottom: 4px;
-}
-.cmp-notes li::marker {
-  font: 600 12px var(--font-num);
-  color: var(--link);
-}
-.cmp-notes li:target {
+.theme-set button {
+  min-width: 108px;
+  min-height: 42px;
+  padding: 8px 20px;
+  font: 600 15px var(--font-ui);
   color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd2);
+  cursor: pointer;
 }
-.cmp-foot {
-  margin-top: 14px;
-  font-size: 14px;
-  color: var(--tx3);
+.theme-set button:first-child {
+  border-radius: 10px 0 0 10px;
+}
+.theme-set button:last-child {
+  border-radius: 0 10px 10px 0;
+  margin-left: -1px;
+}
+.theme-set button:hover {
+  background: var(--bg2);
+}
+.theme-set button[aria-pressed="true"] {
+  position: relative;
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent-bd);
 }
 
 /* Install */
@@ -729,6 +906,11 @@ q {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 64px;
   align-items: center;
+}
+/* In half the page's width the heading runs a little smaller, so "Windows will warn you"
+   stays on one line. */
+.install .sec-h {
+  font-size: clamp(30px, 3.6vw, 52px);
 }
 .steps {
   list-style: none;
@@ -813,14 +995,12 @@ footer {
   font-size: 14px;
   color: var(--tx3);
 }
+/* Links, the no-tracking note, then the screenshot and map credits: one sentence per line. */
 .foot-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px 40px;
-  flex-wrap: wrap;
+  display: grid;
+  gap: 16px;
 }
-.foot-row p {
-  max-width: 60ch;
+.foot-note p {
   margin: 0;
 }
 footer .links {
@@ -838,16 +1018,17 @@ footer .links a {
 /* Tablet and phone */
 
 @media (max-width: 960px) {
-  .bento {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .s2,
+  .s3,
+  .s4,
+  .s6 {
+    grid-column: 1 / -1;
   }
-  .c-big {
-    grid-column: span 2;
-    grid-row: auto;
+  .only-wide {
+    display: none;
   }
-  .c-sm,
-  .c-half {
-    grid-column: span 1;
+  .only-narrow {
+    display: block;
   }
   .install {
     grid-template-columns: minmax(0, 1fr);
@@ -867,8 +1048,8 @@ footer .links a {
   .nav-link {
     display: none;
   }
-  .hero {
-    padding-top: 56px;
+  .hero-grid {
+    padding: 40px 16px 0;
   }
   .lede {
     font-size: 18px;
@@ -879,47 +1060,35 @@ footer .links a {
     max-width: 360px;
   }
   .stage {
-    margin-top: 48px;
-    padding-inline: 8px;
+    margin-top: 40px;
   }
-  .stats {
-    grid-template-columns: minmax(0, 1fr);
-    margin-top: 48px;
+  .big {
+    padding: 56px 16px 8px;
   }
-  .stats > li {
-    padding: 28px 4px;
-  }
-  .stats > li + li {
-    border-left: 0;
-    border-top: 1px solid var(--bd);
+  .cap {
+    margin-top: 40px;
   }
   .sec {
     padding-top: 88px;
+  }
+  .big + .sec {
+    padding-top: 64px;
   }
   .sec-p {
     font-size: 17px;
     margin-bottom: 36px;
   }
-  .bento {
-    grid-template-columns: minmax(0, 1fr);
+  .feat .txt {
+    padding: 20px 20px 22px;
   }
-  .c-big,
-  .c-sm,
-  .c-half {
-    grid-column: auto;
+  .dm {
+    top: 10px;
+    left: 10px;
+    width: 40px;
+    height: 40px;
   }
-  .card .txt {
-    padding: 22px 20px 16px;
-  }
-  .card .pic {
-    padding-left: 20px;
-  }
-  .c-big h3 {
-    font-size: 24px;
-  }
-  .cmp tbody th {
-    padding-left: 16px;
-    min-width: 180px;
+  .ld span {
+    font-size: 11px;
   }
   .final {
     padding: 96px 0 88px;

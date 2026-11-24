@@ -43,252 +43,159 @@
   </header>
 
   <main id="top">
+    <!-- Wide screens: text left, the window right, centred as one block. Narrow: stacked. -->
     <section class="hero" aria-labelledby="headline">
-      <div class="wrap hero-text">
-        <a class="pill" href="{{notesUrl}}"><b>{{pillTag}}</b><span>Markup, measuring and signatures</span><span aria-hidden="true">→</span></a>
-        <h1 id="headline">Built for drawings, not documents.</h1>
-        <p class="lede">A fast PDF and image viewer for stage plans, site layouts and scanned blueprints.</p>
-        <div class="ctas">
-          <a class="btn" href="{{downloadUrl}}">{{downloadLabel}}</a>
-          <a class="btn-2" href="#features">See what it does</a>
+      <div class="hero-grid">
+        <div class="hero-text">
+          <a class="pill" href="{{notesUrl}}"><b>{{pillTag}}</b><span>Markup, measuring and signatures</span><span aria-hidden="true">→</span></a>
+          <h1 id="headline">Built for drawings,<br class="wide-br"> not documents.</h1>
+          <p class="lede">A fast PDF and image viewer for stage plans, site layouts and scanned blueprints.</p>
+          <div class="ctas">
+            <a class="btn" href="{{downloadUrl}}">{{downloadLabel}}</a>
+            <a class="btn-2" href="#features">See what it does</a>
+          </div>
+          <p class="meta">{{downloadMeta}}</p>
+          <p class="phone-only">Vellum is for Windows PCs. Send yourself this link and download it there.</p>
+          <p class="os-note" id="os-note" hidden>Vellum is for Windows PCs. This download won't run on <span id="os-name">this computer</span>.</p>
         </div>
-        <p class="meta">{{downloadMeta}}</p>
-        <p class="phone-only">Vellum is for Windows PCs. Send yourself this link and download it there.</p>
-        <p class="notes"><a href="{{notesUrl}}">{{notesLabel}}</a></p>
+        <!-- Flat on purpose: the drawing's linework is the point and must not be skewed. -->
+        <figure class="stage">
+          <picture>
+            <source srcset="img/hero-dark.webp" media="(prefers-color-scheme: dark)">
+            <img src="img/hero-light.webp" width="2146" height="1343" alt="Vellum with an A1 festival site layout open, fitted to the window: arenas, fences, roads and campsites in fine linework.">
+          </picture>
+        </figure>
       </div>
-      <!-- Flat on purpose: the drawing's linework is the point and must not be skewed. -->
-      <figure class="stage">
-        <picture>
-          <source srcset="img/hero-dark.webp" media="(prefers-color-scheme: dark)">
-          <img src="img/hero-light.webp" width="2146" height="1343" alt="Vellum with an A1 festival site layout open, fitted to the window: arenas, fences, roads and campsites in fine linework.">
-        </picture>
-      </figure>
     </section>
 
-    <div class="wrap">
-      <ul class="stats">
-        <li>
-          <!-- The page's one drawing nod: the figure dimensioned like a drawing. Nowhere else. -->
-          <span class="dimn">
-            <span class="n">97<small>ms</small></span>
-            <span class="dim-line" aria-hidden="true"><i></i><b></b><b></b><i></i></span>
-          </span>
-          <p>from letting go of the mouse to a sharp image at 1600%, on the heaviest real drawing tested</p>
-        </li>
-        <li>
-          <span class="n">1:200</span>
-          <p>prints to a real scale, read straight from the title block</p>
-        </li>
-        <li>
-          <span class="n">0</span>
-          <p>accounts, cookies or analytics. Your files stay yours.</p>
-        </li>
+    <!-- The headline figure. It's being re-measured: the number, its unit and the caption below
+         are the only things to change when it is. -->
+    <section class="big" aria-label="Speed">
+      <div class="fig">
+        <span class="n" aria-hidden="true">16<small>ms</small></span>
+        <span class="vh">16 milliseconds</span>
+        <span class="dim" aria-hidden="true"><i></i><b></b><b></b><span>zoom to sharp</span><i></i></span>
+      </div>
+      <p class="cap"><em>Sharp</em> the moment you stop zooming.</p>
+      <p class="cap-note">Wheel zoom, typical drawings.</p>
+      <ul class="sub">
+        <li><b>1:200</b>prints to a real scale</li>
+        <li><b>0</b>accounts, cookies or analytics</li>
       </ul>
-    </div>
+    </section>
 
     <section id="features" class="sec" aria-labelledby="what">
       <div class="wrap">
         <p class="eyebrow">What it does</p>
-        <h2 id="what" class="sec-h">Everything you do with a drawing, without the wait.</h2>
+        <h2 id="what" class="sec-h">Everything you do with a drawing,<br> <span class="l2">without the wait.</span></h2>
         <p class="sec-p">Stage plans, site layouts, rigging plots, sixty-year-old scanned blueprints: the files
-          that make general-purpose PDF readers sit and think. Vellum draws only what's on screen, at the
-          detail you're looking at, so zooming in costs less, not more.</p>
+          that make general-purpose PDF readers sit and think. Vellum draws only the part you're looking at, at the
+          detail you need.</p>
 
-        <ul class="bento">
-          <li class="card c-big">
+        <!-- Close-ups cut from the screenshots by tools/make-crops.mjs. Each carries a detail marker
+             (card number over the total) and a leader to the thing it's about; both are decoration,
+             so the alt text carries the meaning. Leader positions are percentages of the picture. -->
+        <ul class="feats">
+          <li class="feat s4">
+            <div class="pic">
+              <picture>
+                <source srcset="img/crop-detail-dark.webp" media="(prefers-color-scheme: dark)">
+                <img src="img/crop-detail-light.webp" width="890" height="600" loading="lazy" decoding="async" alt="Zoomed right in on the main stage: every deck panel drawn crisp.">
+              </picture>
+              <span class="dm" aria-hidden="true"><span>1</span><span>5</span></span>
+              <span class="ld" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="62" y1="22" x2="36" y2="41"/></svg><i style="left:36%;top:41%"></i><span style="left:62%;top:22%">every deck panel, at 221%</span></span>
+            </div>
             <div class="txt">
               <h3>Quick on big drawings</h3>
-              <p>Pages render in tiles, previews fill the gaps while you move, and they're cached, so a
-                drawing you opened yesterday is there before you've let go of the mouse.</p>
+              <p>No blank pages and no progress bars. You get a preview first, then the detail where you're looking.
+                Drawings you've opened before come back faster.</p>
             </div>
-            <picture class="pic">
-              <source srcset="img/detail-dark.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/detail-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="Zoomed right in on the main arena: individual barrier units and fence panels, crisp.">
-            </picture>
           </li>
-          <li class="card c-sm">
+          <li class="feat s2">
+            <div class="pic">
+              <picture>
+                <source srcset="img/crop-site-wide-dark.webp" width="745" height="430" media="(max-width: 960px) and (prefers-color-scheme: dark)">
+                <source srcset="img/crop-site-wide-light.webp" width="745" height="430" media="(max-width: 960px)">
+                <source srcset="img/crop-site-dark.webp" media="(prefers-color-scheme: dark)">
+                <img src="img/crop-site-light.webp" width="610" height="822" loading="lazy" decoding="async" alt="A site plan zoomed in, with the mini map in the corner showing where you are.">
+              </picture>
+              <span class="dm" aria-hidden="true"><span>2</span><span>5</span></span>
+              <!-- Two leaders: the portrait crop on wide screens, the landscape one below 960 px. -->
+              <span class="ld only-wide" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="45" y1="64" x2="76" y2="87"/></svg><i style="left:76%;top:87%"></i><span style="left:45%;top:64%">mini map</span></span>
+              <span class="ld only-narrow" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="50" y1="40" x2="80" y2="75"/></svg><i style="left:80%;top:75%"></i><span style="left:50%;top:40%">mini map</span></span>
+            </div>
             <div class="txt">
               <h3>Moves like CAD</h3>
-              <p>The wheel zooms at the cursor, middle-drag pans, double middle-click fits the page.
-                A mini map for big drawings; office documents scroll like documents.</p>
+              <p>The wheel zooms, middle-drag pans, double middle-click fits. Big drawings get a mini map.
+                Documents still scroll.</p>
             </div>
-            <picture class="pic">
-              <source srcset="img/site-dark.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/site-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A site plan zoomed in, with the mini map in the corner showing where you are.">
-            </picture>
           </li>
-          <li class="card c-sm">
+          <li class="feat s3">
+            <div class="pic">
+              <picture>
+                <source srcset="img/crop-measure-dark.webp" media="(prefers-color-scheme: dark)">
+                <img src="img/crop-measure-light.webp" width="1190" height="760" loading="lazy" decoding="async" alt="A stage plan at 1:100 with a length measured across the barrier: 28.00 m.">
+              </picture>
+              <span class="dm" aria-hidden="true"><span>3</span><span>5</span></span>
+              <span class="ld" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="50" y1="70" x2="50" y2="90"/></svg><i style="left:50%;top:90%"></i><span style="left:50%;top:70%">28.00 m, at 1:100</span></span>
+            </div>
             <div class="txt">
               <h3>Real-world scale</h3>
-              <p>Reads the scale off the title block, so the cursor is in metres on site. Lengths, areas,
+              <p>Reads the scale off the title block, so you measure in metres on site. Lengths, areas,
                 perimeters, angles and dimensions.</p>
             </div>
-            <picture class="pic">
-              <source srcset="img/measure-dark.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/measure-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A stage plan at 1:100 with two length measurements in metres.">
-            </picture>
           </li>
-          <li class="card c-half">
+          <li class="feat s3">
+            <div class="pic">
+              <picture>
+                <source srcset="img/crop-markup-dark.webp" media="(prefers-color-scheme: dark)">
+                <img src="img/crop-markup-light.webp" width="1190" height="760" loading="lazy" decoding="async" alt="A drawing marked up with a revision cloud, a text box and an APPROVED stamp.">
+              </picture>
+              <span class="dm" aria-hidden="true"><span>4</span><span>5</span></span>
+              <span class="ld" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="12" y1="30" x2="22" y2="49"/></svg><i style="left:22%;top:49%"></i><span style="left:12%;top:30%">revision cloud</span></span>
+            </div>
             <div class="txt">
               <h3>Markup, stamps and signatures</h3>
-              <p>Clouds, arrows, text, shapes, pen and highlighter, saved as ordinary PDF markup that
-                Acrobat and everyone else can see. Stamps, and your signature, drawn once and placed anywhere.</p>
+              <p>Clouds, arrows, text, shapes, pen and highlighter, saved as standard PDF markup that Acrobat
+                and any other viewer will show. Add stamps, or draw your signature once and place it anywhere.</p>
             </div>
-            <picture class="pic">
-              <source srcset="img/markup-dark.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/markup-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="A drawing marked up with a revision cloud, a text box and an APPROVED stamp.">
-            </picture>
           </li>
-          <li class="card c-half">
+          <li class="feat s6">
+            <div class="pic">
+              <picture>
+                <source srcset="img/crop-print-dark.webp" media="(prefers-color-scheme: dark)">
+                <img src="img/crop-print-light.webp" width="1830" height="600" loading="lazy" decoding="async" alt="The print dialog set to print an A3 stage plan on A4 at exactly 1:200, with the preview beside it.">
+              </picture>
+              <span class="dm" aria-hidden="true"><span>5</span><span>5</span></span>
+              <span class="ld" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="24" y1="84" x2="14" y2="49"/></svg><i style="left:14%;top:49%"></i><span style="left:24%;top:84%">A3 on A4, exactly 1:200</span></span>
+            </div>
             <div class="txt">
               <h3>Prints to scale</h3>
-              <p>Fit, actual size, a real ratio like 1:200, or tiled with cut marks. Lay crops out by hand
-                across several sheets. Black lines turns grubby scans into clean, solid linework.</p>
+              <p>Fit, actual size, a real ratio like 1:200, or tiled with cut marks. Place the crops by hand if you want.
+                The <strong>Black lines</strong> option turns grubby scans into clean, solid linework.</p>
             </div>
-            <picture class="pic">
-              <source srcset="img/print-dark.webp" media="(prefers-color-scheme: dark)">
-              <img src="img/print-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="The print dialog, printing an A3 stage plan on A4 at exactly 1:200.">
-            </picture>
           </li>
         </ul>
-        <p class="credit"><strong>Images too:</strong> JPEG, PNG, WebP, TIFF, BMP and GIF open the same way,
-          colour profiles and all, however big.
-          The screenshots show the Fieldwork Festival, an event made up for them, with no connection to the
-          venue or its owners. Map data © OpenStreetMap contributors (ODbL). Contains OS data © Crown copyright
-          and database right 2026 (Open Government Licence).</p>
+        <p class="credit"><strong>Images too:</strong> JPEG, PNG, WebP, TIFF, BMP and GIF open the same way, colour profiles and all, however big.</p>
       </div>
     </section>
 
-    <section id="compare" class="sec" aria-labelledby="compare-h">
+    <!-- Both themes in one picture. The diagonal is fixed; the script below shows the buttons
+         that switch the whole page. -->
+    <section class="sec themes" aria-labelledby="themes-h">
       <div class="wrap">
-        <p class="eyebrow">Compared</p>
-        <h2 id="compare-h" class="sec-h">How it compares.</h2>
-        <p class="sec-p">The PDF readers you probably have already, in their free editions on Windows, against
-          the things you do with a drawing.</p>
-
-        <div class="cmp-box" role="region" aria-labelledby="compare-h" tabindex="0">
-          <table class="cmp">
-            <thead>
-              <tr>
-                <th scope="col"><span class="vh">Feature</span></th>
-                <th scope="col" class="v">Vellum</th>
-                <th scope="col">Acrobat Reader</th>
-                <th scope="col">Foxit Reader</th>
-                <th scope="col">PDF-XChange</th>
-                <th scope="col">SumatraPDF</th>
-                <th scope="col">Edge</th>
-                <th scope="col">Chrome</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th scope="row">Wheel zooms at the cursor<small>No Ctrl, no tool to switch to</small></th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <!-- UNVERIFIED: does Acrobat Reader still have the Hand-tool wheel-zoom setting? -->
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n1">1</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n1">1</a></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n2">2</a></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-              </tr>
-              <tr>
-                <th scope="row">Middle-drag pans<small>Like CAD, not autoscroll</small></th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-              </tr>
-              <tr>
-                <th scope="row">Reads the scale off the drawing<small>From the title block, nothing to calibrate</small></th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n3">3</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n3">3</a></td>
-                <!-- UNVERIFIED: PDF-XChange's scale cell. Matt checks it in Windows Sandbox. -->
-                <td><i class="m q"><span class="vh">Not checked yet</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-              </tr>
-              <tr>
-                <th scope="row">Measures in real units</th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <!-- UNVERIFIED: does PDF-XChange's free mode watermark measurements? -->
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-              </tr>
-              <tr>
-                <th scope="row">Prints at a true scale<small>1:200, not a percentage</small></th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n4">4</a></td>
-              </tr>
-              <tr>
-                <th scope="row">Tiled printing with cut marks</th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-              </tr>
-              <tr>
-                <th scope="row">Writes markups into the PDF<small>Clouds, arrows, text and stamps, as standard annotations anyone can see</small></th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <!-- UNVERIFIED: does Reader's new interface still have the cloud tool? -->
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <!-- UNVERIFIED: does PDF-XChange's free mode watermark stamps or signatures? -->
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n5">5</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n6">6</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n7">7</a></td>
-              </tr>
-              <tr>
-                <th scope="row">Opens TIFF, PNG and JPEG<small>As a drawing, however big</small></th>
-                <td class="v"><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m n"><span class="vh">No</span></i></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n8">8</a></td>
-                <td><i class="m y"><span class="vh">Yes</span></i></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n9">9</a></td>
-                <td><i class="m p"><span class="vh">Partly</span></i><a class="fn" href="#cmp-n9">9</a></td>
-              </tr>
-            </tbody>
-          </table>
+        <p class="eyebrow">Light and dark</p>
+        <h2 id="themes-h" class="sec-h">Light or dark,<br> <span class="l2">it follows Windows.</span></h2>
+        <p class="sec-p">Or set it either way in View &gt; Theme.</p>
+        <div class="split">
+          <img src="img/hero-dark.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="Vellum in its dark theme, showing the festival site layout.">
+          <img class="lt" src="img/hero-light.webp" width="2146" height="1343" loading="lazy" decoding="async" alt="The same drawing in Vellum's light theme.">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="57" y1="0" x2="43" y2="100"/></svg>
         </div>
-
-        <div class="legend" aria-hidden="true">
-          <span><i class="m y"></i>Yes</span>
-          <span><i class="m p"></i>Partly (see the note)</span>
-          <span><i class="m n"></i>No</span>
-          <span><i class="m q"></i>Not checked yet</span>
+        <div class="theme-set" id="theme-set" role="group" aria-label="This page's theme" hidden>
+          <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+          <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
         </div>
-        <ol class="cmp-notes">
-          <li id="cmp-n1">Only with the Hand tool selected.</li>
-          <li id="cmp-n2">Hold the right button and turn the wheel.</li>
-          <li id="cmp-n3">Only when the PDF itself carries scale data, and only if turned on.</li>
-          <li id="cmp-n4">A percentage only, worked out by hand.</li>
-          <li id="cmp-n5">No clouds, and no drawn signature.</li>
-          <li id="cmp-n6">Pen, highlighter and text only.</li>
-          <li id="cmp-n7">Pen and text only, and they may be flattened into the page.</li>
-          <li id="cmp-n8">Converts the image to a PDF first.</li>
-          <li id="cmp-n9">PNG and JPEG only, as a browser image.</li>
-        </ol>
-        <p class="cmp-foot">Free editions on Windows, checked November 2026. Every reader here can open a file
-          without an account and place a stamp or signature, so those rows are left out.</p>
       </div>
     </section>
 
@@ -296,17 +203,16 @@
       <div class="wrap install">
         <div>
           <p class="eyebrow">Installing</p>
-          <h2 id="first" class="sec-h">Windows will warn you the first time.</h2>
-          <p class="sec-p tight">The installer isn't code signed, so Windows may say
-            <q>Windows protected your PC</q>. To carry on:</p>
+          <h2 id="first" class="sec-h">Windows will warn you<br> <span class="l2">the first time.</span></h2>
+          <p class="sec-p tight">The installer isn't code signed, so Windows may stop it with a
+            <strong>Windows protected your PC</strong> warning. To carry on:</p>
           <ol class="steps">
             <li><span class="step-n">1</span>Choose <strong>More info</strong></li>
             <li><span class="step-n">2</span>Choose <strong>Run anyway</strong></li>
           </ol>
-          <p class="aside">The <a href="https://github.com/canoemoose/Vellum">source is public</a>, and every
-            release is <a href="https://github.com/canoemoose/Vellum/actions/workflows/release.yml">built from it
-            by GitHub Actions</a>. It installs for you alone, so it needs no admin rights. If your browser
-            questions the download first, choose <strong>Keep</strong>.</p>
+          <p class="aside">Vellum is open source: <a href="https://github.com/canoemoose/Vellum">the code is on GitHub</a>,
+            and every release is <a href="https://github.com/canoemoose/Vellum/actions/workflows/release.yml">built from it
+            in public</a>. No admin rights needed. If your browser warns you about the download, choose <strong>Keep</strong>.</p>
         </div>
         <figure class="dialog">
           <img src="img/smartscreen.webp" width="800" height="740" loading="lazy" decoding="async" alt="The Windows protected your PC dialog after More info, with the Run anyway button.">
@@ -317,10 +223,9 @@
     <section class="final" aria-labelledby="final-h">
       <div class="wrap">
         <img class="final-icon" src="img/vellum.svg" width="84" height="84" alt="">
-        <h2 id="final-h" class="sec-h">Open your next drawing in Vellum.</h2>
+        <h2 id="final-h" class="sec-h">Open your next<br> drawing in Vellum.</h2>
         <!-- Who made it: kept in this one place, as it may later name Event Engineering or Alteka. -->
-        <p class="maker">Made by <strong>Matt James</strong>, who opens site and venue drawings for a living
-          and wanted a viewer that kept up with them. Free and open source.</p>
+        <p class="maker">Made by an event engineer who was tired of waiting for drawings. Free and open source.</p>
         <div class="ctas">
           <a class="btn" href="{{downloadUrl}}">{{downloadLabel}}</a>
         </div>
@@ -332,12 +237,75 @@
     <div class="wrap foot-row">
       <ul class="links">
         <li><a href="https://github.com/canoemoose/Vellum">Source on GitHub</a></li>
+        <li><a href="{{notesUrl}}">Release notes</a></li>
+        <li><a href="https://github.com/canoemoose/Vellum/releases">All versions</a></li>
         <li><a href="https://github.com/canoemoose/Vellum/blob/main/LICENSE">MIT licence</a></li>
         <li><a href="https://github.com/canoemoose/Vellum#licence">Third-party notices</a> (also in the app: Help &gt; About)</li>
       </ul>
-      <p>No tracking on this page: no cookies, no analytics, nothing loaded from anywhere else.
-        The app's update check is one request to GitHub and sends nothing about you or your files.</p>
+      <div class="foot-note">
+        <p>No tracking on this page: no cookies, no analytics, nothing loaded from anywhere else.</p>
+        <p>The app's update check is one request to GitHub and sends nothing about you or your files.</p>
+      </div>
+      <div class="foot-note">
+        <p>The Fieldwork Festival in the screenshots is fictional, and has no connection to the venue shown or its owners.</p>
+        <p>Map data © OpenStreetMap contributors (ODbL). Contains OS data © Crown copyright and database right 2026 (Open Government Licence).</p>
+      </div>
     </div>
   </footer>
+
+  <script>
+    // The page's only script, and nothing needs it: without it there are no theme buttons, the
+    // page follows the system theme and there's no Mac or Linux note. Nothing is stored; a
+    // refresh goes back to the system theme.
+    (function () {
+      // On a Mac or Linux computer, say the download won't run there. Phones and tablets have
+      // their own note from CSS (an iPad calls itself a Mac), so they're left out here.
+      var note = document.getElementById("os-note");
+      var name = document.getElementById("os-name");
+      var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+      var os = /mac/i.test(platform) ? "a Mac" : /linux|x11|cros/i.test(platform) ? "Linux" : "";
+      if (note && name && os && !/android/i.test(navigator.userAgent) && !matchMedia("(hover: none) and (pointer: coarse)").matches) {
+        name.textContent = os;
+        note.hidden = false;
+      }
+      // A Windows tablet has no mouse either, so CSS shows it the phone note. It can run the
+      // installer: take the note away.
+      var phone = document.querySelector(".phone-only");
+      if (phone && /win/i.test(platform)) phone.hidden = true;
+
+      var buttons = document.getElementById("theme-set");
+      if (!buttons) return;
+
+      // Theme override. Screenshots pick dark or light with <source media="(prefers-color-scheme:
+      // dark)">, which follows the system, not the page, so those media queries are rewritten too.
+      var DARK = "(prefers-color-scheme: dark)";
+      var sources = [].slice.call(document.querySelectorAll("source[media*='prefers-color-scheme: dark']"));
+      sources.forEach(function (s) { s.dataset.media = s.media; });
+      var metas = [].slice.call(document.querySelectorAll("meta[name='theme-color']"));
+      var system = matchMedia(DARK);
+      function apply(theme) {
+        document.documentElement.dataset.theme = theme;
+        var forced = theme === "dark" ? "(min-width: 0px)" : "(max-width: 0.001px)";
+        sources.forEach(function (s) { s.media = s.dataset.media.replace(DARK, forced); });
+        var colour = theme === "dark" ? "#0c0d0f" : "#f7f7f5";
+        metas.forEach(function (m) { m.content = colour; });
+        mark(theme);
+      }
+      function mark(theme) {
+        [].forEach.call(buttons.querySelectorAll("button"), function (b) {
+          b.setAttribute("aria-pressed", String(b.dataset.themeSet === theme));
+        });
+      }
+      [].forEach.call(buttons.querySelectorAll("button"), function (b) {
+        b.addEventListener("click", function () { apply(b.dataset.themeSet); });
+      });
+      mark(system.matches ? "dark" : "light");
+      // Until a button is pressed the page follows the system, so keep the pressed one in step.
+      system.addEventListener("change", function () {
+        if (!document.documentElement.dataset.theme) mark(system.matches ? "dark" : "light");
+      });
+      buttons.hidden = false;
+    })();
+  </script>
 </body>
 </html>

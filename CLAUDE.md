@@ -29,6 +29,8 @@ installed copies update themselves: see Releasing below and
   shipped crate, front-end package and PDFium library with its licence). `tauri build` runs it;
   the installer ships it and Help > About opens it. After updating PDFium, run
   `node tools/fetch-pdfium-licences.mjs` and commit `src-tauri/licenses/pdfium/`.
+- `node tools/make-crops.mjs`: re-cut the homepage feature close-ups from the screenshots in
+  `site/img` (needs ffmpeg). Run after replacing a capture.
 - `node tools/make-icons.mjs`: rebuild the app icon set in `src-tauri/icons` from the SVGs in
   `src-tauri/icons/source` (rendered with headless Edge; 16 and 24 px have their own drawings).
 
