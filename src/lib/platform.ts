@@ -44,6 +44,8 @@ export const writeTextFile = (path: string, contents: string) =>
 export const writeBinaryFile = (path: string, bytes: Uint8Array) =>
   invoke<void>("write_binary_file", bytes, { headers: { path } });
 export const exitApp = (code = 0) => invoke<void>("exit_app", { code });
+/** Delete the stored page previews, the signature and stamp libraries, or both (Help > About > Reset). */
+export const resetProfile = (previews: boolean, library: boolean) => invoke<void>("reset_profile", { previews, library });
 export const revealInExplorer = (path: string) => invoke<void>("reveal_in_explorer", { path });
 /** Open THIRD-PARTY-NOTICES.txt (installed beside the exe) in the default text editor. */
 export const openNotices = () => invoke<void>("open_notices");

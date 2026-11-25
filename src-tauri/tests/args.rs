@@ -41,3 +41,12 @@ fn legacy_renderer_flag_consumes_its_value() {
     let a = p(&["v", "--renderer", "pdfium", "x.pdf"]);
     assert_eq!(a.file.as_deref(), Some("x.pdf"));
 }
+
+#[test]
+fn reset_takes_a_list_and_never_becomes_the_file() {
+    let a = p(&["v", "--reset", "settings,library", "f.pdf"]);
+    assert!(a.reset.settings && a.reset.library && !a.reset.previews);
+    assert_eq!(a.file.as_deref(), Some("f.pdf"));
+    assert_eq!(p(&["v", "f.pdf"]).reset, Default::default());
+    assert_eq!(p(&["v", "--reset"]).reset, Default::default());
+}

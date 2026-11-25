@@ -7,6 +7,7 @@ pub mod imagedoc;
 mod memory;
 pub mod pdfium;
 pub mod previewcache;
+pub mod reset; // Help > About > Reset..., and --reset
 pub mod pdfium_lod; // WP-LOD
 pub mod pdfium_swap;
 // WP-Print
@@ -65,6 +66,9 @@ pub struct LaunchArgs {
     /// VELLUM_PERF_LOG set: log every settle-to-sharp event to perf-log.csv, as the debug
     /// overlay does, but without the overlay (tools/viewer-bench watches the screen).
     pub perf_log: bool,
+    /// `--reset settings,previews,library`: what to clear before anything is read (reset.rs).
+    #[serde(skip)]
+    pub reset: reset::Reset,
 }
 
 pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
@@ -86,6 +90,7 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> LaunchArgs {
             "--bench-wheel" => out.bench_wheel = it.next().and_then(|v| v.parse().ok()),
             "--dpr" => out.dpr = it.next().and_then(|v| v.parse().ok()),
             "--pdfium-threads" => out.pdfium_threads = it.next().and_then(|v| v.parse().ok()),
+            "--reset" => out.reset = it.next().map(|v| reset::Reset::parse(&v)).unwrap_or_default(),
             "--bench-page" => out.bench_page = it.next().and_then(|v| v.parse().ok()),
             "--bench-size" => {
                 out.bench_size = it.next().and_then(|v| {
@@ -421,6 +426,7 @@ pub fn run() {
     let bench = args.bench;
     let bench_size = args.bench_size.unwrap_or((1600.0, 1000.0));
     let pdfium_threads = args.pdfium_threads;
+    let reset = args.reset;
 
     let mem = MemState::default();
     memory::start_sampler(mem.0.clone(), Duration::from_millis(200));
@@ -429,6 +435,7 @@ pub fn run() {
     // WP-Shell: single instance (must be the first plugin) and shell state.
     let builder = shell::register(tauri::Builder::default(), bench);
     // WP-Shell end
+    let builder = if reset.settings { builder.plugin(reset::settings_plugin()) } else { builder };
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -438,6 +445,11 @@ pub fn run() {
         .manage(Arc::new(Docs::default()))
         .setup(move |app| {
             pdfium_state.set_resource_dir(app.path().resource_dir().ok());
+            if reset.previews || reset.library {
+                if let Err(e) = reset::clear_files(app.handle(), reset.previews, reset.library) {
+                    eprintln!("[reset] {e}");
+                }
+            }
             if bench {
                 // Fixed, on-top window so benchmark runs are comparable and
                 // never throttled by being occluded.
@@ -461,6 +473,7 @@ pub fn run() {
             memory_stats,
             reset_memory_peak,
             exit_app,
+            reset::reset_profile,
             doc_open,
             doc_close,
             doc_render,

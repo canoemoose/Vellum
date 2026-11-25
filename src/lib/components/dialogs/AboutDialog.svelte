@@ -22,9 +22,11 @@
     onAutoCheck: (on: boolean) => void;
     onCheck: () => void;
     onInstall: () => void;
+    /** The quiet Reset... link: settings, stored previews, signatures and stamps. */
+    onReset: () => void;
     onClose: () => void;
   }
-  let { update, autoCheck, onAutoCheck, onCheck, onInstall, onClose }: Props = $props();
+  let { update, autoCheck, onAutoCheck, onCheck, onInstall, onReset, onClose }: Props = $props();
 
   const us = $derived(update.state);
   /** One line on where updates stand: the state's own words, or when it last checked. */
@@ -78,6 +80,7 @@
   </p>
   {#if noticeError}<p class="small warn">{noticeError}</p>{/if}
   {#snippet footer()}
+    <button type="button" class="link reset" onclick={onReset}>Reset…</button>
     <button type="button" class="btn primary" onclick={onClose}>Close</button>
   {/snippet}
 </Dialog>
@@ -116,6 +119,11 @@
   }
   .warn {
     color: var(--danger);
+  }
+  .reset {
+    margin-right: auto;
+    font-size: 12px;
+    color: var(--tx3);
   }
   .small {
     font-size: 12px;

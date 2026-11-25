@@ -1,3 +1,4 @@
+import "./lib/shell/resetOnStart"; // first: a reset asked for last run, before anything is read
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";

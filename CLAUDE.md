@@ -44,6 +44,10 @@ installed copies update themselves: see Releasing below and
   DevTools port with a throwaway profile (your own settings untouched) and captures with
   CaptureGraphicsWin2D (Microsoft Store). Needs `test-files/fieldwork-festival-drawing-set.pdf`,
   made by `test-files/drawing-set.mjs` (both gitignored). Windows open on screen while it runs.
+- `Vellum.exe --reset settings,previews,library` (any mix, with Vellum closed): start as a new
+  install would. Settings is everything remembered in the web view; previews is the stored
+  page previews; library is saved signatures and stamps (can't be undone). The same three are
+  under Help > About > Reset… (`src-tauri/src/reset.rs`, `src/lib/shell/reset.ts`).
 - `node tools/fetch-pdfium.mjs`: download `pdfium.dll` into `src-tauri/pdfium/`.
 - `node tools/make-notices.mjs`: write `src-tauri/licenses/THIRD-PARTY-NOTICES.txt` (every
   shipped crate, front-end package and PDFium library with its licence). `tauri build` runs it;

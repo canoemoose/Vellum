@@ -83,6 +83,7 @@
   import ScaleDialog from "./lib/components/dialogs/ScaleDialog.svelte";
   import PropertiesDialog from "./lib/components/dialogs/PropertiesDialog.svelte";
   import AboutDialog from "./lib/components/dialogs/AboutDialog.svelte";
+  import ResetDialog from "./lib/components/dialogs/ResetDialog.svelte";
   import ShortcutsDialog from "./lib/components/dialogs/ShortcutsDialog.svelte";
   import ExportDialog, { type ExportRequest } from "./lib/components/dialogs/ExportDialog.svelte";
   import PrintDialog from "./lib/components/print/PrintDialog.svelte";
@@ -170,8 +171,13 @@
   let dropping = $state(false);
   let bench = $state(false);
 
-  type DialogName = "scale" | "properties" | "about" | "shortcuts" | "export" | "print";
+  type DialogName = "scale" | "properties" | "about" | "reset" | "shortcuts" | "export" | "print";
   let dialog = $state<DialogName | null>(null);
+  /** Files open with unsaved changes (the Reset dialog won't close Vellum over them). */
+  const unsavedCount = $derived.by(() => {
+    void markVersion;
+    return tabs.tabs.filter((t) => t.marks.dirty).length;
+  });
   let passwordFor = $state<{ tabId: number; error: string | null; busy: boolean } | null>(null);
   let contextMenu = $state<{ items: MenuItem[]; x: number; y: number } | null>(null);
   let marquee = $state<((r: PageRect | null) => void) | null>(null);
@@ -3099,8 +3105,11 @@
       dialog = null;
       void updater.install();
     }}
+    onReset={() => (dialog = "reset")}
     onClose={() => (dialog = null)}
   />
+{:else if dialog === "reset"}
+  <ResetDialog unsaved={unsavedCount} onClose={() => (dialog = null)} />
 {:else if dialog === "shortcuts"}
   <ShortcutsDialog navMode={ui.navMode} onClose={() => (dialog = null)} />
 {:else if dialog === "export" && active?.info}
