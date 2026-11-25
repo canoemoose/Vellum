@@ -53,3 +53,16 @@ export function restoreTarget(t: { exists: boolean; active: boolean; docOpen: bo
   if (t.active && t.docOpen) return "here";
   return t.read ? "background" : "keep";
 }
+
+/**
+ * What a restore makes the present, once the file's annotations have been read: the record's
+ * markups, plus any of the file's annotations the record never knew of (it was written before
+ * they were read, so they're in neither its markups nor its `saved`). One in its `saved` but
+ * not its markups was deleted before the crash, and stays deleted. Without this, restoring an
+ * early record and saving deleted every annotation the file came with (docs/review-0.2.0.md, 8).
+ */
+export function restoredMarkups<M extends { id: string }>(rec: { markups: M[]; saved: string[] }, file: M[]): M[] {
+  const known = new Set([...rec.markups.map((m) => m.id), ...rec.saved]);
+  const unknown = file.filter((m) => !known.has(m.id));
+  return unknown.length ? [...rec.markups, ...unknown] : rec.markups;
+}

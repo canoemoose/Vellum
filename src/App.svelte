@@ -26,7 +26,7 @@
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, Style, TextStyle } from "./lib/markup/types";
   import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage } from "./lib/shell/save";
-  import { RecoveryRecords, restoreTarget } from "./lib/shell/recovery";
+  import { RecoveryRecords, restoreTarget, restoredMarkups } from "./lib/shell/recovery";
   import { type AnnotRead, fromFile, stampHashes, withStampImages } from "./lib/markup/fileAnnots"; // Existing annotations
   import EditLock from "./lib/components/EditLock.svelte"; // Existing annotations
   import type { Dock } from "./lib/shell/dock";
@@ -1490,7 +1490,8 @@
     // (the file's own by the same ids) become the present, and anything changed is lifted
     // (when the tab is next shown, if it isn't now).
     if (now.marks.read) {
-      now.marks.history.push(rec.markups);
+      // A record written before the file's annotations were read doesn't hold them: keep them.
+      now.marks.history.push(restoredMarkups({ markups: rec.markups, saved: Array.isArray(rec.saved) ? rec.saved : [] }, now.marks.saved));
       if (to === "here") {
         markupTool?.attach(now.marks);
         liftNow();
