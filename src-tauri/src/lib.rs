@@ -2,6 +2,7 @@ pub mod annot; // editing: markups saved as annotations
 pub mod clipboard; // markups and pictures on the system clipboard
 pub mod docs;
 pub mod errcode;
+pub mod fsutil; // flushing files before they are renamed into place
 pub mod imagedoc;
 mod memory;
 pub mod pdfium;

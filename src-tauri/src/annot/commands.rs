@@ -211,6 +211,8 @@ pub fn sealed_file(dir: &Path, key: &str) -> Result<PathBuf, String> {
 fn write_file_atomic(f: &Path, bytes: &[u8]) -> Result<(), String> {
     // Write then rename, so a crash mid-write never leaves half a file.
     let tmp = f.with_extension("tmp");
+    // Not flushed (fsutil.rs): this runs on the main thread a second after every edit, and only
+    // a power cut, not a crash, could lose it.
     std::fs::write(&tmp, bytes).map_err(|e| crate::errcode::io(&e, format!("Couldn't write {}: {e}", tmp.display())))?;
     std::fs::rename(&tmp, f).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);

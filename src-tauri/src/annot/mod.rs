@@ -74,7 +74,8 @@ pub fn apply(bytes: Vec<u8>, password: &str, changes: &[Change]) -> Result<Vec<u
 /// Write `bytes` to the temporary file for `target`.
 pub fn write_temp(target: &Path, bytes: &[u8]) -> Result<PathBuf, String> {
     let tmp = temp_path(target);
-    std::fs::write(&tmp, bytes).map_err(|e| crate::errcode::coded(crate::errcode::io_code(&e), format!("Couldn't write beside {}: {e}", target.display())))?;
+    // Flushed, so the rename in `commit` never puts an unwritten file over the original.
+    crate::fsutil::write_flushed(&tmp, bytes).map_err(|e| crate::errcode::coded(crate::errcode::io_code(&e), format!("Couldn't write beside {}: {e}", target.display())))?;
     Ok(tmp)
 }
 

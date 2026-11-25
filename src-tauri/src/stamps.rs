@@ -101,7 +101,7 @@ pub fn prepare(bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>, u32, u32), String> {
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| errcode::io(&e, format!("{}: {e}", tmp.display())))?;
+    crate::fsutil::write_flushed(&tmp, bytes).map_err(|e| errcode::io(&e, format!("{}: {e}", tmp.display())))?;
     std::fs::rename(&tmp, path).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         errcode::io(&e, format!("{}: {e}", path.display()))

@@ -975,6 +975,9 @@ pub fn ensure_copy(original: &Path, dest: &Path) -> Result<(), String> {
     }
     let tmp = dest.with_extension(format!("tmp{}", std::process::id()));
     std::fs::copy(original, &tmp).map_err(|e| format!("copy {}: {e}", tmp.display()))?;
+    // Flushed before the rename: a copy of the right size is never replaced (above), so one whose
+    // contents were lost to a power cut would stop PDFium loading for good.
+    crate::fsutil::flush(&tmp).map_err(|e| format!("copy {}: {e}", tmp.display()))?;
     // Another process may have finished the same copy meanwhile: keep theirs.
     if std::fs::metadata(dest).is_ok_and(|m| m.len() == want) {
         let _ = std::fs::remove_file(&tmp);

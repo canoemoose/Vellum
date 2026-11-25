@@ -212,7 +212,7 @@ impl Library {
         let bytes = seal(e)?;
         let path = self.path(&e.meta.id);
         let tmp = self.dir.join(format!("{}.tmp", e.meta.id));
-        std::fs::write(&tmp, &bytes).map_err(|err| errcode::io(&err, format!("{}: {err}", tmp.display())))?;
+        crate::fsutil::write_flushed(&tmp, &bytes).map_err(|err| errcode::io(&err, format!("{}: {err}", tmp.display())))?;
         std::fs::rename(&tmp, &path).map_err(|err| {
             let _ = std::fs::remove_file(&tmp);
             errcode::io(&err, format!("{}: {err}", path.display()))
