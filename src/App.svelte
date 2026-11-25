@@ -26,6 +26,7 @@
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, Style, TextStyle } from "./lib/markup/types";
   import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage } from "./lib/shell/save";
+  import { RecoveryRecords, restoreTarget } from "./lib/shell/recovery";
   import { type AnnotRead, fromFile, stampHashes, withStampImages } from "./lib/markup/fileAnnots"; // Existing annotations
   import EditLock from "./lib/components/EditLock.svelte"; // Existing annotations
   import type { Dock } from "./lib/shell/dock";
@@ -1341,7 +1342,7 @@
     // Edits made during the save are still unsaved: keep them in a fresh record (against the
     // file as it is now) rather than deleting it.
     if (t.marks.dirty) scheduleRecovery();
-    else invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+    else recovery.drop(recoveryKey(pathKey(t.path)));
     markVersion++;
     notify(p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`);
     return true;
@@ -1405,7 +1406,7 @@
     const a = await ask("Unsaved markups", unsavedMessage([t.title]), ["Save", "Don't save", "Cancel"]);
     if (a === "Save") return saveActive();
     if (a === "Don't save") {
-      invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+      recovery.drop(recoveryKey(pathKey(t.path)));
       return true;
     }
     return false;
@@ -1417,7 +1418,7 @@
     if (!dirty.length) return true;
     const a = await ask("Unsaved markups", unsavedMessage(dirty.map((t) => t.title)), [dirty.length > 1 ? "Save all" : "Save", "Don't save", "Cancel"]);
     if (a === "Don't save") {
-      for (const t of dirty) await invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+      for (const t of dirty) await recovery.drop(recoveryKey(pathKey(t.path)));
       return true;
     }
     if (a !== "Save" && a !== "Save all") return false;
@@ -1430,6 +1431,12 @@
 
   // ---------------------------------------------------------------- crash recovery
 
+  // A clean tab deletes only a record this session wrote: one a crash left waits for the
+  // answer to "Restore them?" (lib/shell/recovery.ts).
+  const recovery = new RecoveryRecords({
+    write: (key, json) => void invoke("recovery_write", { key, json }).catch((e) => console.warn("recovery write failed:", String(e))),
+    remove: (key) => invoke("recovery_delete", { key }).then(() => {}, () => {}),
+  });
   let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
   /** A second after a change, keep the active tab's unsaved markups where a crash can't lose them. */
   function scheduleRecovery() {
@@ -1437,13 +1444,9 @@
     recoveryTimer = setTimeout(() => {
       const t = active;
       if (!t || t.kind !== "pdf" || t.status !== "open") return;
-      const key = recoveryKey(pathKey(t.path));
-      if (!t.marks.dirty) {
-        invoke("recovery_delete", { key }).catch(() => {});
-        return;
-      }
-      const json = JSON.stringify({ v: 1, path: t.path, stamp: t.stamp, markups: t.marks.markups, saved: t.marks.saved.map((m) => m.id) });
-      invoke("recovery_write", { key, json }).catch((e) => console.warn("recovery write failed:", String(e)));
+      recovery.keep(recoveryKey(pathKey(t.path)), t.marks.dirty, () =>
+        JSON.stringify({ v: 1, path: t.path, stamp: t.stamp, markups: t.marks.markups, saved: t.marks.saved.map((m) => m.id) }),
+      );
     }, 1000);
   }
 
@@ -1468,27 +1471,34 @@
     const same = rec && stamp && rec.stamp && rec.stamp.size === stamp.size && rec.stamp.mtimeMs === stamp.mtimeMs;
     if (!rec || !same || !Array.isArray(rec.markups)) {
       // The file changed since (or the record is unreadable): the markups may not fit it any more.
-      invoke("recovery_delete", { key }).catch(() => {});
+      recovery.drop(key);
       return;
     }
     const a = await ask("Unsaved markups", `Vellum closed before your markups on ${t.title} were saved. Restore them?`, ["Restore", "Discard"]);
     if (a !== "Restore") {
-      invoke("recovery_delete", { key }).catch(() => {});
+      recovery.drop(key);
       return;
     }
     await reading;
     const now = tabById(id);
     const v = viewer;
-    if (!now || !v?.doc || now.id !== tabs.activeId) return;
+    // Switched away or closed meanwhile: restore into that tab, or keep the record for the
+    // next open; never drop it (lib/shell/recovery.ts restoreTarget).
+    const to = restoreTarget({ exists: !!now, active: now?.id === tabs.activeId, docOpen: !!v?.doc, read: !!now?.marks.read });
+    if (to === "keep" || !now) return;
     // Existing annotations: with the file read, what it holds is known; the record's markups
-    // (the file's own by the same ids) become the present, and anything changed is lifted.
+    // (the file's own by the same ids) become the present, and anything changed is lifted
+    // (when the tab is next shown, if it isn't now).
     if (now.marks.read) {
       now.marks.history.push(rec.markups);
-      markupTool?.attach(now.marks);
-      liftNow();
+      if (to === "here") {
+        markupTool?.attach(now.marks);
+        liftNow();
+      }
       markVersion++;
       return;
     }
+    if (!v?.doc) return;
     const savedIds = new Set(rec.saved);
     now.marks.saved = rec.markups.filter((m) => savedIds.has(m.id));
     now.marks.history.push(rec.markups);
