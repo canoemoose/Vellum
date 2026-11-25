@@ -12,6 +12,76 @@ signature import and baking, and undo and document state by Opus reviewers. "Con
 the code path was read again after the reviewer reported it. Tiers 2 to 4 (markup and measuring
 models, the viewer engine, components) have not been reviewed.
 
+## Brief: fix the six "Before 0.2.0" items
+
+For one Opus session, working autonomously (Matt's autonomous mode in `~/.claude/CLAUDE.md`:
+work through, state assumptions, batch questions at the end, commit when done, split by
+concern, never push).
+
+**Objective.** Fix items 1 to 6 in the table "Before 0.2.0" below, each with a test that fails
+before the fix and passes after, and nothing else. Items 7 to 13 and "Later" are out of scope
+unless a fix for 1 to 6 makes one of them trivial and safe, in which case say so in the
+hand-over rather than widening the change quietly.
+
+**Before changing anything.** Each item's "Where" and "Fix" came from reading, mostly by a
+reviewer. Read the path yourself first and confirm the bug is as described. If one turns out
+not to be a bug, or the suggested fix is wrong, don't force it: write down what you found
+against the item and move on.
+
+**Notes per item.**
+
+1. *Edits during a save marked as saved.* The suggested fix is a snapshot of `markups` taken
+   where `saveChanges` is computed, passed to `hideAfterSave` and `markSaved`. Check
+   `afterBake` and `rereadFileAnnots` against a list that changed during the save. Blocking
+   input for the length of a save was considered and set aside (a large file takes seconds);
+   say so if the snapshot can't be made right. The logic to test lives in `markupDoc.ts`, which
+   has unit tests; `App.svelte` has none, so keep what goes in there thin.
+2. *Recovery record deleted after open.* Two parts: only delete a record this session wrote
+   (or one the user answered Discard to, or a save made redundant); and after Restore, if the
+   tab is no longer active, restore into that tab's marks or keep the record, never drop it
+   silently. Recovery writes stay unflushed on purpose (see `fsutil.rs` and the comment in
+   `annot/commands.rs`).
+3. *Text box typed while annotations are read.* `history.adopt` patches the history's states
+   but not the snapshots the tool holds (`editing.before`, `gesture.before`, `previewBase`).
+   Prefer rebasing by id onto the current list in `finishText` and the gesture's end over
+   adding another place that must remember to adopt. Test at the `markupTool`/`history` level
+   with an adopt landing mid-edit, then undo: the file's annotations must still be there.
+4. *Huge picture crashes signature import.* Fall back to WIC only when the `image` crate says
+   the format is unsupported, never on a limits error; cap what WIC will decode (about 100
+   megapixels) and the file size read; the preview path (`preview_bytes`) has the same
+   exposure. An oversized picture should come back as the existing "too large" error, in words
+   a user can act on. HEIC must still import.
+5. *Signature picture reused by hash alone.* Reuse from the file only an object that is an
+   `/Image` of the expected width and height; re-hashing the stored pixels is better if it's
+   cheap. Reuse within one save (`image_in_update`) is fine as it is.
+6. *Shared `/Annots` array.* When the array a page points at is referenced by any other page,
+   give this page its own copy before changing it. Build the test PDF in the test (lopdf is
+   already a dependency): two pages sharing one indirect, empty `/Annots`; add a markup to page
+   1; page 2 must have none, and the file must still open in PDFium. Check deletes and edits
+   through the same path, not only adds.
+
+**Constraints.**
+
+- Conventions in the repo's `CLAUDE.md`: UK English, ASCII in log strings, Vitest beside the
+  code, the engine free of Svelte. Rust needs `source ~/.vellum-toolchain/env.sh` on this
+  machine before any cargo command.
+- `npm run check`, `npm test` and `cd src-tauri && cargo test` all pass before each commit.
+  `cargo test` takes about two minutes; one suite does a real print to "Microsoft Print to
+  PDF".
+- A green build is not "tested". Where a fix can be exercised by running the app
+  (`npm run tauri dev`), do it; where it needs timing or a special file you can't produce,
+  say plainly in the hand-over that it is covered by the test only.
+- Don't change the save's outer shape (temp file beside the original, renamed over it) or the
+  update path. Don't touch `src-tauri/tauri.conf.json`'s updater settings or public key.
+- No version bump, no tag, no push. The release steps are in [release-0.2.0.md](release-0.2.0.md)
+  and are Matt's to start.
+
+**Done looks like.** Six commits (or fewer, with reasons, if an item wasn't a bug), each item's
+row in the table marked with its status and commit, the release checklist in
+[release-0.2.0.md](release-0.2.0.md) ticked for the review items, and a hand-over that says in
+plain terms: what changed, what each new test covers, what was only verified by test and not in
+the app, any assumption made, and anything found on the way that Matt should know about.
+
 ## Fixed in this pass
 
 | What | Where | Status |
