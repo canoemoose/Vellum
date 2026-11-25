@@ -252,6 +252,18 @@ export interface Highlight {
  */
 export type PagePainter = (ctx: CanvasRenderingContext2D, page: number, m: [number, number, number, number, number, number], pxPerPt: number) => void;
 
+/**
+ * Viewer.reopen's error when the work between closing and reopening (a save's commit)
+ * succeeded but the file couldn't be opened again: the change is in the file, only the view is
+ * gone. The caller mustn't treat the save as failed (docs/review-0.2.0.md, 11).
+ */
+export class ReopenFailed extends Error {
+  readonly betweenDone = true;
+  constructor(readonly cause: unknown) {
+    super(String((cause as Error)?.message ?? cause));
+  }
+}
+
 export class Viewer {
   readonly opts: ViewerOptions;
   private highlights = new Map<string, Highlight>();
@@ -1071,7 +1083,7 @@ export class Viewer {
       this.error = String((e as Error)?.message ?? e);
       this.cache.clear();
       this.emitUi();
-      throw failure ?? e;
+      throw failure ?? new ReopenFailed(e);
     }
     if (gen !== this.gen) {
       r.close(doc.docId).catch(() => {});

@@ -86,7 +86,7 @@
   import ExportDialog, { type ExportRequest } from "./lib/components/dialogs/ExportDialog.svelte";
   import PrintDialog from "./lib/components/print/PrintDialog.svelte";
   import appIcon from "../src-tauri/icons/source/vellum.svg";
-  import { Viewer, initialUiState, refreshCanvasColour, type DocView, type UiState, type NavMode } from "./lib/engine/viewer";
+  import { ReopenFailed, Viewer, initialUiState, refreshCanvasColour, type DocView, type UiState, type NavMode } from "./lib/engine/viewer";
   import { attachInput } from "./lib/engine/input";
   import { blockedWhileTyping, isTyping, isWebViewAccelerator } from "./lib/engine/keys";
   import { rendererFor, pdfRenderer } from "./lib/render/createRenderer";
@@ -1331,7 +1331,13 @@
       invoke("annot_discard", { temp: p.temp }).catch(() => {});
       readingFollowsAfterReopen(t, oldId, v);
       void rereadFileAnnots(t);
-      throw e;
+      // Written, but the file couldn't be shown again: it is saved all the same, so its
+      // markups (and baked signatures) mustn't stay unsaved and be written twice next time.
+      if (!(e instanceof ReopenFailed)) throw e;
+      console.warn("saved, but reopening failed:", String(e.message));
+      await afterSaved(t, written);
+      notify(`Saved ${t.title}, but couldn't show it again: ${userMessage(e.cause, "open it")}`);
+      return true;
     }
     t.marks.markSaved(written);
     void rereadFileAnnots(t); // Existing annotations: where each now sits in the file
@@ -1346,6 +1352,17 @@
     markVersion++;
     notify(p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`);
     return true;
+  }
+
+  /** A save written whose file couldn't be reopened: what writeSave does after a save, without the view. */
+  async function afterSaved(t: Tab, written: Markup[]) {
+    t.marks.markSaved(written);
+    afterBake(t);
+    const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
+    updateTab(t.id, { stamp });
+    if (t.marks.dirty) scheduleRecovery();
+    else recovery.drop(recoveryKey(pathKey(t.path)));
+    markVersion++;
   }
 
   /** After a reopen the document has a new id: move the tab and the caches over to it. */

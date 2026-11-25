@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StubRenderer, doc, flush, installFakes, openViewer, stubCanvas, until } from "./testkit";
-import { Viewer } from "./viewer";
+import { ReopenFailed, Viewer } from "./viewer";
 import { type View, remainingMove } from "../view/viewMath";
 
 beforeEach(installFakes);
@@ -489,5 +489,32 @@ describe("Viewer scheduler", () => {
     it("assumes one worker for a small render when the renderer can't say", async () => {
       expect((await openSmall(undefined)).v.idleForThumbnails).toBe(true);
     });
+  });
+});
+
+describe("reopen (review 0.2.0, 11)", () => {
+  it("tells a failed reopen after the work in between succeeded from the work failing", async () => {
+    const { v, r } = await openViewer();
+    // The commit works, then the file won't open again.
+    r.open = async () => {
+      throw new Error("[open_failed] gone");
+    };
+    let committed = false;
+    const e = await v.reopen(async () => {
+      committed = true;
+    }).catch((x: unknown) => x);
+    expect(committed).toBe(true);
+    expect(e).toBeInstanceOf(ReopenFailed);
+    expect((e as ReopenFailed).cause).toEqual(new Error("[open_failed] gone"));
+    // The commit itself failing is that failure, not a ReopenFailed.
+    const { v: v2, r: r2 } = await openViewer();
+    r2.open = async () => {
+      throw new Error("[open_failed] gone");
+    };
+    const e2 = await v2.reopen(async () => {
+      throw new Error("[in_use] locked");
+    }).catch((x: unknown) => x);
+    expect(e2).not.toBeInstanceOf(ReopenFailed);
+    expect(String(e2)).toContain("in_use");
   });
 });
