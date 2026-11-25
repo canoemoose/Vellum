@@ -106,9 +106,13 @@ export class MarkupDoc {
     });
   }
 
-  /** The current markups are now what the file holds. */
-  markSaved(): void {
-    this.saved = this.markups;
+  /**
+   * After a save: `written` (the markups as they were when the save's changes were worked out,
+   * by default the current ones) is now what the file holds. Anything changed while the save
+   * was under way stays unsaved.
+   */
+  markSaved(written: Markup[] = this.markups): void {
+    this.saved = written;
   }
 
   /** Ids of markups that are in the file (and so drawn by PDFium unless hidden). */
@@ -214,12 +218,13 @@ export class MarkupDoc {
    * Before a save's reopen: what the overlay should go on drawing, which is hidden again in the
    * reopened file by /NM (every markup Vellum writes or replaces carries its id as /NM). The
    * rest (unchanged annotations from the file, and ones Vellum can only move) are PDFium's to
-   * draw from then on. Call before markSaved.
+   * draw from then on. Call before markSaved, with the same `written`: the markups the save's
+   * changes were worked out from (by default the current ones), not any made since.
    */
-  hideAfterSave(): Map<number, string[]> {
+  hideAfterSave(written: Markup[] = this.markups): Map<number, string[]> {
     const keep = new Set<string>();
     const byPage = new Map<number, string[]>();
-    for (const m of this.markups) {
+    for (const m of written) {
       if (m.kind === "foreign") continue;
       const o = this.files.get(m.id);
       const draws = !this.cameWithFile.has(m.id) || this.hidden.has(m.id) || (!!o && this.liftAlways(m, o));

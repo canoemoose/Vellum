@@ -1303,6 +1303,8 @@
   async function writeSave(t: Tab, v: Viewer, expect: boolean): Promise<boolean> {
     // Existing annotations: positions are the last read's; one under way (after a save) first.
     if (t.marks.reading) await t.marks.reading;
+    // What this save writes: edits made while it's under way are not in it and stay unsaved.
+    const written = t.marks.markups;
     let p: Prepared;
     try {
       p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, pendingBake.get(t)), target: null, expect: expect ? t.stamp : null });
@@ -1316,7 +1318,7 @@
     const oldId = v.doc!.docId;
     // What the overlay goes on drawing is hidden again in the reopened file; the file's
     // untouched annotations are PDFium's to draw (MarkupDoc.hideAfterSave).
-    const ids = t.marks.hideAfterSave();
+    const ids = t.marks.hideAfterSave(written);
     try {
       await v.reopen(
         () => invoke("annot_commit", { temp: p.temp, target: p.target }),
@@ -1330,13 +1332,16 @@
       void rereadFileAnnots(t);
       throw e;
     }
-    t.marks.markSaved();
+    t.marks.markSaved(written);
     void rereadFileAnnots(t); // Existing annotations: where each now sits in the file
     afterBake(t); // Stamps
     readingFollowsAfterReopen(t, oldId, v);
     const stamp = await invoke<Stamp>("file_stamp", { path: t.path }).catch(() => null);
     updateTab(t.id, { stamp });
-    invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
+    // Edits made during the save are still unsaved: keep them in a fresh record (against the
+    // file as it is now) rather than deleting it.
+    if (t.marks.dirty) scheduleRecovery();
+    else invoke("recovery_delete", { key: recoveryKey(pathKey(t.path)) }).catch(() => {});
     markVersion++;
     notify(p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`);
     return true;

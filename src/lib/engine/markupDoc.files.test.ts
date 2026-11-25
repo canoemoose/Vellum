@@ -300,6 +300,30 @@ describe("after a save", () => {
     expect(doc.files.has(p)).toBe(false);
     expect(doc.changes()).toMatchObject([{ op: "replace", spec: { nm: q, at: 0 } }]);
   });
+
+  it("leaves edits made while the save was under way unsaved (review 0.2.0, 1)", async () => {
+    const { doc, t, v } = await setup();
+    t.setTool("rect");
+    drag(t, v, [300, 300], [350, 350]);
+    const first = doc.markups[0].id;
+    // The save works out its changes from this list...
+    const written = doc.markups;
+    expect(doc.changes().map((c) => c.op)).toEqual(["add"]);
+    // ...and, while it writes and reopens the file, another rectangle is drawn and the first moved.
+    drag(t, v, [100, 100], [150, 150]);
+    t.setTool("select");
+    t.select([first]);
+    t.nudge(5, 0);
+    const hide = doc.hideAfterSave(written);
+    doc.markSaved(written);
+    // Only what was written is hidden again in the reopened file and counted as saved.
+    expect([...hide]).toEqual([[0, [first]]]);
+    expect(doc.saved).toBe(written);
+    expect(doc.dirty).toBe(true);
+    doc.reread([{ page: 0, frame: F, annots: [annot(written[0], 0)] }]);
+    // The next save writes both: the new rectangle and the move.
+    expect(doc.changes().map((c) => c.op).sort()).toEqual(["add", "replace"]);
+  });
 });
 
 describe("phase 7a leftovers", () => {
