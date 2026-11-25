@@ -20,6 +20,11 @@ export interface PrintDoc {
    * so whatever derives from it follows.
    */
   scaleOf: (page: number) => number | null;
+  /**
+   * True while page `page`'s title block is still to be read, so scaleOf's answer for it may
+   * yet change. The dialog holds Print while To scale depends on such a page. Absent: never.
+   */
+  scalePending?: (page: number) => boolean;
 }
 
 /** A rectangle on one page, in page points, y down from the top of the page. */

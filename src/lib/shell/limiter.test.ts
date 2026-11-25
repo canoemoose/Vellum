@@ -37,6 +37,23 @@ describe("limiter", () => {
     expect(started).toEqual(["a", "b", "d", "c"]);
   });
 
+  it("promotes a waiting task to the front, and leaves a started one alone", async () => {
+    const run = limiter(1);
+    const started: string[] = [];
+    const first = deferred();
+    const a = () => (started.push("a"), first.promise);
+    const b = async () => void started.push("b");
+    const c = async () => void started.push("c");
+    run(a);
+    run(b);
+    run(c);
+    run.promote(c); // the page now in view: ahead of what Print queued before it
+    run.promote(a); // already running: nothing to do
+    first.resolve();
+    await flush();
+    expect(started).toEqual(["a", "c", "b"]);
+  });
+
   it("survives a task that throws before returning a promise", async () => {
     const run = limiter(1);
     const started: string[] = [];

@@ -790,16 +790,16 @@
    * 1's. Each page's title block is read the first time it's asked for, two at a time; the
    * answer is reactive, so placed pages and the strip follow as reads come in.
    */
-  function fileScales(info: DocInfo, first: number | null): (page: number) => number | null {
+  function fileScales(info: DocInfo, first: number | null): Pick<PrintDoc, "scaleOf" | "scalePending"> {
     let read = $state<Record<number, number | null>>({ 0: first });
     const asked = new Set<number>([0]);
-    const find = context.renderer.findScale;
-    return (page) => {
-      if (info.kind !== "pdf" || !find) return null;
+    const renderer = context.renderer;
+    const scaleOf = (page: number) => {
+      if (info.kind !== "pdf" || !renderer.findScale) return null;
       if (!asked.has(page) && page < info.numPages) {
         asked.add(page);
         scaleReads(() =>
-          find(info.docId, page)
+          renderer.findScale!(info.docId, page)
             .catch((e) => {
               console.warn("scale detection failed on page", page + 1, String(e));
               return [];
@@ -812,6 +812,7 @@
       const own = read[page];
       return typeof own === "number" ? own : (read[0] ?? null);
     };
+    return { scaleOf, scalePending: (page) => asked.has(page) && read[page] === undefined };
   }
 
   /** Open a file for the strip (or find it already open). Returns null if it can't be opened. */
@@ -826,7 +827,7 @@
         const c = await context.renderer.findScale(info.docId, 0).catch(() => []);
         first = pickDetectedScale(c, info.sizes[0].w, info.sizes[0].h);
       }
-      const doc: PrintDoc = { docId: info.docId, path, title: fileName(path), info, scaleOf: fileScales(info, first) };
+      const doc: PrintDoc = { docId: info.docId, path, title: fileName(path), info, ...fileScales(info, first) };
       extraDocs = [...extraDocs, doc];
       return doc;
     } catch (e) {

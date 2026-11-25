@@ -482,8 +482,8 @@
     return { ratio: scaleForPage(t.scale, pagesOf(t), page, titleBlocks(t))?.ratio ?? null, userUnit: userUnits[t.id]?.[page] ?? 1 };
   }
 
-  /** Pages whose title block is being read, as "tab id:page". */
-  const detecting = new Set<string>();
+  /** Pages whose title block is being read or waiting to be, as "tab id:page", with the queued read. */
+  const detecting = new Map<string, () => Promise<void>>();
 
   /**
    * Read page `page`'s title block for its scale, once, in the background (page 1's is read on
@@ -494,8 +494,13 @@
     if (t.status !== "open" || !t.info || t.info.kind !== "pdf" || page === 0 || t.detectedPages[page] !== undefined) return;
     const key = `${t.id}:${page}`;
     const r = rendererFor(t.path);
-    if (detecting.has(key) || !r.findScale || page >= t.info.numPages) return;
-    detecting.add(key);
+    const queued = detecting.get(key);
+    if (queued) {
+      // Already waiting (Print asked for it): the page in view, or being measured, moves up.
+      if (soon) scaleReads.promote(queued);
+      return;
+    }
+    if (!r.findScale || page >= t.info.numPages) return;
     const { id } = t;
     const info = t.info;
     const read = () => {
@@ -516,6 +521,7 @@
         })
         .finally(() => detecting.delete(key));
     };
+    detecting.set(key, read);
     // The page in view (or being measured) goes first; Print's pages wait their turn.
     scaleReads(read, soon);
   }
@@ -1957,12 +1963,23 @@
     };
   }
 
+  /** Whether a page's title block is still to be read, and would decide its scale (see resolvePageScale). */
+  function printScalePending(id: number): (page: number) => boolean {
+    return (page) => {
+      const t = tabById(id);
+      // Page 1's is read on open (detectScale); a scale set by hand, or cleared, isn't waiting on a read.
+      if (!t?.info || t.info.kind !== "pdf" || page === 0 || page >= t.info.numPages) return false;
+      if (t.scaleCleared || t.scale?.source === "manual" || pagesOf(t)[page]) return false;
+      return t.detectedPages[page] === undefined && !!rendererFor(t.path).findScale;
+    };
+  }
+
   function openPrint() {
     if (!hasDoc || !viewer) return;
     printContext = {
       docs: tabs.tabs
         .filter((t) => t.status === "open" && t.info)
-        .map((t) => ({ docId: t.info!.docId, path: t.path, title: t.title, info: t.info!, scaleOf: printScaleOf(t.id) })),
+        .map((t) => ({ docId: t.info!.docId, path: t.path, title: t.title, info: t.info!, scaleOf: printScaleOf(t.id), scalePending: printScalePending(t.id) })),
       activeDocId: active?.info?.docId ?? null,
       currentPage: ui.page,
       viewRect: viewRect(),

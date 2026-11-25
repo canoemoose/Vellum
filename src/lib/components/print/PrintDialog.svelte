@@ -141,8 +141,24 @@
   }
 
   const sheetCount = $derived(shown?.job.sheets.length ?? 0);
+  /**
+   * Pages to print whose title block is still being read (the shell reads them as Print asks,
+   * two at a time). To scale sizes each page from its drawing scale, so printing waits for them:
+   * until its own is read, a page has page 1's scale.
+   */
+  const scalesToRead = $derived.by(() => {
+    if (manualMode || settings.sizing !== "scale" || !context || !picked?.ok) return 0;
+    const docs = context.docs;
+    return picked.sources.filter((s) => docs.find((d) => d.docId === s.ref.docId)?.scalePending?.(s.ref.page)).length;
+  });
   // About the sheet in the preview: pages of a set can each be at their own size and scale.
-  const info = $derived(result ? sizingInfo(options, result.sheets[manualMode ? 0 : sheetIndex] ?? result.sheets[0]) : null);
+  const info = $derived(
+    scalesToRead
+      ? { text: `Reading the drawing scale of ${scalesToRead === 1 ? "1 page" : `${scalesToRead} pages`}…`, warn: false }
+      : result
+        ? sizingInfo(options, result.sheets[manualMode ? 0 : sheetIndex] ?? result.sheets[0])
+        : null,
+  );
   const printerMarginMm = $derived(Math.max(margins.portrait.left, margins.portrait.top) / mmToPt(1));
 
   $effect(() => {
@@ -1075,7 +1091,7 @@
         </div>
 
         <footer>
-          <button type="button" class="btn" disabled={!shown?.job.sheets.length || !!busy} onclick={() => shown && run(shown.job, "pdf")}>Save as PDF…</button>
+          <button type="button" class="btn" disabled={!shown?.job.sheets.length || !!busy || scalesToRead > 0} onclick={() => shown && run(shown.job, "pdf")}>Save as PDF…</button>
           <button type="button" class="btn ghost" onclick={() => (presetEditor = { name: presetName ?? "" })}>Save preset…</button>
           <div class="status" role="status">
             {#if busy}
@@ -1085,7 +1101,7 @@
             {:else if sheetCount}{sheetCount} {sheetCount === 1 ? "sheet" : "sheets"}{/if}
           </div>
           <button type="button" class="btn" onclick={close}>{busy ? "Stop" : "Cancel"}</button>
-          <button type="button" class="btn primary" disabled={!shown?.job.sheets.length || !!busy || !settings.printer} onclick={() => shown && run(shown.job, "print")}>Print</button>
+          <button type="button" class="btn primary" disabled={!shown?.job.sheets.length || !!busy || !settings.printer || scalesToRead > 0} onclick={() => shown && run(shown.job, "print")}>Print</button>
         </footer>
       </div>
     {/if}
