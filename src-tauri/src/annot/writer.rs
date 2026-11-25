@@ -43,6 +43,8 @@ pub struct AnnotEntry {
     pub subtype: Option<String>,
     pub rect: Option<[f64; 4]>,
     pub nm: Option<String>,
+    /// The reader reads it as a markup (read::passed_over): what finding by /NM considers.
+    pub read: bool,
 }
 
 pub struct Writer {
@@ -244,6 +246,12 @@ impl Writer {
                         (v.len() == 4).then(|| [v[0].min(v[2]), v[1].min(v[3]), v[0].max(v[2]), v[1].max(v[3])])
                     }),
                     nm: d.and_then(|d| d.get(b"NM").ok()).and_then(|o| o.as_str().ok()).map(decode_text),
+                    read: d.is_some_and(|d| {
+                        let subtype = d.get(b"Subtype").ok().and_then(|o| o.as_name().ok());
+                        let flags = d.get(b"F").ok().and_then(|o| obj_f64(self.resolve(o))).unwrap_or(0.0) as i64;
+                        let rect = d.get(b"Rect").ok().and_then(|o| self.resolve(o).as_array().ok()).is_some_and(|a| a.len() == 4);
+                        subtype.is_some_and(|s| !super::read::passed_over(&String::from_utf8_lossy(s), flags, d.has(b"IRT"))) && rect
+                    }),
                 }
             })
             .collect())
@@ -314,9 +322,11 @@ impl Writer {
                 .filter(|i| *i < n)
                 .ok_or_else(|| format!("no annotation at {at} on page {}", page + 1));
         }
+        // Among what the reader reads only: a pop-up, a hidden one or a reply with the same /NM
+        // isn't the markup that has this id.
         self.annots(page)?
             .iter()
-            .position(|e| e.nm.as_deref() == Some(nm))
+            .position(|e| e.read && e.nm.as_deref() == Some(nm))
             .ok_or_else(|| format!("no annotation {nm} on page {}", page + 1))
     }
 

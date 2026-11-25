@@ -104,6 +104,13 @@ const NOT_MARKUPS: &[&str] = &["Popup", "Link", "Widget"];
 /// /F Hidden.
 const HIDDEN: i64 = 2;
 
+/// Whether the reader passes over an annotation (never a markup): a pop-up, link or form
+/// field, one hidden by its own app, or a reply. The writer finds an annotation by /NM among
+/// the rest only, so it finds the one the reader gave that id to (docs/review-0.2.0.md, 10).
+pub fn passed_over(subtype: &str, flags: i64, reply: bool) -> bool {
+    NOT_MARKUPS.contains(&subtype) || flags & HIDDEN != 0 || reply
+}
+
 /// Drop stream contents while loading (keeping object streams, which hold dictionaries), so
 /// reading a heavy drawing's annotations doesn't hold its page content and images in memory.
 /// lopdf uses the object it passes in for top-level objects and the returned one for objects
@@ -222,12 +229,10 @@ impl<'a> Reader<'a> {
 
     fn annot(&self, index: usize, d: &'a Dictionary) -> Option<FileAnnot> {
         let subtype = self.name(d, b"Subtype")?;
-        if NOT_MARKUPS.contains(&subtype.as_str()) {
-            return None;
-        }
         let flags = self.number(d, b"F").unwrap_or(0.0) as i64;
-        // Hidden by its own app, and replies (comments in a thread): neither is drawn as a markup.
-        if flags & HIDDEN != 0 || d.has(b"IRT") {
+        // Pop-ups, links and fields; hidden by its own app, and replies (comments in a thread):
+        // none is drawn as a markup.
+        if passed_over(&subtype, flags, d.has(b"IRT")) {
             return None;
         }
         let rect = self.rect(d, b"Rect")?;

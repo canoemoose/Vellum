@@ -359,3 +359,47 @@ fn redrawing_another_apps_annotation_keeps_what_vellum_doesnt_edit() {
     assert_eq!(d.get(b"F").unwrap().as_i64().unwrap(), 128);
     assert_eq!(d.get(b"OC").unwrap().as_reference().unwrap(), ocg);
 }
+
+/// Put `extra` (annotation dictionaries) at the front of page 0's /Annots, saved in full.
+fn with_annots_first(bytes: &[u8], extra: Vec<lopdf::Dictionary>) -> Vec<u8> {
+    let mut doc = lopdf::Document::load_mem(bytes).unwrap();
+    let page = *doc.get_pages().get(&1).unwrap();
+    let ids: Vec<lopdf::Object> = extra.into_iter().map(|d| lopdf::Object::Reference(doc.add_object(d))).collect();
+    let annots = doc.get_dictionary(page).unwrap().get(b"Annots").unwrap().clone();
+    let arr = match annots {
+        lopdf::Object::Reference(r) => doc.get_object_mut(r).unwrap().as_array_mut().unwrap(),
+        _ => doc.get_dictionary_mut(page).unwrap().get_mut(b"Annots").unwrap().as_array_mut().unwrap(),
+    };
+    for (i, o) in ids.into_iter().enumerate() {
+        arr.insert(i, o);
+    }
+    let mut out = Vec::new();
+    doc.save_to(&mut out).unwrap();
+    out
+}
+
+#[test]
+fn finding_by_nm_skips_what_the_reader_skips() {
+    // docs/review-0.2.0.md, 10. Before the square Vellum shows as "a": a hidden annotation, a
+    // reply and a pop-up, all also named "a". Moving "a" moves the square, and only it.
+    let one = annot::apply(blank(), "", &[Change::Add { spec: square(0, "a", [10.0, 10.0, 60.0, 40.0]) }]).unwrap();
+    let named = |subtype: &str, f: i64| {
+        lopdf::dictionary! { "Type" => "Annot", "Subtype" => lopdf::Object::Name(subtype.as_bytes().to_vec()), "NM" => lopdf::Object::string_literal("a"),
+        "Rect" => vec![200.into(), 150.into(), 210.into(), 160.into()], "F" => f }
+    };
+    let mut reply = named("Text", 4);
+    reply.set("IRT", lopdf::Object::Reference((1, 0)));
+    let file = with_annots_first(&one, vec![named("Square", 2), reply, named("Popup", 4)]);
+    let moved = annot::apply(file, "", &[Change::Replace { spec: square(0, "a", [20.0, 20.0, 80.0, 50.0]) }]).unwrap();
+    let doc = lopdf::Document::load_mem(&moved).unwrap();
+    let mut rects: Vec<(Vec<u8>, i64)> = doc
+        .objects
+        .values()
+        .filter_map(|o| o.as_dict().ok())
+        .filter(|d| d.get(b"NM").ok().and_then(|v| v.as_str().ok()) == Some(b"a"))
+        .map(|d| (d.get(b"Subtype").unwrap().as_name().unwrap().to_vec(), d.get(b"Rect").unwrap().as_array().unwrap()[0].as_float().unwrap() as i64))
+        .collect();
+    rects.sort();
+    // The three it must not touch are still at x 200; the square moved to x 20.
+    assert_eq!(rects, vec![(b"Popup".to_vec(), 200), (b"Square".to_vec(), 20), (b"Square".to_vec(), 200), (b"Text".to_vec(), 200)]);
+}
