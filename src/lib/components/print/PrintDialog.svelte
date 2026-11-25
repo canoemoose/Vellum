@@ -903,11 +903,12 @@
                     {/if}
                   </div>
                 </div>
-                {#if settings.sizing !== "tile"}
+                {#if settings.sizing === "fit"}
+                  <!-- Fit only: in Actual and To scale, shrinking a page would undo the point of them. -->
                   <div class="row">
                     <span></span>
-                    <label class="check" title={settings.sizing === "fit" ? "Pages already small enough print at 100%; only bigger ones are fitted" : "Pages too big for the sheet are shrunk to fit"}>
-                      <input type="checkbox" bind:checked={settings.shrinkOversized} /><span>{settings.sizing === "fit" ? "Never enlarge small pages" : "Shrink pages too big for the sheet"}</span>
+                    <label class="check" title="Pages already small enough print at 100%; only bigger ones are fitted">
+                      <input type="checkbox" bind:checked={settings.shrinkOversized} /><span>Never enlarge small pages</span>
                     </label>
                   </div>
                 {/if}

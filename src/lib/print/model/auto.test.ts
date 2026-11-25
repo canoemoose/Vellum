@@ -99,11 +99,23 @@ describe("Actual and To scale", () => {
     expect(info).toMatchObject({ text: expect.stringMatching(/prints at 50%\. Set the drawing scale/), warn: false });
   });
 
-  it("shrinks oversized pages only, in Actual", () => {
-    const r = autoLayout(input([src(ref(A0.w, A0.h)), src(ref(A4.w, A4.h))], { sizing: "actual", shrinkOversized: true }));
-    expect(r.sheets[0].placed[0].factor).toBeLessThan(1);
-    expect(contains(r.sheets[0].area, r.sheets[0].placed[0].box)).toBe(true);
+  it("never shrinks in Actual, and says when a page won't fit", () => {
+    // A remembered Shrink setting from Fit or To scale must not undo actual size.
+    const o = { sizing: "actual" as const, shrinkOversized: true };
+    const r = autoLayout(input([src(ref(A0.w, A0.h, { drawingScale: 100 })), src(ref(A4.w, A4.h, { drawingScale: 100 }))], o));
+    expect(r.sheets[0].placed[0].factor).toBe(1);
     expect(r.sheets[1].placed[0].factor).toBe(1);
+    const opts = { ...input([]).options, ...o };
+    expect(sizingInfo(opts, r.sheets[0])).toEqual({ text: "A0 on A3 is bigger than the printable area at actual size, so part of it won't print. Choose Tile, Fit or a bigger paper.", warn: true });
+    expect(sizingInfo(opts, r.sheets[1])).toEqual({ text: "A4 on A3 prints at 1:100, the drawing's own scale.", warn: false });
+  });
+
+  it("never shrinks in To scale, and says when a page won't fit", () => {
+    const o = { sizing: "scale" as const, shrinkOversized: true, scaleRatio: 100 };
+    const r = autoLayout(input([src(ref(A0.w, A0.h, { drawingScale: 100 })), src(ref(A4.w, A4.h, { drawingScale: 100 }))], o));
+    expect(r.sheets[0].placed[0].factor).toBe(1);
+    expect(r.sheets[1].placed[0].factor).toBe(1);
+    expect(sizingInfo({ ...input([]).options, ...o }, r.sheets[0])).toEqual({ text: "At 1:100 the page is bigger than the printable area. Choose Tile, or a smaller scale.", warn: true });
   });
 
   it("describes Fit without a drawing scale as a percentage", () => {

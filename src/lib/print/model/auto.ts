@@ -122,18 +122,17 @@ function frame(input: AutoInput, paper: Size, landscape: boolean): Frame {
 export function sizingFactor(o: AutoOptions, src: Source, fitBox: Box): number {
   const c = contentSize(src);
   const fit = fitFactor(c, fitBox);
-  let f: number;
   switch (o.sizing) {
     case "fit":
-      f = o.shrinkOversized ? Math.min(fit, 1) : fit;
-      return f;
+      // shrinkOversized is Fit's "Never enlarge small pages"; Actual and To scale never shrink.
+      return o.shrinkOversized ? Math.min(fit, 1) : fit;
     case "scale":
-      f = src.ref.drawingScale ? factorForRatio(src.ref.drawingScale, o.scaleRatio) : o.scalePercent / 100;
-      break;
+      // Exactly the scale asked for, whatever the sheet, as Actual is exactly 100%: a page too
+      // big for the sheet is cut off, and the note says so and suggests Tile.
+      return src.ref.drawingScale ? factorForRatio(src.ref.drawingScale, o.scaleRatio) : o.scalePercent / 100;
     default:
-      f = 1;
+      return 1;
   }
-  return o.shrinkOversized ? Math.min(f, fit) : f;
 }
 
 function stampFor(input: AutoInput, src: Source[], extra = ""): string {
@@ -379,15 +378,19 @@ export function sizingInfo(o: AutoOptions, sheet: SheetInfo | undefined): Sizing
   if (o.sizing === "tile") {
     return null;
   }
+  const ow = boxW(p.box) - boxW(sheet.contentArea);
+  const oh = boxH(p.box) - boxH(sheet.contentArea);
+  const over = Math.max(ow, oh);
+  // A little over is normal for "A1 at 1:200 on A3": the drawing's own border margin goes.
+  const nearly = over > 0.5 && Math.max(ow / boxW(sheet.contentArea), oh / boxH(sheet.contentArea)) < 0.08;
+  if (o.sizing === "actual" && over > 0.5) {
+    if (nearly) return note(`At actual size the page is ${Math.ceil(ptToMm(over))} mm bigger than the printable area, so its outer edge may not print.`, true);
+    return note(`${on} is bigger than the printable area at actual size, so part of it won't print. Choose Tile, Fit or a bigger paper.`, true);
+  }
   if (o.sizing === "scale") {
     const how = n ? fmtRatio(o.scaleRatio) : fmtPercent(o.scalePercent / 100);
-    const ow = boxW(p.box) - boxW(sheet.contentArea);
-    const oh = boxH(p.box) - boxH(sheet.contentArea);
-    const over = Math.max(ow, oh);
     if (over > 0.5) {
-      // A little over is normal for "A1 at 1:200 on A3": the drawing's own border margin goes.
-      const rel = Math.max(ow / boxW(sheet.contentArea), oh / boxH(sheet.contentArea));
-      if (rel < 0.08) {
+      if (nearly) {
         return note(`At ${how} the page is ${Math.ceil(ptToMm(over))} mm bigger than the printable area, so its outer edge may not print.`, true);
       }
       return note(`At ${how} the page is bigger than the printable area. Choose Tile, or a smaller scale.`, true);
