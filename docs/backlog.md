@@ -85,8 +85,3 @@ that work's brief or scope file and comes off this list.
 
 - **Dialogs**: their styling overall is heavy, with a large header and footer each.
 - **Tooltips**: their styling.
-
-## Bugs
-
-- **The canvas strobes while it resizes**, whether from resizing the window or the left
-  sidebar.

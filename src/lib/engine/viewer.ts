@@ -732,12 +732,16 @@ export class Viewer {
         this.setView(keepCentre(this.view, oldW, oldH, cssW, cssH), "pan");
       }
     }
+    this.canvas.style.width = `${cssW}px`;
+    this.canvas.style.height = `${cssH}px`;
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
+      // Setting the size clears the canvas. This runs from a ResizeObserver, before the
+      // browser paints, so draw now: left to the next animation frame, every step of a window
+      // or sidebar resize would present one empty frame first (the canvas strobed).
+      this.draw();
     }
-    this.canvas.style.width = `${cssW}px`;
-    this.canvas.style.height = `${cssH}px`;
     if (dprChanged) this.inputActivity(true);
     this.requestFrame();
     this.scheduleSettle();
