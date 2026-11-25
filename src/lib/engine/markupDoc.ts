@@ -87,7 +87,8 @@ export class MarkupDoc {
       if (!f) throw new Error(`no frame for page ${page + 1}`);
       return f;
     };
-    const out = changesFor(this.saved, this.markups, (m) => toSpec(m, frame(m.page)));
+    // One Vellum can't redraw is never added: only the file's own copy is it (see markSaved).
+    const out = changesFor(this.saved, this.markups, (m) => toSpec(m, frame(m.page))).filter((c) => !(c.op === "add" && this.byId(c.spec.nm)?.kind === "foreign"));
     return out.map((c): Change => {
       if (c.op === "add" || c.op === "bake" || c.op === "move") return c;
       const id = c.op === "delete" ? c.nm : c.spec.nm;
@@ -110,9 +111,21 @@ export class MarkupDoc {
    * After a save: `written` (the markups as they were when the save's changes were worked out,
    * by default the current ones) is now what the file holds. Anything changed while the save
    * was under way stays unsaved.
+   *
+   * An annotation Vellum can't redraw (kind "foreign") that the save deleted is gone for good:
+   * undo can't bring it back, as there's nothing to write it from but a grey box
+   * (docs/review-0.2.0.md, 7). It leaves every state of the history, as a baked signature does.
    */
   markSaved(written: Markup[] = this.markups): void {
+    const kept = new Set(written.map((m) => m.id));
+    const gone = new Set(this.saved.filter((m) => m.kind === "foreign" && !kept.has(m.id)).map((m) => m.id));
     this.saved = written;
+    this.history.forget(gone);
+    for (const id of gone) {
+      this.files.delete(id);
+      this.hidden.delete(id);
+      this.selection.delete(id);
+    }
   }
 
   /** Ids of markups that are in the file (and so drawn by PDFium unless hidden). */

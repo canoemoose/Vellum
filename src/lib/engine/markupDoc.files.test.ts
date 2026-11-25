@@ -273,6 +273,39 @@ describe("annotations Vellum can't redraw", () => {
   });
 });
 
+describe("an annotation Vellum can't redraw, deleted and saved (review 0.2.0, 7)", () => {
+  it("can't be brought back by undo, so a later save writes no grey box", async () => {
+    const { doc, t } = await setup();
+    doc.unlocked = true;
+    const att: FileAnnot = { ...annot(rect("x", "Pat"), 0, false), subtype: "FileAttachment" };
+    doc.adoptFile(read([att, annot(rect("y", "Pat", 300), 1, false)]));
+    t.select(["y"]);
+    t.nudge(5, 0);
+    t.select(["x"]);
+    t.deleteSelection();
+    expect(doc.changes().map((c) => c.op)).toEqual(["replace", "delete"]);
+    doc.hideAfterSave();
+    doc.markSaved();
+    expect(doc.dirty).toBe(false);
+    // Undo takes back the deletion and the nudge, but not the attachment, which is gone from the file.
+    t.undo();
+    expect(doc.markups.map((m) => m.id)).toEqual(["y"]);
+    t.undo();
+    expect(doc.markups.map((m) => m.id)).toEqual(["y"]);
+    expect(doc.changes().map((c) => c.op)).toEqual(["replace"]);
+  });
+
+  it("is never written as an addition, whatever brings it back", async () => {
+    const { doc } = await setup();
+    const att: FileAnnot = { ...annot(rect("x", "Pat"), 0, false), subtype: "FileAttachment" };
+    doc.adoptFile(read([att]));
+    const m = doc.markups[0];
+    doc.saved = [];
+    expect(doc.changes()).toEqual([]);
+    expect(m.kind).toBe("foreign");
+  });
+});
+
 describe("after a save", () => {
   it("keeps the overlay drawing what it drew, hidden again by /NM, and finds the rest by order", async () => {
     const { doc, t } = await setup();
