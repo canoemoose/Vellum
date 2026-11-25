@@ -8,6 +8,7 @@ import type { MarkupDoc } from "./markupDoc";
 import { paintOps } from "./markupPainter";
 import { type Op, opsFor } from "../markup/ops";
 import { fitText } from "../markup/textbox";
+import { rebase } from "../markup/history";
 import { type HandleId, dragHandle, handleAt, handleCursor, handles, hits, insideMarquee, moveBy, partAt, orthoFrom, rectPts, shapeBounds, simplify, snapAngle, squareFrom, turnOf } from "../markup/geometry";
 import { type Markup, type MarkupKind, type Pt, type Rect, type Style, type TextStyle, newId, normRect } from "../markup/types";
 import { type Draw, type DrawContext, type KindDef, type Shape, MIN_BOX_PX, pointLock } from "../markup/kinds/kind";
@@ -88,7 +89,7 @@ const DRAG_PX = 3;
 
 type Gesture =
   | { kind: "move"; page: number; start: Pt; before: Markup[]; ids: string[]; moved: boolean }
-  | { kind: "handle"; page: number; id: string; handle: HandleId; before: Markup[]; nudge?: Pt; crop?: boolean }
+  | { kind: "handle"; page: number; id: string; handle: HandleId; before: Markup[]; nudge?: Pt; crop?: boolean; lifted?: boolean }
   | { kind: "marquee"; page: number; a: Pt; b: Pt; add: boolean }
   | { kind: "draw"; page: number; a: Pt; sx: number; sy: number; draft: Markup | null; points: Pt[] }
   | { kind: "pending"; page: number; id: string; sx: number; sy: number; start: Pt; before: Markup[]; part?: { handle: HandleId; nudge: Pt } };
@@ -492,7 +493,8 @@ export class MarkupTool {
     const d = this.doc;
     if (!d?.selection.size) return false;
     if (!this.previewBase) this.opts.onLift?.([...this.changeable()]);
-    this.previewBase ??= this.markups;
+    // The file's annotations may have been read in since the preview began (history.ts rebase).
+    this.previewBase = this.previewBase ? rebase(this.previewBase, this.markups) : this.markups;
     d.history.replace(this.styled(this.previewBase, d.selection, patch));
     this.redraw();
     return true;
@@ -502,7 +504,7 @@ export class MarkupTool {
   restyle(patch: Partial<Style>, text?: Partial<TextStyle>): boolean {
     const d = this.doc;
     if (this.previewBase && d) {
-      d.history.replace(this.previewBase);
+      d.history.replace(rebase(this.previewBase, this.markups));
       this.previewBase = null;
     }
     if (!d?.selection.size) return false;
@@ -701,6 +703,7 @@ export class MarkupTool {
         }
         return this.move(sx, sy, mods);
       case "move": {
+        g.before = rebase(g.before, this.markups); // the file's annotations, read in meanwhile
         let dx = p[0] - g.start[0], dy = p[1] - g.start[1];
         if (mods.shift) Math.abs(dx) > Math.abs(dy) ? (dy = 0) : (dx = 0);
         const ids = new Set(g.ids);
@@ -708,7 +711,11 @@ export class MarkupTool {
         break;
       }
       case "handle":
-        if (this.markups === g.before) this.opts.onLift?.([g.id]);
+        if (!g.lifted) {
+          g.lifted = true;
+          this.opts.onLift?.([g.id]);
+        }
+        g.before = rebase(g.before, this.markups); // the file's annotations, read in meanwhile
         {
           const q: Pt = g.nudge ? [p[0] + g.nudge[0], p[1] + g.nudge[1]] : p;
           const drag = (m: Markup): Markup => (g.crop && m.kind === "stamp" ? dragCrop(m, g.handle, q, this.tolPt(MIN_BOX_PX)) : dragHandle(m, g.handle, q, mods.shift));
@@ -735,7 +742,7 @@ export class MarkupTool {
       case "move":
       case "handle": {
         const final = this.markups;
-        this.doc.history.replace(g.before);
+        this.doc.history.replace(rebase(g.before, final));
         const changed = g.kind === "move" ? new Set(g.ids) : new Set([g.id]);
         this.commit(final.map((m) => (changed.has(m.id) ? touch(settle(m)) : m)));
         break;
@@ -1201,7 +1208,9 @@ export class MarkupTool {
     this.editing = null;
     const m = this.doc.byId(e.id);
     const final = this.markups;
-    this.doc.history.replace(e.before);
+    // The file's annotations may have been read in while typing: the undo step keeps them.
+    const before = rebase(e.before, final, e.isNew ? new Set([e.id]) : undefined);
+    this.doc.history.replace(before);
     // Rule 3: an empty one stays if its kind keeps it (a callout; a text box something shows).
     const fm = final.find((x) => x.id === e.id);
     if (m && fm && defOf(m).typed && !(fm as TypedMarkup).text.trim() && !defOf(fm).keepEmpty?.(fm)) {
@@ -1209,8 +1218,13 @@ export class MarkupTool {
       else this.redraw();
       return;
     }
-    if (final !== e.before) this.commit(final.map((x) => (x.id === e.id ? touch(x) : x)));
-    else this.redraw();
+    // Nothing typed (whatever else changed meanwhile): no step for it.
+    if (fm === e.before.find((x) => x.id === e.id)) {
+      this.doc.history.replace(final);
+      this.redraw();
+      return;
+    }
+    this.commit(final.map((x) => (x.id === e.id ? touch(x) : x)));
   }
 
   // ---------------------------------------------------------------- painting

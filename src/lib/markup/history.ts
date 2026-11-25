@@ -82,6 +82,21 @@ export class History {
 }
 
 /**
+ * A list a tool held from before an edit (a text box's state before typing, a drag's start, a
+ * style preview's base), brought up to date with `now`: markups in `now` that it lacks are
+ * added, except those the edit itself made (`made`). Between taking it and putting it back
+ * only History.adopt adds markups (the file's annotations, read in the background), so without
+ * this an undo step would be left without them, and undo then save would delete them from the
+ * file (docs/review-0.2.0.md, 3). `held` itself when there's nothing to add.
+ */
+export function rebase(held: Markup[], now: Markup[], made?: ReadonlySet<string>): Markup[] {
+  if (held === now) return held;
+  const have = new Set(held.map((m) => m.id));
+  const add = now.filter((m) => !have.has(m.id) && !made?.has(m.id));
+  return add.length ? [...held, ...add] : held;
+}
+
+/**
  * What saving `current` over a file that holds `saved` means: new markups added, changed ones
  * replaced (by id), removed ones deleted. `spec` turns a markup into its annotation.
  */

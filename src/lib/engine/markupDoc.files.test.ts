@@ -326,6 +326,98 @@ describe("after a save", () => {
   });
 });
 
+describe("the file's annotations read in mid-edit (review 0.2.0, 3)", () => {
+  const theirs = () => read([annot(rect("theirs", "Pat", 400), 0, false)]);
+  const ids = (doc: MarkupDoc) => doc.markups.map((m) => m.id);
+
+  it("keeps them in the undo step of a text box typed into meanwhile", async () => {
+    const { doc, t, v } = await setup();
+    t.setTool("text");
+    click(t, v, [100, 100]);
+    const box = doc.markups[0].id;
+    t.setText("Loose");
+    doc.adoptFile(theirs());
+    t.setText("Loose bolt");
+    t.finishText();
+    expect(ids(doc)).toEqual([box, "theirs"]);
+    // Undoing the box leaves the file's annotation: saving now would change nothing.
+    t.undo();
+    expect(ids(doc)).toEqual(["theirs"]);
+    expect(doc.changes()).toEqual([]);
+  });
+
+  it("records no step for a text box opened, left untyped, while they arrive", async () => {
+    const { doc, t, v } = await setup();
+    t.setTool("text");
+    click(t, v, [100, 100]);
+    t.setText("Note");
+    t.finishText();
+    doc.markSaved();
+    t.setTool("select");
+    const box = doc.markups[0];
+    (t as unknown as { startText(id: string, isNew: boolean): void }).startText(box.id, false);
+    doc.adoptFile(theirs());
+    t.finishText();
+    expect(doc.byId(box.id)).toBe(box);
+    expect(doc.dirty).toBe(false);
+  });
+
+  it("keeps them through a drag that was under way", async () => {
+    const { doc, t, v } = await setup();
+    t.setTool("rect");
+    drag(t, v, [100, 100], [150, 150]);
+    t.setTool("select");
+    const mine = doc.markups[0].id;
+    const [sx, sy] = scr(v, 125, 100);
+    t.down(sx, sy, 1, none);
+    t.move(sx + 20, sy + 20, none);
+    doc.adoptFile(theirs());
+    t.move(sx + 40, sy + 40, none);
+    t.up(sx + 40, sy + 40, none);
+    expect(ids(doc)).toEqual([mine, "theirs"]);
+    t.undo();
+    expect(ids(doc)).toEqual([mine, "theirs"]);
+    t.undo();
+    expect(ids(doc)).toEqual(["theirs"]);
+    expect(doc.changes()).toEqual([]);
+  });
+
+  it("keeps them through a resize that was under way", async () => {
+    const { doc, t, v } = await setup();
+    t.setTool("rect");
+    drag(t, v, [100, 100], [150, 150]);
+    t.setTool("select");
+    const mine = doc.markups[0].id;
+    const [sx, sy] = scr(v, 150, 150);
+    t.down(sx, sy, 1, none);
+    t.move(sx + 20, sy + 20, none);
+    doc.adoptFile(theirs());
+    t.move(sx + 40, sy + 40, none);
+    t.up(sx + 40, sy + 40, none);
+    expect(ids(doc)).toEqual([mine, "theirs"]);
+    t.undo();
+    expect(ids(doc)).toEqual([mine, "theirs"]);
+  });
+
+  it("keeps them through a style preview that was showing", async () => {
+    const { doc, t, v } = await setup();
+    t.setTool("rect");
+    drag(t, v, [100, 100], [150, 150]);
+    t.setTool("select");
+    const mine = doc.markups[0].id;
+    t.select([mine]);
+    t.preview({ width: 5 });
+    doc.adoptFile(theirs());
+    t.preview({ width: 6 });
+    expect(ids(doc)).toEqual([mine, "theirs"]);
+    t.restyle({ width: 6 });
+    expect(ids(doc)).toEqual([mine, "theirs"]);
+    t.undo();
+    expect(ids(doc)).toEqual([mine, "theirs"]);
+    expect(doc.byId(mine)!.style.width).not.toBe(6);
+  });
+});
+
 describe("phase 7a leftovers", () => {
   it("doesn't copy text markups, and nudging one records no undo step", async () => {
     const { doc, t } = await setup();
