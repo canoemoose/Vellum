@@ -14,17 +14,45 @@ under Releasing in [CLAUDE.md](../CLAUDE.md); the review that is holding the rel
 - [x] README rewritten and pushed.
 - [x] The six "Before 0.2.0" items in [review-0.2.0.md](review-0.2.0.md), and items 7 to 13
       as well (25 November). Most are covered by tests only: see the Status column there.
+- [x] rc4 (25 November) tried installed by Matt. It turned up, all fixed on `main` and in rc5:
+      an existing markup drawn twice while edited on image-heavy pages; the old one lingering
+      until the view moved, or flashing back from the preview; the re-render queued behind
+      sidebar thumbnails; the "?" warning too easy to miss (now a question before the save);
+      "?" shown in Vellum itself until the markup was touched; thumbnails and the mini map
+      never showing markups; previews stored to disk without saved markups.
+- [x] rc5 (25 November) installed and tried by Matt: the five checks below are good.
+- [x] After rc5, on `main` (25 November), tried by Matt in a development build, not in an
+      installed one: new installs follow the Windows theme; Help > About > Reset… and
+      `--reset`; a sheet's edge can be scrolled or dragged in to the middle of the window; the
+      last page is selected at the end of a continuous set.
 - [ ] Check the three points under "Check before publishing" below.
-- [ ] `node tools/set-version.mjs 0.2.0`, commit "Release 0.2.0", push `main`.
-- [ ] `git tag v0.2.0`, `git push origin v0.2.0`; the workflow takes about 16 minutes.
+- [x] `node tools/set-version.mjs 0.2.0`, commit "Release 0.2.0", push `main`.
+- [x] `git tag v0.2.0`, `git push origin v0.2.0`; the workflow takes about half an hour.
 - [ ] Publish the draft with the notes below (`gh release edit v0.2.0 --draft=false --latest
       --notes-file ...`, or on GitHub).
-- [ ] Delete the unpublished `v0.2.0-rc2` draft release.
-- [ ] After a minute, Help > Check for updates from a 0.1.4 install and from an rc3 install.
+- [ ] Delete the unpublished `v0.2.0-rc2` draft release, and the rc4 and rc5 drafts.
+- [ ] After a minute, Help > Check for updates from a 0.1.4 install and from an rc install.
       Worth trying once on the way: cancel the installer, and see what the app says.
 
-The app code on `main` has changed since rc3, so the fixes above have only been tried in a
-development build, not an installed one. An rc4 would test them installed; Matt's call.
+## Tried in rc5
+
+Tried by Matt on 25 November, first in a development build and then in the installed rc5:
+all five good.
+
+1. Unlock a file and move a markup that came with it, on a page with a big image (the
+   Fieldwork site map): the original goes as the drag starts, the page stays sharp, and
+   moving a second one doesn't bring the first back.
+2. The same straight after opening a long file, while the sidebar is still filling.
+3. Thumbnails and the mini map: a drawn markup appears on both as it's drawn; a moved one
+   moves on both. Curtis Hall (marked up), page 64: its cloud and rectangle show on both.
+4. A text box with a delta or a greater-or-equal sign: Save asks first; Cancel leaves it
+   unsaved; saved and reopened, Vellum shows the characters without the box being touched.
+5. Save, then go on editing without reopening; crash recovery (end Vellum in Task Manager,
+   reopen, Restore); signature import from a phone photo. Carried over from the rc4 list.
+
+Not seen and not worth holding the release for: Print waiting for scales (the Fieldwork set
+reads too fast to show it), and the "Unscaled" box in Print, which needs one PDF whose page 1
+has no scale and a later page has (a cover sheet in front of drawings).
 
 ## Check before publishing
 
@@ -38,8 +66,9 @@ Written from the rc1 and rc3 notes and the code, not from using the app:
    is replaced by the Edit lock section. Confirm nothing still calls it a padlock in a way the
    notes should mention.
 
-Item 12 of the review (symbols outside Western European text saved as "?") is only warned
-about in 0.2.0, not fixed: add a line under a "Known limits" heading.
+Item 12 of the review (symbols outside Western European text saved as "?") is only asked
+about in 0.2.0, not fixed (the fix, an embedded font, is on the backlog for 0.2.1): the notes
+say so under "Known limits".
 
 ## The notes
 
@@ -64,6 +93,7 @@ Highlights: Markup, measuring and signatures
 - Rotation: stamps, signatures, images, polygons and clouds. Grip, or [ and ] for 90°, Shift for 15°.
 - Style per tool, remembered: colour, weight, opacity, dash, fill (None, White, red, yellow, green, blue, grey), text style.
 - Markups panel: every markup, as lines. Click to jump to it; right-click to delete.
+- Markups show on the sidebar thumbnails and the mini map as they're drawn or moved.
 
 **Edit lock**
 - Edit file switch beside the page layout buttons. Markups that came with the file are locked until it's on.
@@ -85,6 +115,7 @@ Highlights: Markup, measuring and signatures
 
 **Editing and saving**
 - Save, Save a copy. Nothing is written until saved.
+- Save asks first when text holds characters other PDF apps can't show (see Known limits).
 - Undo and redo.
 - Cut, copy, paste and select all for markups, via the system clipboard.
 - Crash recovery of unsaved markups.
@@ -102,13 +133,21 @@ Highlights: Markup, measuring and signatures
 
 - Print: To scale and the scale note use each page's own drawing scale. Manual layout likewise, including files added to it.
 - Print: the scale note describes the sheet in the preview, not always the first.
+- Print: To scale on a mix of pages with and without a drawing scale shows both the ratio and the percentage the unscaled pages print at.
 - Print: Actual and To scale never shrink a page to fit; a page too big for the sheet is cut off, with a warning. "Never enlarge small pages" is Fit only.
 - File types: Vellum.PDF and Vellum.Image replace Vellum.Document. If Vellum was your default for PDFs or images, choose it again (Open with > Choose another app > Always).
 - Rotate view: [ and ] (was R). R: Rectangle tool.
 - Sidebar 260 px wide by default.
+- Scroll and pan: the edge of a sheet bigger than the window can be brought in to the middle of the window (was held at the window's edge).
+- Theme follows Windows on a new install (was dark). Existing installs keep theirs.
 - F1 lists all shortcuts.
 
 ## Fixed
 
 - Canvas flickered while the window or sidebar was resized.
+- Continuous layout: a short last page was never the selected page in the sidebar.
+
+## Known limits
+
+- Text in a markup is saved in the standard PDF fonts, which hold Western European characters only. Others (Δ, Ω, ≥, ≤, ≠, non-Latin scripts) show as "?" in other PDF apps, and in Vellum's own prints and thumbnails; Vellum's page shows them as typed. ° and ± are fine.
 ```
