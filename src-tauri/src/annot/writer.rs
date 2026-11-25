@@ -525,11 +525,7 @@ impl Writer {
         let id = match entry.id {
             Some(id) => {
                 if let Some(Object::Dictionary(old)) = self.get(id).cloned() {
-                    for k in [&b"Popup"[..], b"IRT", b"RT", b"Parent", b"StructParent", b"CreationDate"] {
-                        if let Ok(v) = old.get(k) {
-                            d.set(k.to_vec(), v.clone());
-                        }
-                    }
+                    keep_from_old(&old, &mut d);
                 }
                 self.inc.new_document.set_object(id, d);
                 id
@@ -687,3 +683,25 @@ impl Writer {
     }
 }
 
+
+/// What a redrawn annotation keeps from the one it replaces: its links to other annotations
+/// (popups, replies), its creation date, and what Vellum doesn't edit but another app set
+/// (docs/review-0.2.0.md, 9): its flags (a hidden, non-printing or locked comment stays so),
+/// its layer (/OC), subject and language, and its rich text while the text is unchanged
+/// (with new text, the old rich text would show the old words in apps that prefer it).
+fn keep_from_old(old: &Dictionary, d: &mut Dictionary) {
+    for k in [&b"Popup"[..], b"IRT", b"RT", b"Parent", b"StructParent", b"CreationDate", b"OC", b"Subj", b"Lang"] {
+        if let Ok(v) = old.get(k) {
+            d.set(k.to_vec(), v.clone());
+        }
+    }
+    if let Ok(f) = old.get(b"F").and_then(|f| f.as_i64()) {
+        d.set("F", f);
+    }
+    if let Ok(rc) = old.get(b"RC") {
+        let text = |x: &Dictionary| x.get(b"Contents").ok().and_then(|c| c.as_str().ok()).map(|c| c.to_vec());
+        if text(old) == text(d) {
+            d.set("RC", rc.clone());
+        }
+    }
+}

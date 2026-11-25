@@ -307,3 +307,55 @@ fn a_delete_on_a_page_sharing_its_annots_array_leaves_the_others_alone() {
     let out = annot::apply(file, "", &[Change::Delete { page: 0, nm: "a".into(), at: None }]).unwrap();
     assert_eq!(annot_counts(out), vec![0, 1]);
 }
+
+/// The annotation dictionary with this /NM in a saved file (the latest copy, as lopdf reads it).
+fn annot_dict(bytes: &[u8], nm: &str) -> lopdf::Dictionary {
+    let doc = lopdf::Document::load_mem(bytes).unwrap();
+    doc.objects
+        .values()
+        .filter_map(|o| o.as_dict().ok())
+        .find(|d| d.get(b"NM").ok().and_then(|v| v.as_str().ok()) == Some(nm.as_bytes()))
+        .cloned()
+        .expect("annotation")
+}
+
+#[test]
+fn redrawing_another_apps_annotation_keeps_what_vellum_doesnt_edit() {
+    // docs/review-0.2.0.md, 9. Another app's comment: locked and not printing, on a layer,
+    // with a subject, a language and rich text.
+    let one = annot::apply(blank(), "", &[Change::Add { spec: square(0, "a", [10.0, 10.0, 60.0, 40.0]) }]).unwrap();
+    let mut doc = lopdf::Document::load_mem(&one).unwrap();
+    let ocg = doc.add_object(lopdf::dictionary! { "Type" => "OCG", "Name" => lopdf::Object::string_literal("Comments") });
+    let id = *doc
+        .objects
+        .iter()
+        .find(|(_, o)| o.as_dict().ok().and_then(|d| d.get(b"NM").ok()).and_then(|v| v.as_str().ok()) == Some(b"a"))
+        .unwrap()
+        .0;
+    let d = doc.get_object_mut(id).unwrap().as_dict_mut().unwrap();
+    d.set("F", 128); // Locked, no Print
+    d.set("OC", lopdf::Object::Reference(ocg));
+    d.set("Subj", lopdf::Object::string_literal("Check"));
+    d.set("Lang", lopdf::Object::string_literal("en-GB"));
+    d.set("RC", lopdf::Object::string_literal("<body><p>note</p></body>"));
+    let mut theirs = Vec::new();
+    doc.save_to(&mut theirs).unwrap();
+
+    // Moved in Vellum, text as it was: everything kept.
+    let moved = annot::apply(theirs.clone(), "", &[Change::Replace { spec: square(0, "a", [20.0, 20.0, 80.0, 50.0]) }]).unwrap();
+    let d = annot_dict(&moved, "a");
+    assert_eq!(d.get(b"F").unwrap().as_i64().unwrap(), 128, "flags");
+    assert_eq!(d.get(b"OC").unwrap().as_reference().unwrap(), ocg);
+    assert_eq!(d.get(b"Subj").unwrap().as_str().unwrap(), b"Check");
+    assert_eq!(d.get(b"Lang").unwrap().as_str().unwrap(), b"en-GB");
+    assert!(d.has(b"RC"), "rich text kept while the text is the same");
+
+    // Its text changed: the old rich text would show the old words, so it goes; the rest stays.
+    let mut spec = square(0, "a", [20.0, 20.0, 80.0, 50.0]);
+    spec.contents = Some("changed".into());
+    let edited = annot::apply(theirs, "", &[Change::Replace { spec }]).unwrap();
+    let d = annot_dict(&edited, "a");
+    assert!(!d.has(b"RC"), "stale rich text dropped");
+    assert_eq!(d.get(b"F").unwrap().as_i64().unwrap(), 128);
+    assert_eq!(d.get(b"OC").unwrap().as_reference().unwrap(), ocg);
+}
