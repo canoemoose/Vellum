@@ -12,7 +12,7 @@ describe("sanitiseSettings", () => {
     // The accent was a setting until 12 November 2026; a saved one is dropped.
     expect("accent" in sanitiseSettings({ accent: "#3b82f6" })).toBe(false);
     expect(s.layoutMode).toBe("single");
-    expect(s.theme).toBe("dark");
+    expect(s.theme).toBe("system");
   });
   it("keeps valid values", () => {
     const s = sanitiseSettings({
@@ -43,7 +43,7 @@ describe("sanitiseSettings", () => {
       theme: "purple", sidebarWidth: 5000, recent: ["ok", 3], scales: { a: -1, b: "x", c: 50 },
       window: { x: 1, y: 2, w: 0, h: 5 },
     });
-    expect(s.theme).toBe("dark");
+    expect(s.theme).toBe("system");
     expect(s.sidebarWidth).toBe(SIDEBAR_MAX);
     expect(s.recent).toEqual(["ok"]);
     expect(s.scales).toEqual({ c: 50 });

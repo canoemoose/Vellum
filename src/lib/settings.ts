@@ -74,7 +74,7 @@ export const SIDEBAR_DEFAULT = 260;
 export const DEFAULTS: Settings = {
   layoutMode: "continuous",
   columns: 2,
-  theme: "dark",
+  theme: "system",
   sidebarOpen: true,
   sidebarWidth: SIDEBAR_DEFAULT,
   sidebarTab: "pages",
@@ -108,7 +108,7 @@ export function sanitiseSettings(raw: unknown): Settings {
   return {
     layoutMode: s.layoutMode === "single" || s.layoutMode === "columns" ? s.layoutMode : "continuous",
     columns: typeof s.columns === "number" && Number.isFinite(s.columns) ? Math.min(MAX_COLUMNS, Math.max(MIN_COLUMNS, Math.round(s.columns))) : 2,
-    theme: s.theme === "light" || s.theme === "system" ? s.theme : "dark",
+    theme: s.theme === "light" || s.theme === "dark" ? s.theme : "system",
     sidebarOpen: typeof s.sidebarOpen === "boolean" ? s.sidebarOpen : DEFAULTS.sidebarOpen,
     sidebarWidth: num(s.sidebarWidth) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, s.sidebarWidth)) : SIDEBAR_DEFAULT,
     sidebarTab: s.sidebarTab === "outline" || s.sidebarTab === "markups" ? s.sidebarTab : "pages",
