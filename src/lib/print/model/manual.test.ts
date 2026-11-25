@@ -5,6 +5,7 @@ import {
   defaultScale, duplicateSheet, emptyLayout, findItem, freeSpot, fullPageBox, itemBox, labelText, layoutFileCount, manualToJob,
   moveItem, pageToSheet, placedKeys, removeItem, removeSheet, resetCrop, scaleFromCorner, scaleLabel, setCrop,
   setRatio, setRotation, setScale, sheetCount, sheetJob, sheetToPage, showsName, labelParts, sourceDescription, updateItem,
+  withDrawingScales,
 } from "./manual";
 import { A1, A3, A4, ref, uniform } from "./testkit";
 
@@ -211,6 +212,34 @@ describe("sheets", () => {
     const one = removeSheet(emptyLayout(A3L, uniform(5)), 0);
     expect(one.sheets).toHaveLength(1);
     expect(duplicateSheet(l, 9)).toBe(l);
+  });
+});
+
+describe("drawing scales arriving late", () => {
+  it("updates each placed page's scale and keeps its size on the sheet", () => {
+    // Fieldwork page 4 (1:100) placed while Print still thought it was page 1's 1:5000.
+    let l = addItem(layout(), 0, ref(A3L.w, A3L.h, { page: 3, drawingScale: 5000 }), { scale: 0.5 }).layout;
+    l = addItem(l, 0, ref(100, 100, { page: 0, drawingScale: 5000 }), { scale: 1 }).layout;
+    const before = l.sheets[0].items.map(itemBox);
+    const known: Record<number, number | null> = { 0: 5000, 3: 100 };
+    const next = withDrawingScales(l, (_d, p) => known[p]);
+    expect(next.sheets[0].items.map((it) => it.ref.drawingScale)).toEqual([100, 5000]);
+    expect(next.sheets[0].items.map(itemBox)).toEqual(before);
+    expect(scaleLabel(next.sheets[0].items[0])).toBe("p4 · 1:200");
+    expect(withDrawingScales(next, (_d, p) => known[p])).toBe(next); // nothing new: the same layout
+  });
+
+  it("leaves pages of documents it doesn't know, and images, alone", () => {
+    let l = addItem(layout(), 0, ref(100, 100, { drawingScale: 50 })).layout;
+    l = addItem(l, 0, ref(100, 100, { kind: "image", drawingScale: null })).layout;
+    expect(withDrawingScales(l, () => undefined)).toBe(l);
+    const n = withDrawingScales(l, () => 20);
+    expect(n.sheets[0].items.map((it) => it.ref.drawingScale)).toEqual([20, null]);
+  });
+
+  it("clears a scale the page turns out not to have", () => {
+    const l = addItem(layout(), 0, ref(100, 100, { drawingScale: 50 })).layout;
+    expect(withDrawingScales(l, () => null).sheets[0].items[0].ref.drawingScale).toBeNull();
   });
 });
 

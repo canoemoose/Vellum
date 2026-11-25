@@ -107,6 +107,7 @@
   import type { Menu, MenuItem } from "./lib/shell/menuNav";
   import { cursorText, pageSizeText } from "./lib/shell/paper";
   import { formatRatio, pickDetectedScale, rememberScale, type DocScale } from "./lib/shell/scale";
+  import { limiter } from "./lib/shell/limiter";
   import { addRecent, formatZoom } from "./lib/shell/format";
   import { navHint } from "./lib/shell/shortcuts";
   import { resolveTheme, type ThemePref } from "./lib/shell/theme";
@@ -516,26 +517,11 @@
         .finally(() => detecting.delete(key));
     };
     // The page in view (or being measured) goes first; Print's pages wait their turn.
-    if (soon) scaleReads.unshift(read);
-    else scaleReads.push(read);
-    pumpScaleReads();
+    scaleReads(read, soon);
   }
 
-  /**
-   * Title-block reads waiting to start. Two at a time: each holds PDFium while it reads, and
-   * Print on a 200-page set asks for every page at once, which would hold up the preview.
-   */
-  const scaleReads: (() => Promise<void>)[] = [];
-  let scaleReading = 0;
-  function pumpScaleReads() {
-    while (scaleReading < 2 && scaleReads.length) {
-      scaleReading++;
-      void scaleReads.shift()!().finally(() => {
-        scaleReading--;
-        pumpScaleReads();
-      });
-    }
-  }
+  /** Title-block reads, two at a time (see limiter.ts). */
+  const scaleReads = limiter(2);
 
   // The page in view gets its title block read, so the status bar can show its own scale.
   $effect(() => {

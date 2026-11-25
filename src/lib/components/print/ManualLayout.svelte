@@ -3,8 +3,12 @@
   // again, keeps the sheets); PrintDialog resets it when it closes.
   import type { ManualLayout as Layout } from "../../print/model/manual";
   import type { PrintDoc } from "../../print/context";
+  import { limiter } from "../../shell/limiter";
 
   let kept: { layout: Layout; marginMode: string; extra: PrintDoc[] } | null = null;
+
+  /** Title-block reads for files opened here, two at a time (see limiter.ts). */
+  const scaleReads = limiter(2);
 
   /** The layout made so far while the print dialog is open, or null. */
   export function keptManualLayout(): Layout | null {
@@ -43,6 +47,7 @@
     type Corner, type Edge, type ManualItem, addItem, addSheet, areaOfLayout, clearSheet, cropFromEdge, duplicateSheet,
     emptyLayout, findItem, itemBox, manualToJob, placedKeys, removeItem, removeSheet, resetCrop, scaleFromCorner,
     scaleLabel, showsName, setCrop, defaultScale, setPaper, setRatio, setRotation, setScale, sheetCount, sheetJob, sourceDescription, updateItem,
+    withDrawingScales,
   } from "../../print/model/manual";
   import { layoutPaths, parseLayout, restore, serialise } from "../../print/model/serial";
   import { type PrintSettings, PERCENT_PRESETS, SCALE_PRESETS } from "../../print/model/settings";
@@ -52,6 +57,8 @@
   import { groupPapers } from "../../print/paperOrder";
   import { forgetLayoutFor, loadLayoutFor, storeLayoutFor } from "../../print/layoutMemory";
   import { pathKey } from "../../shell/tabs";
+  import { pickDetectedScale } from "../../shell/scale";
+  import type { DocInfo } from "../../render/types";
   import { loadSnap, saveSnap } from "../../print/store";
   import { type View, fitRect, screenToWorld, wheelZoomFactor, zoomBy } from "../../view/viewMath";
 
@@ -127,6 +134,20 @@
 
   $effect(() => {
     kept = { layout, marginMode, extra: extraDocs };
+  });
+
+  // Placed pages follow their documents' drawing scales as title blocks are read, and a
+  // remembered layout from before pages had their own scales is put right (withDrawingScales).
+  // Not an edit: a layout that was only brought up to date isn't saved over the remembered one.
+  $effect(() => {
+    const docs = allDocs;
+    const l = layout;
+    const next = withDrawingScales(l, (docId, page) => docs.find((d) => d.docId === docId)?.scaleOf(page));
+    if (next === l) return;
+    untrack(() => {
+      if (baseline === l) baseline = next;
+      layout = next;
+    });
   });
 
   // ---- Remembered per file ----
@@ -663,6 +684,8 @@
     const load = () => {
       if (done) return;
       done = true;
+      // Read the page's title block now, so its scale is known before it's placed.
+      untrack(() => sp.doc.scaleOf(sp.page));
       const have = thumbs.get(key);
       if (have) return draw(have);
       context.renderer
@@ -761,19 +784,49 @@
   const sameFile = (a: string, b: string) => a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
   const fileName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
+  /**
+   * Per-page drawing scales for a file opened here rather than from a tab, by the rule a tab
+   * uses (resolvePageScale, with nothing set by hand): the page's own title block, else page
+   * 1's. Each page's title block is read the first time it's asked for, two at a time; the
+   * answer is reactive, so placed pages and the strip follow as reads come in.
+   */
+  function fileScales(info: DocInfo, first: number | null): (page: number) => number | null {
+    let read = $state<Record<number, number | null>>({ 0: first });
+    const asked = new Set<number>([0]);
+    const find = context.renderer.findScale;
+    return (page) => {
+      if (info.kind !== "pdf" || !find) return null;
+      if (!asked.has(page) && page < info.numPages) {
+        asked.add(page);
+        scaleReads(() =>
+          find(info.docId, page)
+            .catch((e) => {
+              console.warn("scale detection failed on page", page + 1, String(e));
+              return [];
+            })
+            .then((c) => {
+              read = { ...read, [page]: pickDetectedScale(c, info.sizes[page].w, info.sizes[page].h) };
+            }),
+        );
+      }
+      const own = read[page];
+      return typeof own === "number" ? own : (read[0] ?? null);
+    };
+  }
+
   /** Open a file for the strip (or find it already open). Returns null if it can't be opened. */
   async function openFile(path: string): Promise<PrintDoc | null> {
     const have = allDocs.find((d) => sameFile(d.path, path));
     if (have) return have;
     try {
       const info = await context.renderer.open(path);
-      // Drawing scale from page 1's title block, for every page (unlike a tab's, read per page).
-      let ratio: number | null = null;
+      // Page 1's title block first, so a file dropped on the sheet lands at a standard ratio.
+      let first: number | null = null;
       if (info.kind === "pdf" && context.renderer.findScale) {
         const c = await context.renderer.findScale(info.docId, 0).catch(() => []);
-        if (c[0]) ratio = c[0].ratio;
+        first = pickDetectedScale(c, info.sizes[0].w, info.sizes[0].h);
       }
-      const doc: PrintDoc = { docId: info.docId, path, title: fileName(path), info, scaleOf: () => ratio };
+      const doc: PrintDoc = { docId: info.docId, path, title: fileName(path), info, scaleOf: fileScales(info, first) };
       extraDocs = [...extraDocs, doc];
       return doc;
     } catch (e) {

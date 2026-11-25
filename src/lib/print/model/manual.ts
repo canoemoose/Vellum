@@ -319,6 +319,32 @@ export function setPaper(l: ManualLayout, paper: Size, margins: Margins): Manual
   return { ...l, paper, margins };
 }
 
+/**
+ * Bring each placed page's drawing scale up to date: `scaleOf` gives a page's scale as it is
+ * known now, or undefined for a document it doesn't know (left alone). A page's scale can
+ * arrive after it was placed (its title block read late), or be wrong in a layout remembered
+ * from before pages had their own scales. Each item keeps its size on the sheet: what was laid
+ * out stays put, and its label and scale choices follow the page's real scale. Returns the
+ * same layout when nothing changed.
+ */
+export function withDrawingScales(l: ManualLayout, scaleOf: (docId: number, page: number) => number | null | undefined): ManualLayout {
+  let changed = false;
+  const sheets = l.sheets.map((sh) => {
+    let mine = false;
+    const items = sh.items.map((it) => {
+      if (it.ref.kind === "image") return it;
+      const n = scaleOf(it.ref.docId, it.ref.page);
+      if (n === undefined || n === it.ref.drawingScale) return it;
+      mine = true;
+      return { ...it, ref: { ...it.ref, drawingScale: n } };
+    });
+    if (!mine) return sh;
+    changed = true;
+    return { ...sh, items };
+  });
+  return changed ? { ...l, sheets } : l;
+}
+
 /** Pages already placed somewhere in the layout, as "docId:page" keys (the strip's dots). */
 export function placedKeys(l: ManualLayout): Set<string> {
   const s = new Set<string>();
