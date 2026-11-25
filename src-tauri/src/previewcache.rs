@@ -30,8 +30,14 @@ const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 
 /// The content key from a file's size, modification time (ns since the epoch) and its first
 /// and last bytes (up to 1 MiB each). Pure, for tests. 16 lower-case hex digits.
+const KEY_VERSION: &[u8] = b"v2";
+
 pub fn content_key_from(size: u64, mtime_ns: u128, head: &[u8], tail: &[u8]) -> String {
-    let mut h = fnv1a(FNV_OFFSET, &size.to_le_bytes());
+    // KEY_VERSION first: previews stored by 0.2.0-rc4 and earlier could lack markups (they were
+    // stored while Vellum drew those itself), so their keys must never match again. The size
+    // cap clears them out in time.
+    let mut h = fnv1a(FNV_OFFSET, KEY_VERSION);
+    h = fnv1a(h, &size.to_le_bytes());
     h = fnv1a(h, &mtime_ns.to_le_bytes());
     h = fnv1a(h, head);
     h = fnv1a(h, tail);

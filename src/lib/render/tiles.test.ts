@@ -99,6 +99,21 @@ describe("LRU tile cache", () => {
     expect(c.size).toBe(2);
   });
 
+  it("keeps stale tiles to draw until a new one of the same key replaces them", () => {
+    const c = new TileCache(1e9);
+    const old = fakeTile(2, 3, 0, 0);
+    c.put(old);
+    c.put(fakeTile(2, 1.5, 0, 0));
+    c.markStale(2, 3);
+    expect(c.peek(2, 3, 0, 0)).toBe(old);
+    expect(c.fresh(2, 3, 0, 0)).toBeUndefined();
+    expect(c.fresh(2, 1.5, 0, 0)).toBeDefined(); // other scales are untouched
+    const next = fakeTile(2, 3, 0, 0);
+    c.put(next);
+    expect(c.fresh(2, 3, 0, 0)).toBe(next);
+    expect(c.size).toBe(2);
+  });
+
   it("replacing a key does not double count bytes", () => {
     const c = new TileCache(1e9);
     c.put(fakeTile(0, 1, 0, 0, 500));

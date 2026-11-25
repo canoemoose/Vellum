@@ -378,6 +378,40 @@ describe("Viewer scheduler", () => {
     expect(r.calls.length).toBe(before);
   });
 
+  it("renders a page again at once when its tiles are dropped (an annotation hidden in PDFium)", async () => {
+    const { v, r } = await openViewer([{ w: 1190, h: 842 }], true);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    const before = r.calls.length;
+    const rs = v.renderScale;
+    const cache = (v as unknown as { cache: { scalesFor(p: number): number[] } }).cache;
+    v.dropPageTiles(0);
+    // The old tiles stay on screen (the page never falls back to its preview, which shows the
+    // annotation just hidden) but no longer count as sharp; thumbnails wait for the re-render.
+    expect(cache.scalesFor(0)).toEqual([rs]);
+    expect(v.visibleComplete()).toBe(false);
+    await vi.advanceTimersByTimeAsync(64);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    // With no input: the view didn't move, so nothing else would plan the page again.
+    const after = r.calls.slice(before);
+    expect(after.some((c) => c.req.rs === rs)).toBe(true);
+    expect(v.visibleComplete()).toBe(true);
+    // The preview is made again too, from the new tiles or by a render of its own.
+    expect((v as unknown as { stalePreviews: Set<number> }).stalePreviews.size).toBe(0);
+  });
+
+  it("starts no thumbnails while work that needs the backend's workers is under way", async () => {
+    const { v } = await openViewer([{ w: 1190, h: 842 }], true);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(v.idleForThumbnails).toBe(true);
+    let done!: () => void;
+    v.holdThumbnails(new Promise<void>((res) => (done = res)));
+    expect(v.idleForThumbnails).toBe(false);
+    done();
+    await flush();
+    expect(v.idleForThumbnails).toBe(true);
+  });
+
   it("drops results that land after the document changed", async () => {
     const { v, r } = await openViewer();
     await flush();

@@ -89,6 +89,54 @@ describe("reading the file in", () => {
     expect(doc.toLift()).toEqual([{ page: 0, nms: ["n"], indices: [] }]);
     expect(doc.overlayDraws(doc.byId("n")!)).toBe(true);
     expect(doc.toLift()).toEqual([]);
+    // The page's render in PDFium now lacks the note: its preview mustn't be kept on disk.
+    expect(doc.hasHidden(0)).toBe(true);
+    expect(doc.hasHidden(1)).toBe(false);
+  });
+
+  it("lifts Vellum's own text at once when the file can only draw it as question marks", async () => {
+    const { doc } = await setup();
+    const box = (id: string, text: string) => ({ id, page: 0, kind: "text", rect: [100, 100, 220, 140], text, textStyle: { size: 10, colour: [0, 0, 0] }, style: defaultStyle("text"), meta: meta("Matt James") }) as Markup;
+    // Another app's (not exact) stays PDFium's, as does plain text.
+    doc.adoptFile(read([annot(box("plain", "25 °C ± 2"), 0), annot(box("delta", "Δ ≥ 5"), 1), annot(box("theirs", "Ω"), 2, false)]));
+    expect(doc.toLift()).toEqual([{ page: 0, nms: ["delta"], indices: [] }]);
+    expect(doc.overlayDraws(doc.byId("delta")!)).toBe(true);
+    expect(doc.overlayDraws(doc.byId("plain")!)).toBe(false);
+  });
+});
+
+describe("pictures of the page (thumbnails, the mini map)", () => {
+  it("paints only the markups PDFium doesn't draw, never thinner than a pixel", async () => {
+    const { doc, t, v } = await setup();
+    doc.adoptFile(read([annot(rect("inFile", "Pat", 400), 0, false)]));
+    t.setTool("rect");
+    drag(t, v, [100, 100], [200, 200]);
+    t.setTool("select");
+    // A recording context: every stroke with the line width it was drawn at, and its transform.
+    const strokes: { width: number; scale: number }[] = [];
+    const state: Record<string, unknown> = {};
+    let scale = 1;
+    const ctx = new Proxy(state, {
+      get: (o, k) =>
+        k === "setTransform" ? (a: number) => { scale = a; }
+        : k === "stroke" ? () => { strokes.push({ width: o.lineWidth as number, scale }); }
+        : k in o ? o[k as string] : () => {},
+      set: (o, k, val) => ((o[k as string] = val), true),
+    }) as unknown as CanvasRenderingContext2D;
+    // A thumbnail a tenth of the page's size: the drawn rectangle only (the file's own is in
+    // PDFium's picture already), its 1.5 pt line widened to a whole pixel.
+    t.paintMarkups(ctx, 0, [0.1, 0, 0, 0.1, 0, 0]);
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].width * strokes[0].scale).toBeCloseTo(1, 6);
+    expect(scale).toBe(1); // left as the identity
+    // Other pages: nothing.
+    strokes.length = 0;
+    t.paintMarkups(ctx, 1, [0.1, 0, 0, 0.1, 0, 0]);
+    expect(strokes).toHaveLength(0);
+    // At full size the line keeps its own weight.
+    t.paintMarkups(ctx, 0, [4, 0, 0, 4, 0, 0]);
+    expect(strokes[0].width).toBeGreaterThan(0.25);
+    expect(strokes[0].width * 4).toBeGreaterThan(1);
   });
 });
 

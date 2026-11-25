@@ -36,6 +36,7 @@
   import { SearchController } from "./lib/engine/search";
   import { linkLabel } from "./lib/text/links";
   import MiniMap from "./lib/components/MiniMap.svelte";
+  import type { PageMarks } from "./lib/engine/pageMarks";
   import { type MapMode, rememberDoc } from "./lib/shell/docMemory";
   import { hasCode, userMessage } from "./lib/shell/messages";
   import CanvasScrollbars from "./lib/components/CanvasScrollbars.svelte";
@@ -255,6 +256,15 @@
   let markupTool: MarkupTool | null = null;
   /** Bumped whenever the markup tool reports a change, so derived UI re-reads it. */
   let markVersion = $state(0);
+  /** Moves when a page's picture in PDFium changes (an annotation hidden): thumbnails ask again. */
+  let pageEpoch = $state(0);
+  /** For the sidebar thumbnails and the mini map: the markups PDFium doesn't draw, and when to redraw. */
+  const pageMarks = $derived<PageMarks>({
+    version: markVersion,
+    epoch: pageEpoch,
+    epochOf: (page) => viewer?.pageEpoch(page) ?? 0,
+    paint: (ctx, page, m) => markupTool?.paintMarkups(ctx, page, m),
+  });
   /** The account's display name, written into markups unless one is set in the settings. */
   let author = $state("");
   /** A question waiting for an answer (ChoiceDialog). */
@@ -1611,9 +1621,14 @@
     liftChain = liftChain.then(async () => {
       for (const g of groups) {
         await invoke("doc_hide_annots", { docId, page: g.page, nms: g.nms, indices: g.indices, hidden: true }).catch((e) => console.warn("hiding an annotation failed:", String(e)));
-        if (viewer?.doc?.docId === docId) viewer.dropPageTiles(g.page);
+        if (viewer?.doc?.docId === docId) {
+          viewer.dropPageTiles(g.page);
+          pageEpoch++;
+        }
       }
     });
+    // Sidebar thumbnails wait: each one started would be ahead of the hide on its worker.
+    v.holdThumbnails(liftChain);
   }
 
   /**
@@ -2467,6 +2482,8 @@
       bench = args.bench;
       const win = getCurrentWindow();
       const v = new Viewer(canvas);
+      // A preview rendered while the overlay draws some of the page's annotations lacks them.
+      v.canStorePreview = (page) => !(active?.kind === "pdf" && active.marks.hasHidden(page));
       v.layoutMode = settings.layoutMode;
       v.columns = settings.columns;
       v.onUi = (s) => (ui = s);
@@ -2822,6 +2839,7 @@
         current={ui.page}
         visible={ui.visiblePages}
         thumbnail={(p, m) => viewer!.thumbnail(p, m)}
+        marks={pageMarks}
         cancelThumbnail={(p, m) => viewer?.cancelThumbnail(p, m)}
         outline={(id) => rendererFor(active?.path ?? ".pdf").outline?.(id) ?? Promise.resolve([])}
         onTab={(t) => {
@@ -2897,6 +2915,7 @@
           preview={(p) => viewer!.previewFor(p)}
           docId={ui.docId ?? -1}
           thumbnail={(p, m) => viewer!.thumbnail(p, m)}
+          marks={pageMarks}
           onCentre={(x, y) => viewer?.centreOnWorld(x, y)}
           onHold={(h) => (mapHeld = h)}
           size={active?.mapSize ?? 1}

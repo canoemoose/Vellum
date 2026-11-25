@@ -7,6 +7,7 @@
   import type { SidebarTab } from "../settings";
   import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "../settings";
   import Thumbnails from "./Thumbnails.svelte";
+  import type { PageMarks } from "../engine/pageMarks";
   import OutlineTree from "./OutlineTree.svelte";
   import { userMessage } from "../shell/messages";
   import MarkupsList from "./MarkupsList.svelte"; // Text markups
@@ -21,6 +22,8 @@
     visible: number[];
     thumbnail: (page: number, maxSide: number) => Promise<ImageBitmap>;
     cancelThumbnail: (page: number, maxSide: number) => void;
+    /** The markups PDFium doesn't draw, for the thumbnails. */
+    marks?: PageMarks;
     outline: ((docId: number) => Promise<OutlineNode[]>) | null;
     onTab: (t: SidebarTab) => void;
     onWidth: (w: number, done: boolean) => void;
@@ -61,7 +64,7 @@
     <p class="empty">No document open.</p>
   {:else if p.tab === "pages"}
     {#key p.docId}
-      <Thumbnails docId={p.docId} width={p.width} sizes={p.sizes} current={p.current} visible={p.visible} thumbnail={p.thumbnail} cancelThumbnail={p.cancelThumbnail} onGoto={p.onGoto} />
+      <Thumbnails docId={p.docId} width={p.width} sizes={p.sizes} current={p.current} visible={p.visible} thumbnail={p.thumbnail} marks={p.marks} cancelThumbnail={p.cancelThumbnail} onGoto={p.onGoto} />
     {/key}
   {:else if p.tab === "markups"}
     <!-- Text markups: the Markups tab -->

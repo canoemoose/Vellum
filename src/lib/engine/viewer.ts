@@ -403,8 +403,16 @@ export class Viewer {
    * store new previews for next time. Off in the benchmark, so runs stay cold.
    */
   diskPreviews = true;
+  /**
+   * Whether a page's preview may be kept on disk for next time. The shell says no while an
+   * annotation on the page is hidden in PDFium (the overlay draws it): the preview lacks it,
+   * and stored, the page would open without it in the mini map and thumbnails ever after.
+   */
+  canStorePreview: (page: number) => boolean = () => true;
   /** Pages of the attached document whose preview is on disk or being stored this session. */
   private storedPreviews = new Set<number>();
+  /** Pages whose preview shows what the page was before an annotation was hidden or shown. */
+  private stalePreviews = new Set<number>();
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -505,7 +513,7 @@ export class Viewer {
   private storePreviewLater(page: number): void {
     const doc = this.doc;
     const r = this.renderer;
-    if (!doc || !this.diskPreviews || !r.storePreview || this.storedPreviews.has(page)) return;
+    if (!doc || !this.diskPreviews || !r.storePreview || this.storedPreviews.has(page) || !this.canStorePreview(page)) return;
     this.storedPreviews.add(page);
     const gen = this.gen;
     const attempt = () => {
@@ -515,7 +523,7 @@ export class Viewer {
         return;
       }
       const pv = this.previews.get(page);
-      if (!pv) return;
+      if (!pv || !this.canStorePreview(page)) return;
       r.storePreview!(doc.docId, page, pv.bitmap).catch((e) => console.warn("preview cache store failed", String(e)));
     };
     setTimeout(attempt, 250);
@@ -678,6 +686,8 @@ export class Viewer {
     this.previews.clear();
     this.previewBytes = 0;
     this.storedPreviews.clear();
+    this.stalePreviews.clear();
+    this.epochs.clear();
     this.measuring = false;
     this.pendingSharp = null;
   }
@@ -700,20 +710,55 @@ export class Viewer {
     this.requestFrame();
   }
 
+  private epochs = new Map<number, number>();
+  /** How many times the page's content has changed in PDFium (dropPageTiles) since it was opened. */
+  pageEpoch(page: number): number {
+    return this.epochs.get(page) ?? 0;
+  }
+
+  private holds = 0;
+  /**
+   * Start no thumbnails until `work` is done: it needs the backend's workers soon (hiding an
+   * annotation the user has started to drag), and each thumbnail started would be ahead of it.
+   */
+  holdThumbnails(work: Promise<unknown>): void {
+    this.holds++;
+    void work.catch(() => {}).finally(() => {
+      this.holds--;
+      this.thumbnails.kick();
+    });
+  }
+
   /**
    * Re-render one page's tiles (an annotation on it was hidden or shown in PDFium). The page's
    * preview stays, so it shows underneath until the new tiles arrive.
    */
   dropPageTiles(page: number): void {
+    // Renders of the page under way (its preview too) show it as it was.
     for (const j of [...this.active]) {
-      if (j.page !== page || j.kind !== "tiles") continue;
+      if (j.page !== page) continue;
       j.ac?.abort();
       this.active.delete(j);
       this.clearPartials(j);
     }
-    this.queue = this.queue.filter((j) => j.page !== page || j.kind !== "tiles");
-    this.cache.dropOtherScales(page, []);
+    this.queue = this.queue.filter((j) => j.page !== page);
+    // What's on screen stays until its replacement arrives, so the page never falls back to
+    // the preview (blurry, and showing the annotation just hidden): the tiles at the current
+    // scale are kept as stale, and the preview is kept but rendered again. Other scales go.
+    this.cache.dropOtherScales(page, [this.renderScale]);
+    this.cache.markStale(page, this.renderScale);
+    if (this.previews.has(page)) this.stalePreviews.add(page);
+    // Thumbnails of the page (sidebar, mini map) too: `pageEpoch` tells them to ask again.
+    if (this.doc) this.thumbnails.forgetPage(this.doc.docId, page);
+    this.epochs.set(page, (this.epochs.get(page) ?? 0) + 1);
+    // Plan the page's tiles again on the next frame: nothing else would until the view moved.
+    this.panPending = true;
     this.requestFrame();
+  }
+
+  /** The page has no preview, or one that's out of date (dropPageTiles). */
+  private needsPreview(page: number): boolean {
+    return !this.previews.has(page) || this.stalePreviews.has(page);
   }
 
   private relayout(): void {
@@ -1253,7 +1298,7 @@ export class Viewer {
   private thumbnailFromPreview(docId: number, page: number, maxSide: number): ImageBitmap | null {
     if (!this.doc || this.doc.docId !== docId || typeof OffscreenCanvas === "undefined") return null;
     const pv = this.previews.get(page);
-    if (!pv) return null;
+    if (!pv || this.stalePreviews.has(page)) return null;
     const size = this.doc.sizes[page];
     const k = maxSide / Math.max(size.w, size.h);
     if (k > pv.rs) return null; // the preview is too coarse for this size
@@ -1290,7 +1335,7 @@ export class Viewer {
    * seconds): the other workers are idle. Not beside a banded render, which uses every worker.
    */
   get idleForThumbnails(): boolean {
-    if (this.animating || this.settleTimer || this.queue.length > 0) return false;
+    if (this.holds > 0 || this.animating || this.settleTimer || this.queue.length > 0) return false;
     if (performance.now() - this.lastInput <= IDLE_AFTER_INPUT_MS) return false;
     for (const j of this.active) if (j.bands !== 1) return false;
     return true;
@@ -1413,7 +1458,7 @@ export class Viewer {
       const missingRing: { i: number; j: number }[] = [];
       for (let j = ring.j0; j <= ring.j1; j++) {
         for (let i = ring.i0; i <= ring.i1; i++) {
-          if (this.cache.peek(p, rs, i, j) || busy.has(tileKey(p, rs, i, j))) continue;
+          if (this.cache.fresh(p, rs, i, j) || busy.has(tileKey(p, rs, i, j))) continue;
           const inCore = i >= core.i0 && i <= core.i1 && j >= core.j0 && j <= core.j1;
           (inCore ? missingCore : missingRing).push({ i, j });
         }
@@ -1435,7 +1480,7 @@ export class Viewer {
       }
       // A low-resolution whole-page preview sits under the tiles so panning into
       // unrendered areas shows soft content instead of white.
-      if (!this.previews.has(p)) {
+      if (this.needsPreview(p) && ![...this.active].some((a) => a.kind === "preview" && a.page === p)) {
         const prs = previewScale(size.w, size.h);
         const pg = tileGrid(size, prs);
         const whole = { i: 0, j: 0, x: 0, y: 0, w: pg.devW, h: pg.devH };
@@ -1472,7 +1517,7 @@ export class Viewer {
     while (this.queue.length && this.canStart(this.queue[0])) {
       const job = this.queue.shift()!;
       // A preview may have been composed from tiles since this job was planned.
-      if (job.kind === "preview" && this.previews.has(job.page)) continue;
+      if (job.kind === "preview" && !this.needsPreview(job.page)) continue;
       this.start(job);
     }
   }
@@ -1646,7 +1691,7 @@ export class Viewer {
       const r = this.pageRange(p, grid, rs, vis, 0);
       if (!r) continue;
       for (let j = r.j0; j <= r.j1; j++)
-        for (let i = r.i0; i <= r.i1; i++) if (!this.cache.peek(p, rs, i, j)) return false;
+        for (let i = r.i0; i <= r.i1; i++) if (!this.cache.fresh(p, rs, i, j)) return false;
     }
     return true;
   }
@@ -1691,6 +1736,7 @@ export class Viewer {
       old.bitmap.close();
       this.previews.delete(page);
     }
+    this.stalePreviews.delete(page);
     const bytes = bitmap.width * bitmap.height * 4;
     this.previews.set(page, { bitmap, rs, bytes });
     this.previewBytes += bytes;
@@ -1707,11 +1753,11 @@ export class Viewer {
    * downscaling those tiles: a cheap GPU copy instead of another full render pass.
    */
   private maybeComposePreview(page: number, rs: number): void {
-    if (this.previews.has(page) || !this.doc) return;
+    if (!this.needsPreview(page) || !this.doc) return;
     const size = this.doc.sizes[page];
     const grid = tileGrid(size, rs);
     for (let j = 0; j < grid.rows; j++)
-      for (let i = 0; i < grid.cols; i++) if (!this.cache.peek(page, rs, i, j)) return;
+      for (let i = 0; i < grid.cols; i++) if (!this.cache.fresh(page, rs, i, j)) return;
     const prs = Math.min(rs, previewScale(size.w, size.h));
     const pg = tileGrid(size, prs);
     const c = new OffscreenCanvas(pg.devW, pg.devH);

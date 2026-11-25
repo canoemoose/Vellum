@@ -1235,6 +1235,19 @@ export class MarkupTool {
     return o;
   }
 
+  /**
+   * The page's markups that PDFium doesn't draw (new, changed, or lifted from the file), and
+   * nothing else: no handles, drafts or previews. For pictures of the page made from PDFium's
+   * render (sidebar thumbnails, the mini map), which would otherwise lack them. `m` maps page
+   * points to the context's pixels; the context's transform is left as the identity.
+   */
+  paintMarkups(ctx: CanvasRenderingContext2D, page: number, m: [number, number, number, number, number, number], minPx = 1): void {
+    const d = this.doc;
+    if (!d) return;
+    for (const mk of d.markups) if (mk.page === page && d.overlayDraws(mk)) paintOps(ctx, this.opsOf(mk), m, false, minPx);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
   private paint(ctx: CanvasRenderingContext2D, page: number, m: [number, number, number, number, number, number], pxPerPt: number): void {
     const d = this.doc;
     if (!d) return;

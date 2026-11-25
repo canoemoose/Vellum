@@ -5,6 +5,7 @@
   // document opens no slower: nothing renders for pages nobody looks at.
   import { onMount } from "svelte";
   import type { PageSize } from "../view/layout";
+  import type { PageMarks } from "../engine/pageMarks";
 
   interface Props {
     docId: number;
@@ -18,9 +19,11 @@
     thumbnail: (page: number, maxSide: number) => Promise<ImageBitmap>;
     /** Drop a waiting request whose page has scrolled out of view. */
     cancelThumbnail: (page: number, maxSide: number) => void;
+    /** The markups PDFium doesn't draw (new, moved, changed): painted over each thumbnail. */
+    marks?: PageMarks;
     onGoto: (page: number) => void;
   }
-  let { docId, width, sizes, current, visible, thumbnail, cancelThumbnail, onGoto }: Props = $props();
+  let { docId, width, sizes, current, visible, thumbnail, cancelThumbnail, marks, onGoto }: Props = $props();
   const seen = $derived(new Set(visible));
 
   // Thumbnails fill the column, less a 32 px margin each side (132 px in the default 196 px
@@ -49,6 +52,57 @@
   const drawn = new Set<number>();
   /** Placeholders in or near view. */
   const near = new Map<number, HTMLCanvasElement>();
+  /** The page pictures drawn, kept while near view so the markups can be painted over them again. */
+  const base = new Map<number, { bitmap: ImageBitmap; epoch: number }>();
+
+  function dropBase(page: number) {
+    base.get(page)?.bitmap.close();
+    base.delete(page);
+  }
+
+  /** The page's picture with its markups over it. */
+  function paint(page: number) {
+    const canvas = near.get(page);
+    const b = base.get(page);
+    const g = canvas?.getContext("2d");
+    if (!canvas || !b || !g) return;
+    if (canvas.width !== b.bitmap.width || canvas.height !== b.bitmap.height) {
+      canvas.width = b.bitmap.width;
+      canvas.height = b.bitmap.height;
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.drawImage(b.bitmap, 0, 0);
+    const k = b.bitmap.width / sizes[page].w;
+    marks?.paint(g, page, [k, 0, 0, k, 0, 0]);
+  }
+
+  // A markup changed: paint the thumbnails near view again, once a frame at most.
+  let repaint = 0;
+  $effect(() => {
+    void marks?.version;
+    if (repaint) return;
+    repaint = requestAnimationFrame(() => {
+      repaint = 0;
+      for (const page of base.keys()) paint(page);
+    });
+  });
+
+  // A page's picture changed in PDFium (an annotation hidden, as it's now drawn here instead):
+  // ask for it again. What's drawn stays until the new one arrives.
+  $effect(() => {
+    void marks?.epoch;
+    for (const [page, c] of near) {
+      const b = base.get(page);
+      const now = marks?.epochOf(page) ?? 0;
+      if (!b || b.epoch === now) continue;
+      b.epoch = now; // asked for: a change to another page mustn't ask for this one again
+      const side = requested.get(page);
+      if (side !== undefined) cancelThumbnail(page, side);
+      requested.delete(page);
+      drawn.delete(page);
+      load(page, c);
+    }
+  });
 
   function boxSize(s: PageSize, width: number): { w: number; h: number } {
     const maxH = width * TALL;
@@ -86,6 +140,7 @@
     requested.set(page, side);
     const id = docId;
     const atW = renderW;
+    const epoch = marks?.epochOf(page) ?? 0;
     thumbnail(page, side)
       .then((bmp) => {
         if (requested.get(page) === side) requested.delete(page);
@@ -97,12 +152,15 @@
           bmp.close();
           return;
         }
+        if (!near.has(page)) {
+          bmp.close(); // scrolled away meanwhile
+          return;
+        }
         drawn.add(page);
-        canvas.width = bmp.width;
-        canvas.height = bmp.height;
-        canvas.getContext("2d")?.drawImage(bmp, 0, 0);
+        dropBase(page);
+        base.set(page, { bitmap: bmp, epoch });
+        paint(page);
         canvas.classList.add("ready");
-        bmp.close();
       })
       .catch(() => {
         // Cancelled, document closed or render failed: try again if it scrolls back into view.
@@ -121,6 +179,9 @@
             load(page, c);
           } else {
             near.delete(page);
+            // Drawn again (from the viewer's cache) if it scrolls back: its markups may have changed.
+            dropBase(page);
+            drawn.delete(page);
             const side = requested.get(page);
             if (side !== undefined) {
               requested.delete(page);
@@ -132,7 +193,11 @@
       { root: list, rootMargin: "300px 0px" },
     );
     for (const c of list.querySelectorAll("canvas")) io.observe(c);
-    return () => io.disconnect();
+    return () => {
+      io.disconnect();
+      if (repaint) cancelAnimationFrame(repaint);
+      for (const page of [...base.keys()]) dropBase(page);
+    };
   });
 
   // Bring the current page's thumbnail into view when the current page changes, and only

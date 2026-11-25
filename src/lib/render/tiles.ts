@@ -178,6 +178,8 @@ export interface Tile {
   h: number;
   bitmap: ImageBitmap;
   bytes: number;
+  /** Out of date (TileCache.markStale): still drawn, but due to be rendered again. */
+  stale?: boolean;
 }
 
 export function tileKey(page: number, rs: number, i: number, j: number): string {
@@ -256,6 +258,20 @@ export class TileCache {
       this.remove(oldest);
       this.evictions++;
     }
+  }
+
+  /** A tile that is there and up to date (not marked stale). */
+  fresh(page: number, rs: number, i: number, j: number): Tile | undefined {
+    const t = this.peek(page, rs, i, j);
+    return t && !t.stale ? t : undefined;
+  }
+
+  /**
+   * The page's content changed: its tiles at `rs` stay to be drawn until their replacements
+   * arrive (`put` replaces a tile of the same key) but no longer count as there (`fresh`).
+   */
+  markStale(page: number, rs: number): void {
+    for (const t of this.index.get(page)?.get(rs)?.values() ?? []) t.stale = true;
   }
 
   /** Drop every tile for a page at scales other than `keep` (e.g. after a zoom). */

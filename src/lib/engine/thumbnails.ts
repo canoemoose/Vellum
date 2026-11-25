@@ -34,6 +34,8 @@ interface Pending {
   maxSide: number;
   /** The document was closed while this was rendering. */
   cancelled?: boolean;
+  /** The page changed while this was rendering (forgetPage): render it again. */
+  redo?: boolean;
   waiters: { res: (b: ImageBitmap) => void; rej: (e: unknown) => void }[];
 }
 
@@ -105,6 +107,21 @@ export class ThumbnailQueue {
     p.waiters.forEach((w) => w.rej(new Error("cancelled")));
   }
 
+  /**
+   * A page's content changed (an annotation hidden or shown): free its cached thumbnails, and
+   * have any rendering now render again, since they started before the change.
+   */
+  forgetPage(docId: number, page: number): void {
+    const prefix = `${docId}|${page}|`;
+    for (const p of this.inflight) if (p.docId === docId && p.page === page) p.redo = true;
+    for (const [k, e] of [...this.cache]) {
+      if (!k.startsWith(prefix)) continue;
+      this.cache.delete(k);
+      this.bytes -= e.bytes;
+      e.bitmap.close();
+    }
+  }
+
   /** Forget a document: reject its waiting requests and free its cached thumbnails. */
   cancelDoc(docId: number): void {
     const prefix = `${docId}|`;
@@ -155,10 +172,16 @@ export class ThumbnailQueue {
 
   private async run(job: Pending): Promise<void> {
     try {
-      let bmp = this.opts.fromPreview?.(job.docId, job.page, job.maxSide) ?? null;
-      if (!bmp) {
-        if (!job.renderer.thumbnail) throw new Error("renderer has no thumbnails");
-        bmp = await job.renderer.thumbnail(job.docId, job.page, job.maxSide);
+      let bmp: ImageBitmap | null = null;
+      for (;;) {
+        job.redo = false;
+        bmp = this.opts.fromPreview?.(job.docId, job.page, job.maxSide) ?? null;
+        if (!bmp) {
+          if (!job.renderer.thumbnail) throw new Error("renderer has no thumbnails");
+          bmp = await job.renderer.thumbnail(job.docId, job.page, job.maxSide);
+        }
+        if (!job.redo || job.cancelled) break;
+        bmp.close();
       }
       if (job.cancelled) {
         bmp.close();

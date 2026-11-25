@@ -163,6 +163,12 @@ export class MarkupDoc {
     return o.index;
   }
 
+  /** Some annotation on this page is hidden in PDFium: its render isn't the page as the file has it. */
+  hasHidden(page: number): boolean {
+    for (const id of this.hidden) if (this.files.get(id)?.page === page) return true;
+    return false;
+  }
+
   /** PDFium draws this one (it's in the file and not hidden). */
   pdfiumDraws(id: string): boolean {
     return this.files.has(id) && !this.hidden.has(id);

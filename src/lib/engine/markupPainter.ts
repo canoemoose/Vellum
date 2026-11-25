@@ -15,8 +15,11 @@ const css = (c: Rgb, a = 1) => `rgba(${Math.round(c[0] * 255)}, ${Math.round(c[1
 /**
  * Paint operations with page points mapped by `m` (a canvas transform from page points to
  * device pixels). `hideText` leaves text out (a text box being edited shows its editor instead).
+ * `minPx` is the thinnest a line is drawn, in device pixels: a thumbnail or the mini map draws
+ * a page so small that a 1 pt line would otherwise fade to nothing.
  */
-export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, number, number, number, number, number], hideText = false): void {
+export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, number, number, number, number, number], hideText = false, minPx = 0): void {
+  const minWidth = minPx > 0 ? minPx / Math.max(1e-6, Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]))) : 0;
   for (const op of ops) {
     ctx.save();
     ctx.setTransform(...m);
@@ -55,7 +58,7 @@ export function paintOps(ctx: CanvasRenderingContext2D, ops: Op[], m: [number, n
       if (op.stroke) {
         ctx.globalAlpha = op.strokeOpacity;
         ctx.strokeStyle = css(op.stroke);
-        ctx.lineWidth = op.width;
+        ctx.lineWidth = Math.max(op.width, minWidth);
         ctx.lineCap = op.decoration ? "butt" : "round";
         ctx.lineJoin = "round";
         ctx.setLineDash(op.dash ?? []);

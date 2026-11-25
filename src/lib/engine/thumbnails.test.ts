@@ -117,6 +117,33 @@ describe("ThumbnailQueue", () => {
     expect(q.peek(1, 3, 132)).toBeDefined();
   });
 
+  it("forgetPage drops the page's cached thumbnails, and renders again one that was under way", async () => {
+    await (async () => {
+      const a = q.request(r, 1, 3, 132);
+      await settle();
+      r.release[0]();
+      await a;
+    })();
+    q.forgetPage(1, 3);
+    expect(q.peek(1, 3, 132)).toBeUndefined();
+    // Asked again: rendered again, and the page changes once more while it renders.
+    const again = q.request(r, 1, 3, 132);
+    await settle();
+    expect(r.asked).toEqual([3, 3]);
+    q.forgetPage(1, 3);
+    r.release[1]();
+    await settle();
+    // That render started before the change: it's thrown away and the page rendered once more.
+    expect(r.asked).toEqual([3, 3, 3]);
+    r.release[2]();
+    await again;
+    expect(q.peek(1, 3, 132)).toBeDefined();
+    // Other pages and documents are left alone.
+    q.forgetPage(1, 4);
+    q.forgetPage(2, 3);
+    expect(q.peek(1, 3, 132)).toBeDefined();
+  });
+
   it("uses the preview path when it can, without asking the renderer", async () => {
     const q2 = new ThumbnailQueue({
       isIdle: () => true,

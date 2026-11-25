@@ -304,6 +304,21 @@ describe("Viewer persistent previews", () => {
     expect(r.stored).toEqual([0]);
   });
 
+  it("never stores a preview the shell says isn't the page as the file has it", async () => {
+    // An annotation hidden in PDFium (the overlay draws it): stored, the page would open
+    // without it in the mini map and thumbnails next time.
+    const r = new DiskRenderer(doc([{ w: 1190, h: 842 }]));
+    r.auto = true;
+    const v = new Viewer(stubCanvas(), {}, r);
+    v.canStorePreview = (page) => page !== 0;
+    v.resize(800, 600, 1);
+    await v.open("C:/x/a.pdf", undefined, r);
+    await until(() => v.queueLength === 0 && !v.rendering);
+    expect(v.previewFor(0)).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(r.stored).toEqual([]);
+  });
+
   it("does nothing when diskPreviews is off", async () => {
     const r = new DiskRenderer(doc([{ w: 1190, h: 842 }]));
     r.disk.set(0, new StubBitmap(10, 10));

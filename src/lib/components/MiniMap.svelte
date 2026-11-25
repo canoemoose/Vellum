@@ -12,10 +12,11 @@
   // rotation). The shell shows it only while the current page is bigger than the view;
   // zoomed far in, where the rectangle would be a speck, a small box and crosshair lines
   // across the map mark the spot instead.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { MAP_SIZE_MAX, MAP_SIZE_MIN, type Rect, easeOutCubic, lerpRect, mapBox, mapFraming, mapGuardSize, mapLimits, unionRect } from "../view/viewMath";
   import { type Rotation, rotatedDrawTransform } from "../view/rotation";
   import { mapRenderSide, needsSharper } from "../view/mapRender";
+  import type { PageMarks } from "../engine/pageMarks";
 
   interface Props {
     /** The pages to show and their world rects (the pages the view touches). */
@@ -29,6 +30,8 @@
     /** A proper render of a page, longer side `maxSide` device px (low priority, cached). The
      * map asks for one when it's drawn bigger than the preview; the caller owns the bitmap. */
     thumbnail: (page: number, maxSide: number) => Promise<ImageBitmap>;
+    /** The markups PDFium doesn't draw (new, moved, changed): painted over each page. */
+    marks?: PageMarks;
     /** Centre the view on a world point. */
     onCentre: (x: number, y: number) => void;
     /** Size as a multiple of the default; the top-left grip changes it. When the drag ends
@@ -63,7 +66,9 @@
   // has stopped for a moment, and stretch what's there until they arrive.
   const SETTLE_MS = 250;
   /** Renders held, by page, for `sharpDoc`. */
-  let sharp = new Map<number, { bitmap: ImageBitmap; side: number }>();
+  let sharp = new Map<number, { bitmap: ImageBitmap; side: number; epoch: number }>();
+  /** Until then, keep redrawing now and then: a page's preview is being made again. */
+  let recheckUntil = 0;
   let sharpDoc = -1;
   /** Pages asked for and not back yet, with the size asked. */
   const asked = new Map<number, number>();
@@ -83,6 +88,7 @@
     for (const [page, side] of wanted) {
       if ((asked.get(page) ?? 0) >= side) continue;
       asked.set(page, side);
+      const epoch = p.marks?.epochOf(page) ?? 0;
       p.thumbnail(page, side).then(
         (bitmap) => {
           if (asked.get(page) === side) asked.delete(page);
@@ -91,7 +97,7 @@
             return;
           }
           sharp.get(page)?.bitmap.close();
-          sharp.set(page, { bitmap, side });
+          sharp.set(page, { bitmap, side, epoch });
           if (!raf) draw();
         },
         () => {
@@ -143,7 +149,14 @@
       g.fillStyle = "#ffffff";
       g.fillRect(x0, y0, x1 - x0, y1 - y0);
       const pv = p.preview(page);
-      const best = sharp.get(page);
+      let best = sharp.get(page);
+      // The page's picture changed in PDFium since this render: let it go and ask again.
+      if (best && best.epoch !== (p.marks?.epochOf(page) ?? 0)) {
+        best.bitmap.close();
+        sharp.delete(page);
+        asked.delete(page);
+        best = undefined;
+      }
       const img = best?.bitmap ?? pv?.bitmap;
       if (img) {
         g.imageSmoothingQuality = "high";
@@ -151,6 +164,10 @@
         g.setTransform(...t.m);
         g.drawImage(img, 0, 0, t.dw, t.dh);
         g.setTransform(1, 0, 0, 1, 0, 0);
+        // The markups PDFium doesn't draw. Page points to canvas pixels: the picture's own
+        // transform, scaled from its pixels to the page's points (world units are points).
+        const s = t.dw / (turned() ? rect.h : rect.w);
+        p.marks?.paint(g, page, [t.m[0] * s, t.m[1] * s, t.m[2] * s, t.m[3] * s, t.m[4], t.m[5]]);
       } else {
         all = false;
       }
@@ -224,7 +241,7 @@
 
   $effect(() => {
     // Re-frame when the set of pages changes; redraw when anything shown changes.
-    void [p.rotation, p.view, p.size, p.stageW, p.stageH];
+    void [p.rotation, p.view, p.size, p.stageW, p.stageH, p.marks?.version];
     const pages = unionRect(p.pages.map((x) => x.rect));
     if (!pages) return;
     const target = mapFraming(pages, p.view);
@@ -245,10 +262,20 @@
     if (!raf) draw();
   });
 
+  // A page's picture changed in PDFium: its preview is made again in the background, and
+  // nothing says when it lands, so look again for a few seconds.
+  $effect(() => {
+    void p.marks?.epoch;
+    recheckUntil = performance.now() + 4000;
+    untrack(() => {
+      if (!raf) draw();
+    });
+  });
+
   onMount(() => {
     // Previews arrive after the first render; check now and then until there are some.
     const t = setInterval(() => {
-      if (!hasPreviews) draw();
+      if (!hasPreviews || performance.now() < recheckUntil) draw();
     }, 400);
     return () => {
       clearInterval(t);
