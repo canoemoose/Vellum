@@ -95,6 +95,45 @@ that work's brief or scope file and comes off this list.
   offered nothing until the full release. Worth building once there are enough users that a
   staged rollout matters; until then, full releases and patch releases. Scoped, nothing built:
   [rc-updates-scope.md](rc-updates-scope.md).
+- **The update file's `notes` field holds placeholder text.** `latest.json` is written when the
+  draft is made, before the notes exist, so it says "Replace this with what's new in this
+  version, then publish." The app doesn't read the field ("What's new" opens the release page),
+  so nobody sees it. Either leave the field empty in `.github/workflows/release.yml`
+  (`releaseBody`) or have it say where the notes are.
+- **Updating from a release candidate to the full release** hasn't been tried (0.1.4 to 0.2.0
+  has, 25 November 2026).
+
+## From the 0.2.0 review
+
+Smaller faults found when the code that writes to files was reviewed before 0.2.0
+([review-0.2.0.md](review-0.2.0.md)). None loses work on its own; none has been looked at since.
+
+- Recovery: thrown away silently when the file changed since, or when the file's size and date
+  couldn't be read; written for the active tab only, a second after a change; two offers on
+  one launch may collide in `ask()`.
+- Save: a `.vellum-save-*.tmp` file is left beside the drawing after a crash mid-save; Ctrl+S
+  twice isn't guarded; after a failed commit some edited annotations are drawn twice until the
+  next save; if the reopen also fails, "Save a copy" does nothing; no finiteness checks on
+  markup numbers (a NaN would block every save with an obscure error; no source found).
+- Writer: PDFDocEncoding strings from other apps decoded as Latin-1; a UTF-8 `/NM` fails the
+  save; deleting an annotation leaves its `/IRT` replies; a second pop-up can be written; a
+  dimension changed in another app loses its own `/Measure`; annotation positions after a
+  rebuilt (repaired) save are assumed to keep their order.
+- Signatures and stamps: baking assumes balanced `q`/`Q` in the page's content; the soft mask
+  has no `/Interpolate`; a stamp of only `{author}` with no author prints "{AUTHOR}"; toggling
+  a stamp's date line re-dates the main line; separator tidy-up eats dashes in file names; a
+  turned crop can ask for a 4x buffer; HEIC orientation may be applied twice (check with one
+  portrait iPhone photo).
+- Updater: the count of other open Vellum windows is taken as zero when it fails; a failed
+  install says "Nothing has changed" even if the installer had started; a retry downloads
+  again; the unsaved-markups question comes after the download, not before; whether a
+  cancelled install can be told from a successful one needs a real machine.
+- README: "one check a day" and "sends nothing about you" slightly overstate.
+- Print: queued title-block reads aren't cancelled when the dialog closes; reads for files
+  closed by manual layout still run and warn; N-up ignores "Never enlarge small pages"
+  (older bug); the canvas is drawn twice per resize step.
+- Not reviewed at all: the markup and measuring models, the viewer engine, and the components
+  (the review's tiers 2 to 4).
 
 ## Look
 
