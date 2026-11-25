@@ -11,6 +11,8 @@ use image::RgbaImage;
 pub enum WicError {
     /// No codec in Windows reads this format.
     NoCodec,
+    /// More pixels than the caller allows (width, height): refused before the pixels are read.
+    TooLarge(u32, u32),
     Failed(String),
 }
 
@@ -32,8 +34,9 @@ pub fn looks_like_heif(bytes: &[u8]) -> bool {
         .any(|b| brand == *b)
 }
 
+/// Decode the first frame, refusing one of more than `max_pixels` before allocating for it.
 #[cfg(windows)]
-pub fn decode(bytes: &[u8]) -> Result<Decoded, WicError> {
+pub fn decode(bytes: &[u8], max_pixels: u64) -> Result<Decoded, WicError> {
     use windows::Win32::Graphics::Imaging::*;
     use windows::Win32::System::Com::StructuredStorage::{PROPVARIANT, PropVariantClear, PropVariantToUInt16};
     use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize};
@@ -62,6 +65,12 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, WicError> {
             .CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
             .map_err(|e| if e.code() == windows::Win32::Foundation::WINCODEC_ERR_COMPONENTNOTFOUND { WicError::NoCodec } else { failed("decoder", e) })?;
         let frame = decoder.GetFrame(0).map_err(|e| failed("frame", e))?;
+        // Its size first: a huge picture is refused without being read.
+        let (mut fw, mut fh) = (0u32, 0u32);
+        frame.GetSize(&mut fw, &mut fh).map_err(|e| failed("size", e))?;
+        if fw as u64 * fh as u64 > max_pixels {
+            return Err(WicError::TooLarge(fw, fh));
+        }
 
         let orientation = frame.GetMetadataQueryReader().ok().and_then(|reader| {
             let mut v = PROPVARIANT::default();
@@ -76,11 +85,18 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, WicError> {
             .map_err(|e| failed("convert", e))?;
         let (mut w, mut h) = (0u32, 0u32);
         conv.GetSize(&mut w, &mut h).map_err(|e| failed("size", e))?;
-        if w == 0 || h == 0 || w > 30_000 || h > 30_000 {
+        if w == 0 || h == 0 {
             return Err(WicError::Failed(format!("WIC size {w} x {h}")));
         }
+        if w as u64 * h as u64 > max_pixels {
+            return Err(WicError::TooLarge(w, h));
+        }
         let stride = w * 4;
-        let mut buf = vec![0u8; (stride as usize) * h as usize];
+        // Asked for, not assumed: a failed allocation is an error here, not the end of the app.
+        let len = (stride as usize) * h as usize;
+        let mut buf = Vec::new();
+        buf.try_reserve_exact(len).map_err(|_| WicError::TooLarge(w, h))?;
+        buf.resize(len, 0u8);
         conv.CopyPixels(std::ptr::null(), stride, &mut buf).map_err(|e| failed("pixels", e))?;
         let rgba = RgbaImage::from_raw(w, h, buf).ok_or_else(|| WicError::Failed("WIC buffer size".into()))?;
         Ok(Decoded { rgba, orientation })
@@ -88,6 +104,6 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, WicError> {
 }
 
 #[cfg(not(windows))]
-pub fn decode(_bytes: &[u8]) -> Result<Decoded, WicError> {
+pub fn decode(_bytes: &[u8], _max_pixels: u64) -> Result<Decoded, WicError> {
     Err(WicError::NoCodec)
 }

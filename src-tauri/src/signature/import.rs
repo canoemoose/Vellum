@@ -34,6 +34,26 @@ pub const MAX_WORK_SIDE: u32 = 3000;
 pub const MAX_OUTPUT_SIDE: u32 = 1600;
 /// Smaller than this on either side isn't a photo of anything.
 const MIN_SIDE: u32 = 16;
+/// The most pixels a picture may have to be read: about 100 MP, twice a 48 MP phone photo.
+/// Decoding is 4 bytes a pixel and the framing makes copies, so much more would risk running
+/// out of memory, which ends the app rather than failing the import (docs/review-0.2.0.md, 4).
+pub const MAX_PIXELS: u64 = 100_000_000;
+/// The largest file read (a 100 MP picture is far smaller than this in any usual format).
+pub const MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// The error for a picture over `MAX_PIXELS` or `MAX_FILE_BYTES`.
+fn too_large(detail: impl std::fmt::Display) -> String {
+    errcode::coded("picture_too_large", detail)
+}
+
+/// Read a picture's file, refusing one over `MAX_FILE_BYTES` before reading it.
+fn read_capped(path: &str) -> Result<Vec<u8>, String> {
+    let len = std::fs::metadata(path).map_err(|e| errcode::io(&e, format!("{path}: {e}")))?.len();
+    if len > MAX_FILE_BYTES {
+        return Err(too_large(format!("{path}: file is {len} bytes")));
+    }
+    std::fs::read(path).map_err(|e| errcode::io(&e, format!("{path}: {e}")))
+}
 
 /// The result of an import.
 #[derive(Debug, Clone)]
@@ -83,13 +103,13 @@ pub const PREVIEW_SIDE: u32 = 2048;
 
 /// Import a file from disk.
 pub fn import_file(path: &str) -> Result<Imported, String> {
-    let bytes = std::fs::read(path).map_err(|e| errcode::io(&e, format!("{path}: {e}")))?;
+    let bytes = read_capped(path)?;
     import_bytes(&bytes)
 }
 
 /// Import a file from disk, framed as the user chose.
 pub fn import_file_adjusted(path: &str, adjust: &Adjust) -> Result<Imported, String> {
-    let bytes = std::fs::read(path).map_err(|e| errcode::io(&e, format!("{path}: {e}")))?;
+    let bytes = read_capped(path)?;
     import_bytes_adjusted(&bytes, adjust)
 }
 
@@ -125,7 +145,7 @@ pub fn import_bytes_adjusted(bytes: &[u8], adjust: &Adjust) -> Result<Imported, 
 /// on (the webview can't show HEIC, and a 48 MP photo is a lot to send). Returns the JPEG and
 /// the full-size picture's width and height.
 pub fn preview_file(path: &str) -> Result<(Vec<u8>, u32, u32), String> {
-    let bytes = std::fs::read(path).map_err(|e| errcode::io(&e, format!("{path}: {e}")))?;
+    let bytes = read_capped(path)?;
     preview_bytes(&bytes)
 }
 
@@ -226,16 +246,34 @@ pub fn frame(img: &RgbImage, a: &Adjust) -> RgbImage {
 pub fn load_oriented(bytes: &[u8]) -> Result<DynamicImage, String> {
     match load_with_image_crate(bytes) {
         Ok(img) => Ok(img),
-        Err(first) => load_with_wic(bytes).map_err(|wic| wic.unwrap_or(first)),
+        // WIC only for what the image crate can't read (HEIC, JPEG XR) or couldn't decode;
+        // never for a picture it refused as too large, which WIC would try to hold whole.
+        Err(Refused::TryWic(first)) => load_with_wic(bytes).map_err(|wic| wic.unwrap_or(first)),
+        Err(Refused::Final(e)) => Err(e),
     }
 }
 
-fn load_with_image_crate(bytes: &[u8]) -> Result<DynamicImage, String> {
+/// Why the image crate didn't read a picture: one WIC may manage, or an answer that stands.
+enum Refused {
+    TryWic(String),
+    Final(String),
+}
+
+fn load_with_image_crate(bytes: &[u8]) -> Result<DynamicImage, Refused> {
     let not_image = |e: &dyn std::fmt::Display| errcode::coded("not_supported", format!("not a readable image: {e}"));
-    let reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(|e| not_image(&e))?;
-    let mut decoder = reader.into_decoder().map_err(|e| not_image(&e))?;
+    let refused = |e: image::ImageError| match e {
+        image::ImageError::Limits(_) => Refused::Final(too_large(format!("image crate: {e}"))),
+        image::ImageError::Unsupported(_) | image::ImageError::Decoding(_) | image::ImageError::IoError(_) => Refused::TryWic(not_image(&e)),
+        _ => Refused::Final(not_image(&e)),
+    };
+    let reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(|e| Refused::TryWic(not_image(&e)))?;
+    let mut decoder = reader.into_decoder().map_err(refused)?;
+    let (w, h) = decoder.dimensions();
+    if w as u64 * h as u64 > MAX_PIXELS {
+        return Err(Refused::Final(too_large(format!("image is {w} x {h}"))));
+    }
     let orientation = decoder.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
-    let mut img = DynamicImage::from_decoder(decoder).map_err(|e| not_image(&e))?;
+    let mut img = DynamicImage::from_decoder(decoder).map_err(refused)?;
     img.apply_orientation(orientation);
     Ok(img)
 }
@@ -244,7 +282,7 @@ fn load_with_image_crate(bytes: &[u8]) -> Result<DynamicImage, String> {
 /// `Err(Some(..))` is a better error (a HEIC photo without the codec to read it).
 fn load_with_wic(bytes: &[u8]) -> Result<DynamicImage, Option<String>> {
     let heif = super::wic::looks_like_heif(bytes);
-    match super::wic::decode(bytes) {
+    match super::wic::decode(bytes, MAX_PIXELS) {
         Ok(d) => {
             let mut img = DynamicImage::ImageRgba8(d.rgba);
             eprintln!(
@@ -259,6 +297,7 @@ fn load_with_wic(bytes: &[u8]) -> Result<DynamicImage, Option<String>> {
             }
             Ok(img)
         }
+        Err(super::wic::WicError::TooLarge(w, h)) => Err(Some(too_large(format!("WIC: image is {w} x {h}")))),
         Err(e) => {
             if let super::wic::WicError::Failed(why) = &e {
                 eprintln!("[signature] WIC decode failed: {why}");

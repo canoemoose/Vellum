@@ -97,7 +97,7 @@ fn wic_reads_the_orientation_tag_without_turning_the_pixels() {
     tagged.extend_from_slice(&((app1.len() + 2) as u16).to_be_bytes());
     tagged.extend_from_slice(&app1);
     tagged.extend_from_slice(&jpeg[2..]);
-    let Ok(d) = wic::decode(&tagged) else { panic!("WIC decodes JPEG") };
+    let Ok(d) = wic::decode(&tagged, u64::MAX) else { panic!("WIC decodes JPEG") };
     assert_eq!(d.orientation, Some(6));
     assert_eq!(d.rgba.dimensions(), (120, 60));
 }
@@ -141,4 +141,106 @@ fn a_heif_file_windows_cant_read_says_what_to_install() {
 fn junk_is_still_not_supported() {
     let e = import::import_bytes(b"neither image nor HEIF, just words").unwrap_err();
     assert!(e.starts_with("[not_supported]"), "{e}");
+}
+
+/// A 24-bit BMP's headers claiming `w` x `h`, followed by a few bytes of pixels: enough for
+/// either decoder to read the size, nowhere near enough to fill it.
+fn bmp_header(w: i32, h: i32) -> Vec<u8> {
+    let mut b = b"BM".to_vec();
+    b.extend_from_slice(&(54u32 + 64).to_le_bytes()); // file size (as written; decoders don't trust it)
+    b.extend_from_slice(&[0, 0, 0, 0]);
+    b.extend_from_slice(&54u32.to_le_bytes()); // pixels start here
+    b.extend_from_slice(&40u32.to_le_bytes()); // BITMAPINFOHEADER
+    b.extend_from_slice(&w.to_le_bytes());
+    b.extend_from_slice(&h.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes()); // planes
+    b.extend_from_slice(&24u16.to_le_bytes()); // bits per pixel
+    b.extend_from_slice(&[0u8; 24]); // no compression, sizes and palette left to the decoder
+    b.extend_from_slice(&[0x80u8; 64]);
+    b
+}
+
+// docs/review-0.2.0.md, 4: a huge picture used to fall through to WIC on any image crate
+// error, its 512 MiB limit included, and WIC would allocate up to 30000 x 30000 x 4 bytes.
+
+/// A PNG's signature, header (`w` x `h`, 8-bit RGB) and end, with no pixel data at all.
+fn png_header(w: u32, h: u32) -> Vec<u8> {
+    fn crc(bytes: &[u8]) -> u32 {
+        let mut c = !0u32;
+        for &b in bytes {
+            c ^= b as u32;
+            for _ in 0..8 {
+                c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+            }
+        }
+        !c
+    }
+    let chunk = |kind: &[u8], data: &[u8]| {
+        let mut c = (data.len() as u32).to_be_bytes().to_vec();
+        let mut body = kind.to_vec();
+        body.extend_from_slice(data);
+        c.extend_from_slice(&body);
+        c.extend_from_slice(&crc(&body).to_be_bytes());
+        c
+    };
+    let mut ihdr = w.to_be_bytes().to_vec();
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    let mut b = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    b.extend(chunk(b"IHDR", &ihdr));
+    b.extend(chunk(b"IDAT", &[0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]));
+    b.extend(chunk(b"IEND", &[]));
+    b
+}
+
+#[test]
+fn wic_refuses_a_picture_over_the_limit_before_reading_it() {
+    let png = png_header(12_000, 12_000); // 144 MP
+    match wic::decode(&png, import::MAX_PIXELS) {
+        Err(wic::WicError::TooLarge(12_000, 12_000)) => {}
+        Err(wic::WicError::TooLarge(w, h)) => panic!("too large, but {w} x {h}"),
+        Err(wic::WicError::Failed(why)) => panic!("failed rather than refused: {why}"),
+        Err(wic::WicError::NoCodec) => panic!("no codec for BMP"),
+        Ok(d) => panic!("decoded {:?}", d.rgba.dimensions()),
+    }
+}
+
+#[test]
+fn a_picture_over_100_megapixels_is_refused_as_too_large() {
+    // Under the image crate's own memory limit (refused by the pixel count) and over it
+    // (refused by the limit): either way too large, in words a user can act on, and never
+    // handed to WIC.
+    for (w, h) in [(12_000, 12_000), (20_000, 20_000)] {
+        for (what, bytes) in [("BMP", bmp_header(w as i32, h as i32)), ("PNG", png_header(w, h))] {
+            let e = import::import_bytes(&bytes).unwrap_err();
+            assert!(e.starts_with("[picture_too_large]"), "{what} {w} x {h}: {e}");
+            let e = import::preview_bytes(&bytes).unwrap_err();
+            assert!(e.starts_with("[picture_too_large]"), "{what} {w} x {h} preview: {e}");
+        }
+    }
+}
+
+#[test]
+fn a_file_over_the_size_limit_is_refused_without_reading_it() {
+    let dir = std::env::temp_dir().join(format!("vellum-sigtest-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("huge.jpg");
+    let f = std::fs::File::create(&path).unwrap();
+    f.set_len(import::MAX_FILE_BYTES + 1).unwrap(); // allocated, never written
+    drop(f);
+    let p = path.to_str().unwrap();
+    let preview = import::preview_file(p).unwrap_err();
+    let imported = import::import_file(p).unwrap_err();
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(preview.starts_with("[picture_too_large]"), "{preview}");
+    assert!(imported.starts_with("[picture_too_large]"), "{imported}");
+}
+
+#[test]
+fn a_bmp_within_the_limit_still_imports() {
+    // The image crate reads BMP itself; the size check mustn't stop an ordinary picture.
+    let mut bmp = Vec::new();
+    image::codecs::bmp::BmpEncoder::new(&mut bmp).encode(fixture().as_raw(), 600, 400, image::ExtendedColorType::Rgb8).unwrap();
+    let r = import::import_bytes(&bmp).expect("imports");
+    assert!((r.width as i32 - 424).abs() <= 6, "width {}", r.width);
 }

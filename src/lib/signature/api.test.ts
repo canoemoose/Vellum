@@ -7,6 +7,7 @@ describe("signatureMessage", () => {
     expect(signatureMessage("[signature_unreadable] CryptUnprotectData failed", "x")).toMatch(/another Windows account/);
     expect(signatureMessage("[not_supported] not a readable image", "x")).toBe("That file isn't a picture Vellum can read.");
     expect(signatureMessage("[heic_codec_missing] no codec", "x")).toMatch(/HEIF Image Extensions/);
+    expect(signatureMessage("[picture_too_large] image is 20000 x 20000", "x")).toMatch(/^That picture is too large to read/);
   });
 
   it("falls back to the shared messages", () => {
