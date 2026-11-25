@@ -54,6 +54,12 @@ that work's brief or scope file and comes off this list.
   Follows OCR coming into the app (search first: [ocr-search-scope.md](ocr-search-scope.md)).
   Curtis Hall is the test file, and with several views per sheet at different scales it's also
   the test case for a scale per measurement or area (above).
+- **Save every character so other PDF apps show it.** Text in a markup is drawn with the
+  standard fonts, which hold Western European characters only: Δ, Ω, ≥, ≤, ≠ and non-Latin
+  scripts are drawn as "?" for every other app (Vellum shows them as typed). 0.2.0 asks before
+  such a save. The fix is to embed a font that has the glyphs, in the annotation writer; top of
+  the list for 0.2.1. Failing that, mark the text box as it's typed (in the style bar) rather
+  than only at the save.
 - **Markup on images** (photos, scans), not an image editor: the same markup tools over an
   image file. Today markups can't be saved into an image.
 - **Snapping, alignment and z-order for annotations**: snap and align markups to each other,

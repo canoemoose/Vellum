@@ -15,6 +15,7 @@ import { type Frame, toUser } from "../markup/pdf";
 import { type Change, toSpec } from "../markup/spec";
 import { type FileOrigin, type FromFile, type PageAnnots, freeToEdit } from "../markup/fileAnnots";
 import { readReedit } from "../markup/reedit";
+import { outsideWinAnsi } from "../markup/fonts";
 
 /** What to hide on one page: by /NM where the annotation's /NM is its id, else by position. */
 export interface PageLift {
@@ -183,9 +184,15 @@ export class MarkupDoc {
     return !!o && freeToEdit(o, m, this.author);
   }
 
-  /** Lifted as soon as it's read: Vellum's own notes, which the overlay keeps a fixed size on screen and PDFium doesn't. */
+  /**
+   * Lifted as soon as it's read, of Vellum's own: notes, which the overlay keeps a fixed size
+   * on screen and PDFium doesn't; and text with characters the saved appearance can only draw
+   * as "?" (fonts.ts toWinAnsi), which the overlay draws as typed.
+   */
   private liftAlways(m: Markup, o: FileOrigin): boolean {
-    return o.exact && m.kind === "note";
+    if (!o.exact) return false;
+    const text = (m as { text?: unknown }).text;
+    return m.kind === "note" || (typeof text === "string" && outsideWinAnsi(text).length > 0);
   }
 
   /**

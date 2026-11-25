@@ -75,7 +75,7 @@ describe("markup preferences", () => {
 });
 
 // Existing annotations (phase 7b)
-import { forbidsChanges, unlockWarnings, winAnsiNote } from "./save";
+import { forbidsChanges, unlockWarnings, winAnsiWarning } from "./save";
 import { outsideWinAnsi } from "../markup/fonts";
 
 describe("unlocking Edit file", () => {
@@ -100,15 +100,16 @@ describe("unlocking Edit file", () => {
 
 describe("text other PDF apps can't show (review 0.2.0, 12)", () => {
   const add = (subtype: string, contents: string) => ({ op: "add", spec: { subtype, contents } });
-  it("names the characters a save draws as ? for other apps", () => {
-    expect(winAnsiNote([add("FreeText", "Δ 5 mm ≥ 3 → Ø ✓ Δ")])).toBe('Other PDF apps show Δ ≥ → ✓ as "?" in these markups; Vellum shows them as typed.');
+  it("names the characters a save would draw as ? for other apps", () => {
+    expect(winAnsiWarning([add("FreeText", "Δ 5 mm ≥ 3 → Ø ✓ Δ")])).toBe('Other PDF apps will show Δ ≥ → ✓ as "?" in your markups. Vellum goes on showing them as typed.');
+    expect(winAnsiWarning([add("FreeText", "Δ")])).toContain("showing it as typed");
     expect(outsideWinAnsi("Café £5 – “ok” ½")).toEqual([]);
   });
   it("says nothing for plain text, or for text that's never drawn (a note, a highlight's comment)", () => {
-    expect(winAnsiNote([add("FreeText", "Check the bolts, 25 °C")])).toBeNull();
-    expect(winAnsiNote([add("Text", "Δ"), add("Highlight", "Ω"), { op: "delete" }])).toBeNull();
+    expect(winAnsiWarning([add("FreeText", "Check the bolts, 25 °C")])).toBeNull();
+    expect(winAnsiWarning([add("Text", "Δ"), add("Highlight", "Ω"), { op: "delete" }])).toBeNull();
   });
   it("keeps the list short", () => {
-    expect(winAnsiNote([add("FreeText", "αβγδεζ")])).toContain("α β γ δ ε …");
+    expect(winAnsiWarning([add("FreeText", "αβγδεζ")])).toContain("α β γ δ ε …");
   });
 });

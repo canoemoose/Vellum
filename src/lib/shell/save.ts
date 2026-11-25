@@ -146,11 +146,12 @@ export function withBakes<C extends { op: string; spec?: { nm: string } }>(chang
 const UNDRAWN_TEXT = new Set(["Text", "Highlight", "Underline", "StrikeOut", "Squiggly"]);
 
 /**
- * A line for the "Saved" message when a save draws text WinAnsi can't hold (Δ, Ω, ≥, CJK): other
- * PDF apps show those as "?" in the markup, though its /Contents (and Vellum) keep them
- * (fonts.ts toWinAnsi; docs/review-0.2.0.md, 12). Null when there's nothing to say.
+ * What to ask before a save that draws text WinAnsi can't hold (Δ, Ω, ≥, CJK): other PDF apps
+ * show those as "?" in the markup, though its /Contents (and Vellum) keep them, so whoever
+ * saves never sees it (fonts.ts toWinAnsi; docs/review-0.2.0.md, 12). Null when there's
+ * nothing to ask.
  */
-export function winAnsiNote(changes: readonly { op: string; spec?: { subtype: string; contents?: string | null } }[]): string | null {
+export function winAnsiWarning(changes: readonly { op: string; spec?: { subtype: string; contents?: string | null } }[]): string | null {
   const chars: string[] = [];
   for (const c of changes) {
     if ((c.op !== "add" && c.op !== "replace" && c.op !== "bake") || !c.spec?.contents || UNDRAWN_TEXT.has(c.spec.subtype)) continue;
@@ -158,5 +159,5 @@ export function winAnsiNote(changes: readonly { op: string; spec?: { subtype: st
   }
   if (!chars.length) return null;
   const shown = chars.slice(0, 5).join(" ") + (chars.length > 5 ? " …" : "");
-  return `Other PDF apps show ${shown} as "?" in these markups; Vellum shows them as typed.`;
+  return `Other PDF apps will show ${shown} as "?" in your markups. Vellum goes on showing ${chars.length > 1 ? "them" : "it"} as typed.`;
 }

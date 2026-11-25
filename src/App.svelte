@@ -25,7 +25,7 @@
   import type { Frame } from "./lib/markup/pdf";
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, Style, TextStyle } from "./lib/markup/types";
-  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage, winAnsiNote } from "./lib/shell/save";
+  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage, winAnsiWarning } from "./lib/shell/save";
   import { RecoveryRecords, restoreTarget, restoredMarkups } from "./lib/shell/recovery";
   import { type AnnotRead, fromFile, stampHashes, withStampImages } from "./lib/markup/fileAnnots"; // Existing annotations
   import EditLock from "./lib/components/EditLock.svelte"; // Existing annotations
@@ -1301,19 +1301,29 @@
     }
   }
 
-  async function writeSave(t: Tab, v: Viewer, expect: boolean): Promise<boolean> {
+  /**
+   * Before a save writes characters other PDF apps will show as "?": ask, since Vellum itself
+   * goes on showing them as typed and nothing else would tell whoever saves. False to cancel.
+   */
+  async function agreeToWinAnsi(changes: Parameters<typeof winAnsiWarning>[0]): Promise<boolean> {
+    const warning = winAnsiWarning(changes);
+    return !warning || (await ask("Some characters won't show in other apps", warning, ["Save anyway", "Cancel"])) === "Save anyway";
+  }
+
+  async function writeSave(t: Tab, v: Viewer, expect: boolean, agreed = false): Promise<boolean> {
     // Existing annotations: positions are the last read's; one under way (after a save) first.
     if (t.marks.reading) await t.marks.reading;
     // What this save writes: edits made while it's under way are not in it and stay unsaved.
     const written = t.marks.markups;
     const changes = saveChanges(t, pendingBake.get(t));
+    if (!agreed && !(await agreeToWinAnsi(changes))) return false;
     let p: Prepared;
     try {
       p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes, target: null, expect: expect ? t.stamp : null });
     } catch (e) {
       if (!hasCode(e, "changed_on_disk")) throw e;
       const a = await ask("The file has changed", `${t.title} changed on disk since you opened it. Add your markups to it as it is now?`, ["Save", "Save a copy…", "Cancel"]);
-      if (a === "Save") return writeSave(t, v, false);
+      if (a === "Save") return writeSave(t, v, false, true);
       if (a === "Save a copy…") return saveCopy();
       return false;
     }
@@ -1351,8 +1361,7 @@
     if (t.marks.dirty) scheduleRecovery();
     else recovery.drop(recoveryKey(pathKey(t.path)));
     markVersion++;
-    const note = winAnsiNote(changes);
-    notify((p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`) + (note ? `. ${note}` : ""));
+    notify(p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`);
     return true;
   }
 
@@ -1404,10 +1413,10 @@
       if (t.marks.reading) await t.marks.reading; // Existing annotations
       await ensureFrames(t, v.doc.docId);
       const changes = saveChanges(t, bake);
+      if (!(await agreeToWinAnsi(changes))) return false;
       const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes, target: dest, expect: null });
       await invoke("annot_commit", { temp: p.temp, target: p.target });
-      const note = winAnsiNote(changes);
-      notify(`Saved a copy as ${fileName(dest)}` + (note ? `. ${note}` : ""));
+      notify(`Saved a copy as ${fileName(dest)}`);
       return true;
     } catch (e) {
       console.warn("save a copy failed:", String((e as Error)?.message ?? e));
