@@ -172,14 +172,20 @@ export function fitRect(rect: Rect, vw: number, vh: number, pad: number, mode: F
 
 /**
  * Keep the document on screen, axis by axis. Where it's smaller than the view (less a `pad`
- * margin each side) it stays wholly in view, free to move within it; where it's larger, its
- * edges can't come further in than the margin, so no page (or the document's end) can be
- * scrolled off leaving an empty view.
+ * margin each side) it stays wholly in view, free to move within it. Where it's larger, an
+ * edge can come in as far as the middle of the view, so any point of a sheet (a corner, the
+ * last page of a set) can be brought to the centre, and never further, so the document can't
+ * be lost. That slack grows with how far the document overhangs the view, a pixel for a
+ * pixel, so a sheet only just too big doesn't suddenly slide half a screen.
+ *
+ * `slack` false gives the edges-at-the-margin limit alone (where End and a page turn stop).
  */
-export function constrainView(v: View, bounds: Rect, vw: number, vh: number, pad = 16): View {
+export function constrainView(v: View, bounds: Rect, vw: number, vh: number, pad = 16, slack = true): View {
   const axis = (start: number, len: number, view: number): number => {
-    const lo = Math.min(pad, view - pad - len);
-    const hi = Math.max(pad, view - pad - len);
+    const over = len - (view - 2 * pad);
+    const s = slack && over > 0 ? Math.max(0, Math.min(over, view / 2 - pad)) : 0;
+    const lo = Math.min(pad, view - pad - len) - s;
+    const hi = Math.max(pad, view - pad - len) + s;
     return Math.min(hi, Math.max(lo, start)) - start;
   };
   const dx = axis(bounds.x * v.scale + v.tx, bounds.w * v.scale, vw);

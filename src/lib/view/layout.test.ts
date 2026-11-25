@@ -51,6 +51,18 @@ describe("layout", () => {
     expect(pagesInRect(l, { x: 5000, y, w: 10, h: 10 })).toEqual([]);
   });
 
+  it("at the document's end the last page is current, and at its start the first, however little they fill", () => {
+    // A tall sheet, then a short one last, in a view the short one can't half fill.
+    const l = computeLayout([{ w: 600, h: 200 }, { w: 600, h: 2000 }, { w: 600, h: 200 }], "continuous");
+    const end = l.bounds.y + l.bounds.h;
+    expect(currentPage(l, { x: -300, y: end - 1000, w: 600, h: 1000 })).toBe(2);
+    expect(currentPage(l, { x: -300, y: end - 1001, w: 600, h: 1000 })).toBe(1); // a touch short of the end
+    expect(currentPage(l, { x: -300, y: l.bounds.y, w: 600, h: 1000 })).toBe(0);
+    expect(currentPage(l, { x: -300, y: l.bounds.y + 1, w: 600, h: 1000 })).toBe(1);
+    // The whole document in view is both ends at once: the biggest page, as ever.
+    expect(currentPage(l, { x: -300, y: l.bounds.y - 100, w: 600, h: 4000 })).toBe(1);
+  });
+
   it("current page is the one with most visible area", () => {
     const l = computeLayout(sizes, "continuous");
     const r = l.rects[20]!;

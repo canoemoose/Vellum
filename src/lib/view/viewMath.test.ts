@@ -169,15 +169,35 @@ describe("constrain", () => {
     close((bounds.y + bounds.h) * c.scale + c.ty, 800 - 16); // bottom edge at the margin
   });
 
-  it("stops a document bigger than the view at its edges, never leaving empty view", () => {
-    // At scale 10 the document is 2000 x 3000: its edges may not come inside the margin.
+  it("lets an edge of a document bigger than the view come in to the middle, no further", () => {
+    // At scale 10 the document is 2000 x 3000 in a 1000 x 800 view.
     const tooFarLeft = constrainView({ scale: 10, tx: -5000, ty: 0 }, bounds, 1000, 800, 16);
-    close((bounds.x + bounds.w) * 10 + tooFarLeft.tx, 1000 - 16); // right edge at the margin
-    const tooFarDown = constrainView({ scale: 10, tx: 1500, ty: 400 }, bounds, 1000, 800, 16);
-    close(bounds.x * 10 + tooFarDown.tx, 16); // left edge at the margin
-    close(bounds.y * 10 + tooFarDown.ty, 16); // top edge at the margin
+    close((bounds.x + bounds.w) * 10 + tooFarLeft.tx, 500); // right edge at the middle
+    const tooFarDown = constrainView({ scale: 10, tx: 5000, ty: 4000 }, bounds, 1000, 800, 16);
+    close(bounds.x * 10 + tooFarDown.tx, 500); // left edge at the middle
+    close(bounds.y * 10 + tooFarDown.ty, 400); // top edge at the middle
     const inside = { scale: 10, tx: 500, ty: -1000 };
     expect(constrainView(inside, bounds, 1000, 800, 16)).toBe(inside); // anywhere in between is fine
+  });
+
+  it("gives a document only just bigger than the view only as much slack as it overhangs", () => {
+    // 300 tall at scale 2.8 is 840: 72 more than the 768 between the margins.
+    const up = constrainView({ scale: 2.8, tx: 500, ty: -5000 }, bounds, 1000, 800, 16);
+    close((bounds.y + bounds.h) * 2.8 + up.ty, 800 - 16 - 72); // bottom edge 72 inside the margin
+    const down = constrainView({ scale: 2.8, tx: 500, ty: 5000 }, bounds, 1000, 800, 16);
+    close(bounds.y * 2.8 + down.ty, 16 + 72);
+    // Exactly filling the space between the margins: none, it can't move.
+    const s = 768 / 300;
+    const fitted = constrainView({ scale: s, tx: 500, ty: 300 }, bounds, 1000, 800, 16);
+    close(bounds.y * s + fitted.ty, 16);
+  });
+
+  it("without the slack, stops the edges at the margin", () => {
+    const tooFarLeft = constrainView({ scale: 10, tx: -5000, ty: 0 }, bounds, 1000, 800, 16, false);
+    close((bounds.x + bounds.w) * 10 + tooFarLeft.tx, 1000 - 16);
+    const tooFarDown = constrainView({ scale: 10, tx: 1500, ty: 400 }, bounds, 1000, 800, 16, false);
+    close(bounds.x * 10 + tooFarDown.tx, 16);
+    close(bounds.y * 10 + tooFarDown.ty, 16);
   });
 });
 

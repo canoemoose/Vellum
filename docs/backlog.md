@@ -33,6 +33,10 @@ that work's brief or scope file and comes off this list.
 
 - **Ctrl and the mouse wheel**: Ctrl held swaps what the wheel does, in either navigation mode:
   zooming where it scrolls, scrolling where it zooms.
+- **Dragging the green box on the mini map is glitchy across page boundaries**: the map grows
+  and shrinks as the view crosses from one page to the next, so the box jumps under the
+  pointer mid-drag. Reported by Matt on 25 November 2026, not looked into. One idea (untried):
+  hold the map's framing and size still for the length of a drag.
 
 ## Markup and measuring
 

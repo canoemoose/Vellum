@@ -866,7 +866,15 @@ export class Viewer {
    */
   scrollBy(dx: number, dy: number): void {
     const ty0 = this.view.ty;
-    this.panBy(dx, dy);
+    let move = dy;
+    if (this.layoutMode === "single" && this.doc && dy !== 0) {
+      // The wheel stops at the page's own end here, not in the slack past it (constrainView):
+      // scrolling on turns the page. Where a drag has left the view in the slack, it stays.
+      const want = ty0 + dy;
+      const tight = constrainView({ ...this.view, ty: want }, this.layout.bounds, this.vw, this.vh, undefined, false).ty;
+      move = (dy < 0 ? Math.max(want, Math.min(tight, ty0)) : Math.min(want, Math.max(tight, ty0))) - ty0;
+    }
+    this.panBy(dx, move);
     if (this.layoutMode !== "single" || !this.doc || dy === 0) return;
     const moved = this.view.ty - ty0;
     const now = performance.now();

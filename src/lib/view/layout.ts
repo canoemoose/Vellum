@@ -105,9 +105,21 @@ export function pagesInRect(layout: Layout, r: Rect): number[] {
   return out;
 }
 
-/** The page that owns the most of the visible rect (falls back to nearest by centre). */
+/**
+ * The page that owns the most of the visible rect (falls back to nearest by centre). In the
+ * continuous layout, a view at the document's end is on the last page and one at its start on
+ * the first, however little of the view they fill: a short last sheet under a tall one would
+ * otherwise never be the current page.
+ */
 export function currentPage(layout: Layout, visible: Rect): number {
   const candidates = pagesInRect(layout, visible);
+  if (layout.mode === "continuous" && candidates.length) {
+    const b = layout.bounds;
+    const atStart = visible.y <= b.y;
+    const atEnd = visible.y + visible.h >= b.y + b.h;
+    if (atEnd && !atStart) return candidates[candidates.length - 1]!;
+    if (atStart && !atEnd) return candidates[0]!;
+  }
   let best = -1;
   let bestArea = -1;
   for (const i of candidates) {
