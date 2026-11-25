@@ -122,6 +122,33 @@ fn an_opaque_png_has_no_mask() {
     assert!(!img.dict.has(b"SMask"));
 }
 
+/// The image XObjects carrying Vellum's hash in a saved file.
+fn hashed_images(out: &[u8]) -> usize {
+    let doc = lopdf::Document::load_mem(out).unwrap();
+    doc.objects.values().filter_map(|o| o.as_stream().ok()).filter(|s| s.dict.has(IMAGE_HASH_KEY.as_bytes())).count()
+}
+
+#[test]
+fn a_picture_already_in_the_file_is_reused_only_if_it_is_the_same() {
+    // docs/review-0.2.0.md, 5. Saved once, then another stamp with the same picture: the
+    // file's copy is reused, so the second save adds no image.
+    let png = signature_png(false);
+    let once = annot::apply(make_pdf(vec![page(300.0, 200.0, &[])]), "", &[Change::Add { spec: image_stamp("a", [20.0, 60.0, 80.0, 80.0], &png, "ab12") }]).unwrap();
+    assert_eq!(hashed_images(&once), 1);
+    let twice = annot::apply(once.clone(), "", &[Change::Add { spec: image_stamp("b", [120.0, 60.0, 180.0, 80.0], &png, "AB12") }]).unwrap();
+    assert_eq!(hashed_images(&twice), 1, "the same picture is reused from the file");
+    // A different picture under the same hash (a file prepared with someone's signature hash
+    // on another image) is not: the signature gets its own image, drawn as itself.
+    let other = signature_png(true);
+    let forged = annot::apply(once, "", &[Change::Add { spec: image_stamp("c", [120.0, 60.0, 180.0, 80.0], &other, "ab12") }]).unwrap();
+    assert_eq!(hashed_images(&forged), 2, "a different picture is written, not swapped for the file's");
+    let r = vellum_lib::print::raster::SheetRenderer::open(pdfium(), Arc::new(forged)).unwrap();
+    let px = r.render_band(0, 1200, 800, 0, 0, 1200, 800, 0x01).unwrap();
+    // The opaque picture's white paper shows above the bar (the file's own is clear there).
+    assert_eq!(sample(&px, 130.0, 62.0), [255, 255, 255]);
+    assert_eq!(sample(&px, 130.0, 70.0), [255, 0, 0]);
+}
+
 #[test]
 fn one_image_placed_three_times_is_written_once() {
     let png = signature_png(false);

@@ -110,6 +110,46 @@ pub fn png_to_streams(bytes: &[u8]) -> Result<(Stream, Option<Stream>), String> 
     Ok((s, mask))
 }
 
+/// A stream's content, decoded (Flate, or none); None for any other filter.
+fn plain_content(s: &Stream) -> Option<Vec<u8>> {
+    match s.dict.get(b"Filter") {
+        Err(_) => Some(s.content.clone()),
+        Ok(_) => s.decompressed_content().ok(),
+    }
+}
+
+/// Whether `s`, in `doc`, is exactly the image XObject (and soft mask) `png_to_streams` made:
+/// an /Image of the same size and colour, nothing that changes how it draws, the same pixels,
+/// and the same mask or none.
+fn same_image(doc: &lopdf::Document, s: &Stream, img: &Stream, mask: Option<&Stream>) -> bool {
+    let name = |d: &Dictionary, k: &[u8]| d.get(k).ok().and_then(|v| v.as_name().ok()).map(|n| n.to_vec());
+    let int = |d: &Dictionary, k: &[u8]| d.get(k).ok().and_then(|v| v.as_i64().ok());
+    let alike = |a: &Stream, b: &Stream| {
+        name(&a.dict, b"Subtype").as_deref() == Some(b"Image".as_slice())
+            && ["Width", "Height", "BitsPerComponent"].iter().all(|k| int(&a.dict, k.as_bytes()).is_some() && int(&a.dict, k.as_bytes()) == int(&b.dict, k.as_bytes()))
+            && name(&a.dict, b"ColorSpace").is_some()
+            && name(&a.dict, b"ColorSpace") == name(&b.dict, b"ColorSpace")
+            && ["Decode", "Mask", "ImageMask", "Alternates", "SMaskInData", "OC"].iter().all(|k| !a.dict.has(k.as_bytes()))
+            && plain_content(a).is_some_and(|c| Some(c) == plain_content(b))
+    };
+    if !alike(s, img) {
+        return false;
+    }
+    let file_mask = match s.dict.get(b"SMask") {
+        Err(_) => None,
+        Ok(Object::Reference(r)) => match doc.get_object(*r) {
+            Ok(Object::Stream(m)) => Some(m),
+            _ => return false,
+        },
+        Ok(_) => return false,
+    };
+    match (file_mask, mask) {
+        (None, None) => true,
+        (Some(f), Some(m)) => !f.dict.has(b"SMask") && alike(f, m),
+        _ => false,
+    }
+}
+
 fn hash_ok(h: &str) -> bool {
     !h.is_empty() && h.len() <= 128 && h.bytes().all(|c| c.is_ascii_hexdigit())
 }
@@ -126,12 +166,24 @@ impl Writer {
         })
     }
 
-    /// The image XObject an earlier save wrote for `hash`, if the file has one.
-    fn image_in_file(&self, hash: &str) -> Option<ObjectId> {
-        self.inc.get_prev_documents().objects.iter().find_map(|(id, o)| match o {
+    /// The image XObject an earlier save wrote for `hash`, if the file has one and it is the
+    /// same picture: an /Image whose size, pixels and soft mask are what `img` and `mask` (this
+    /// picture, just converted) would write. The hash alone isn't proof: anyone can put it on
+    /// a stream in a file they prepare, having read it from a file you signed before, and the
+    /// signature placed would then show their picture (docs/review-0.2.0.md, 5).
+    ///
+    /// With no picture (`img` None: a stamp read from this file whose picture couldn't be read
+    /// back, sent without one), any /Image under the hash: nothing was supplied to swap.
+    fn image_in_file(&self, hash: &str, img: Option<(&Stream, Option<&Stream>)>) -> Option<ObjectId> {
+        let prev = self.inc.get_prev_documents();
+        prev.objects.iter().find_map(|(id, o)| match o {
             Object::Stream(s) => {
                 let h = s.dict.get(IMAGE_HASH_KEY.as_bytes()).ok().and_then(|v| v.as_str().ok())?;
-                h.eq_ignore_ascii_case(hash.as_bytes()).then_some(*id)
+                let same = match img {
+                    Some((img, mask)) => same_image(prev, s, img, mask),
+                    None => s.dict.get(b"Subtype").ok().and_then(|v| v.as_name().ok()) == Some(b"Image".as_slice()),
+                };
+                (h.eq_ignore_ascii_case(hash.as_bytes()) && same).then_some(*id)
             }
             _ => None,
         })
@@ -146,12 +198,18 @@ impl Writer {
         if let Some(id) = self.image_in_update(&hash) {
             return Ok(id);
         }
-        // Phase 7b: a stamp brought back from the file reuses the picture already in it.
-        if let Some(id) = self.image_in_file(&hash) {
-            return Ok(id);
+        // Phase 7b: a stamp brought back from the file reuses the picture already in it, once
+        // it's checked to be the same picture (or sent without one: the file's is the picture).
+        if img.png.trim().is_empty() {
+            if let Some(id) = self.image_in_file(&hash, None) {
+                return Ok(id);
+            }
         }
         let bytes = base64_decode(&img.png).ok_or_else(|| crate::errcode::coded("stamp_image", "a stamp's image isn't base64"))?;
         let (mut st, mask) = png_to_streams(&bytes)?;
+        if let Some(id) = self.image_in_file(&hash, Some((&st, mask.as_ref()))) {
+            return Ok(id);
+        }
         if let Some(m) = mask {
             let mid = self.inc.new_document.add_object(m);
             st.dict.set("SMask", Object::Reference(mid));
