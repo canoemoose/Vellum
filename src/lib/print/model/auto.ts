@@ -118,6 +118,16 @@ function frame(input: AutoInput, paper: Size, landscape: boolean): Frame {
   return { size, area, content: stampedArea(area, input.options.stamp) };
 }
 
+/**
+ * Which To scale controls the dialog shows for these pages: the ratio for pages with a drawing
+ * scale, the percentage for pages without (sizingFactor uses each). A mix shows both, so the
+ * percentage the unscaled pages print at is never hidden (docs/review-0.2.0.md, 13).
+ */
+export function scaleControls(sources: readonly { ref: { drawingScale: number | null } }[]): { ratio: boolean; percent: boolean } {
+  const ratio = sources.some((s) => !!s.ref.drawingScale);
+  return { ratio, percent: !ratio || sources.some((s) => !s.ref.drawingScale) };
+}
+
 /** The factor for one page under the chosen sizing (Fit / Actual / To scale). */
 export function sizingFactor(o: AutoOptions, src: Source, fitBox: Box): number {
   const c = contentSize(src);

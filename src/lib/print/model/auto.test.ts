@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoLayout, cutMarks, layoutSummary, nUpCells, nUpGrid, sizingInfo, tileGrid, tileName } from "./auto";
+import { autoLayout, cutMarks, layoutSummary, nUpCells, nUpGrid, scaleControls, sizingInfo, tileGrid, tileName } from "./auto";
 import { boxH, boxW, contains, mmToPt, ptToMm } from "./geom";
 import { STAMP_STRIP } from "./job";
 import { A0, A1, A3, A4, close, input, ref, src, uniform } from "./testkit";
@@ -289,5 +289,15 @@ describe("Summary", () => {
     expect(layoutSummary(input([]).options)).toBe("1 per sheet · printer margins · centred");
     expect(layoutSummary({ ...input([]).options, nUp: 4, marginMode: "custom", customMarginMm: 12, centre: false, borders: true }))
       .toBe("4 per sheet · 12 mm margins · borders");
+  });
+});
+
+describe("To scale's controls (review 0.2.0, 13)", () => {
+  const page = (drawingScale: number | null) => ({ ref: { drawingScale } });
+  it("shows the percentage whenever a page has no drawing scale, as that's what it prints at", () => {
+    expect(scaleControls([page(100), page(null)])).toEqual({ ratio: true, percent: true });
+    expect(scaleControls([page(100), page(50)])).toEqual({ ratio: true, percent: false });
+    expect(scaleControls([page(null)])).toEqual({ ratio: false, percent: true });
+    expect(scaleControls([])).toEqual({ ratio: false, percent: true });
   });
 });

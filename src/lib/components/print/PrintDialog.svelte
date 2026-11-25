@@ -13,7 +13,7 @@
     type Capabilities, type PrinterInfo, cancelPrinting, composeJob, errorText, listPrinters, printFeatures,
     printerCapabilities, printerMargins, printerProperties, releaseJob, savePdf, sendJob,
   } from "../../print/api";
-  import { type AutoOptions, type AutoResult, autoLayout, sizingInfo } from "../../print/model/auto";
+  import { type AutoOptions, type AutoResult, autoLayout, scaleControls, sizingInfo } from "../../print/model/auto";
   import { type Margins, type Size, describeSize, fmtRatio, intersect, isoName, isoSize, mmToPt } from "../../print/model/geom";
   import { type Job, formatDate } from "../../print/model/job";
   import {
@@ -349,8 +349,8 @@
     if (n) settings.scaleRatio = n;
   }
 
-  /** A page being printed has a drawing scale: To scale is a ratio, else a percentage. */
-  const scaleKnown = $derived(!!(picked?.ok && picked.sources.some((s) => s.ref.drawingScale)));
+  /** To scale: a ratio for pages with a drawing scale, a percentage for the rest; both for a mix. */
+  const scaleShown = $derived(picked?.ok ? scaleControls(picked.sources) : { ratio: false, percent: true });
   let customPercent = $state(false);
 
   function setPercentText(t: string) {
@@ -841,51 +841,54 @@
                       <option value="paper">Full paper</option>
                     </select>
                   </div>
-                {:else if settings.sizing === "scale" && !scaleKnown}
-                  <div class="row">
-                    <label for="pr-scale">Scale</label>
-                    <div class="pair">
-                      <select
-                        id="pr-scale"
-                        value={customPercent || !PERCENT_PRESETS.includes(settings.scalePercent) ? "custom" : String(settings.scalePercent)}
-                        onchange={(e) => {
-                          const v = e.currentTarget.value;
-                          customPercent = v === "custom";
-                          if (v !== "custom") settings.scalePercent = Number(v);
-                        }}
-                      >
-                        {#each PERCENT_PRESETS as n (n)}<option value={String(n)}>{n}%</option>{/each}
-                        <option value="custom">Custom…</option>
-                      </select>
-                      {#if customPercent || !PERCENT_PRESETS.includes(settings.scalePercent)}
-                        <input class="num mono" aria-label="Custom percentage" value={settings.scalePercent} onchange={(e) => setPercentText(e.currentTarget.value)} /><span class="muted">%</span>
-                      {/if}
-                    </div>
-                  </div>
                 {:else if settings.sizing === "scale"}
-                  <div class="row">
-                    <label for="pr-scale">Scale</label>
-                    <div class="pair">
-                      <select
-                        id="pr-scale"
-                        value={customScale ? "custom" : String(settings.scaleRatio)}
-                        onchange={(e) => {
-                          const v = e.currentTarget.value;
-                          if (v === "custom") customScale = String(settings.scaleRatio);
-                          else {
-                            customScale = "";
-                            settings.scaleRatio = Number(v);
-                          }
-                        }}
-                      >
-                        {#each SCALE_PRESETS as n (n)}<option value={String(n)}>{fmtRatio(n)}</option>{/each}
-                        <option value="custom">Custom…</option>
-                      </select>
-                      {#if customScale}
-                        <input class="num mono" aria-label="Custom scale" value={`1:${customScale}`} onchange={(e) => setScaleText(e.currentTarget.value)} />
-                      {/if}
+                  {#if scaleShown.ratio}
+                    <div class="row">
+                      <label for="pr-scale">Scale</label>
+                      <div class="pair">
+                        <select
+                          id="pr-scale"
+                          value={customScale ? "custom" : String(settings.scaleRatio)}
+                          onchange={(e) => {
+                            const v = e.currentTarget.value;
+                            if (v === "custom") customScale = String(settings.scaleRatio);
+                            else {
+                              customScale = "";
+                              settings.scaleRatio = Number(v);
+                            }
+                          }}
+                        >
+                          {#each SCALE_PRESETS as n (n)}<option value={String(n)}>{fmtRatio(n)}</option>{/each}
+                          <option value="custom">Custom…</option>
+                        </select>
+                        {#if customScale}
+                          <input class="num mono" aria-label="Custom scale" value={`1:${customScale}`} onchange={(e) => setScaleText(e.currentTarget.value)} />
+                        {/if}
+                      </div>
                     </div>
-                  </div>
+                  {/if}
+                  {#if scaleShown.percent}
+                    <div class="row">
+                      <label for="pr-percent">{scaleShown.ratio ? "Unscaled" : "Scale"}</label>
+                      <div class="pair">
+                        <select
+                          id="pr-percent"
+                          value={customPercent || !PERCENT_PRESETS.includes(settings.scalePercent) ? "custom" : String(settings.scalePercent)}
+                          onchange={(e) => {
+                            const v = e.currentTarget.value;
+                            customPercent = v === "custom";
+                            if (v !== "custom") settings.scalePercent = Number(v);
+                          }}
+                        >
+                          {#each PERCENT_PRESETS as n (n)}<option value={String(n)}>{n}%</option>{/each}
+                          <option value="custom">Custom…</option>
+                        </select>
+                        {#if customPercent || !PERCENT_PRESETS.includes(settings.scalePercent)}
+                          <input class="num mono" aria-label="Custom percentage" value={settings.scalePercent} onchange={(e) => setPercentText(e.currentTarget.value)} /><span class="muted">%</span>
+                        {/if}
+                      </div>
+                    </div>
+                  {/if}
                 {:else if settings.sizing === "tile"}
                   <div class="row">
                     <label for="pr-overlap">Overlap</label>
