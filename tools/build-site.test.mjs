@@ -141,6 +141,10 @@ describe("highlights", () => {
     expect(highlights("Highlights: Markup, measuring and signatures\n\n- Added clouds")).toBe("Markup, measuring and signatures");
     expect(highlights("## 0.2.0\r\n\r\n**Highlights:** [Markup](https://x.test), `measuring` and signatures.\r\n- More")).toBe("Markup, measuring and signatures");
     expect(highlights("- highlights : Faster zoom")).toBe("Faster zoom");
+    // As a headline, which is how the notes write it.
+    expect(highlights("## Highlights: Markup, measuring and signatures\n\n## Added")).toBe("Markup, measuring and signatures");
+    expect(highlights("# **Highlights:** Faster zoom")).toBe("Faster zoom");
+    expect(highlights("## Highlights\n\nMarkup on its own line")).toBeNull();
   });
   it("gives nothing when there's no such line", () => {
     expect(highlights("- Fixed a crash\n- The highlights: are not at the start")).toBeNull();

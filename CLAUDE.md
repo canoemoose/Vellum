@@ -73,8 +73,8 @@ publishing the draft is what makes installed copies offer the update. In order:
    (`git push origin :refs/tags/v0.2.0`, `git tag -d v0.2.0`) and tag again.
 4. On GitHub, open the draft, write the notes ("What's new" in the app opens this page), and
    publish. Or: `gh release edit v0.2.0 --draft=false --latest --notes "..."`.
-   For a feature release (0.2.0, 0.3.0), put a line `Highlights: Markup, measuring and
-   signatures` in the notes: the homepage's hero pill shows it beside "New in 0.2". Patch
+   For a feature release (0.2.0, 0.3.0), open the notes with a headline, `## Highlights: Markup,
+   measuring and signatures`: the homepage's hero pill shows it beside "New in 0.2". Patch
    releases needn't repeat it; with no such line the pill shows only the version.
 5. GitHub serves the previous version's update file for up to a minute after publishing, so
    wait before testing with Help > Check for updates.

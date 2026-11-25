@@ -115,12 +115,12 @@ export function downloadInfo(release) {
 }
 
 /**
- * The "Highlights: ..." line of a release's notes, as plain text for the hero pill: list
- * marker, emphasis, links and a closing full stop stripped, cut at a word to `max` characters.
+ * The "Highlights: ..." line of a release's notes, as plain text for the hero pill: heading
+ * or list marker, emphasis, links and a closing full stop stripped, cut at a word to `max` characters.
  * null when the notes have no such line.
  */
 export function highlights(body, max = 60) {
-  const m = /^[ \t]*(?:[-*+][ \t]+)?[*_]*highlights[*_]*[ \t]*:[*_]*[ \t]*(.+)$/im.exec(typeof body === "string" ? body : "");
+  const m = /^[ \t]*(?:(?:[-*+]|#{1,6})[ \t]+)?[*_]*highlights[*_]*[ \t]*:[*_]*[ \t]*(.+)$/im.exec(typeof body === "string" ? body : "");
   if (!m) return null;
   const text = m[1]
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")

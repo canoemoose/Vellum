@@ -74,12 +74,12 @@ say so under "Known limits".
 
 Style: terse changelog, no prose. Everything since 0.1.4 (rc1 and rc3 merged, rc3's changes
 folded into the features they changed, fixes to things that never shipped in 0.1.x left out).
-The `Highlights:` line feeds the homepage's hero pill.
+The `## Highlights:` headline feeds the homepage's hero pill.
 
 ```markdown
-Highlights: Markup, measuring and signatures
+## Highlights: Markup, measuring and signatures
 
-## Added
+### Added
 
 **Markup** (saved as standard PDF annotations)
 - Line tools: Arrow (A), Line and Polyline (L). Line ends: none, open, filled, dot, bar, slash.
@@ -129,7 +129,7 @@ Highlights: Markup, measuring and signatures
 **Windows**
 - Document icon for PDFs set to open in Vellum.
 
-## Changed
+### Changed
 
 - Print: To scale and the scale note use each page's own drawing scale. Manual layout likewise, including files added to it.
 - Print: the scale note describes the sheet in the preview, not always the first.
@@ -142,12 +142,12 @@ Highlights: Markup, measuring and signatures
 - Theme follows Windows on a new install (was dark). Existing installs keep theirs.
 - F1 lists all shortcuts.
 
-## Fixed
+### Fixed
 
 - Canvas flickered while the window or sidebar was resized.
 - Continuous layout: a short last page was never the selected page in the sidebar.
 
-## Known limits
+### Known limits
 
 - Text in a markup is saved in the standard PDF fonts, which hold Western European characters only. Others (Δ, Ω, ≥, ≤, ≠, non-Latin scripts) show as "?" in other PDF apps, and in Vellum's own prints and thumbnails; Vellum's page shows them as typed. ° and ± are fine.
 ```

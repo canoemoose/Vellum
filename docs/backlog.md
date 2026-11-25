@@ -33,6 +33,9 @@ that work's brief or scope file and comes off this list.
 
 - **Ctrl and the mouse wheel**: Ctrl held swaps what the wheel does, in either navigation mode:
   zooming where it scrolls, scrolling where it zooms.
+- **Right-click menus**: go over them as a set. The Markups panel's has one entry (Delete),
+  which reads as thin; decide what belongs on each (jump to, properties, copy) or whether a
+  one-entry menu should be something else. Noted by Matt on 25 November 2026.
 - **Dragging the green box on the mini map is glitchy across page boundaries**: the map grows
   and shrinks as the view crosses from one page to the next, so the box jumps under the
   pointer mid-drag. Reported by Matt on 25 November 2026, not looked into. One idea (untried):
