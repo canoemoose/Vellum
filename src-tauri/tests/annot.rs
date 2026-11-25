@@ -243,3 +243,67 @@ fn the_private_reedit_entry_is_written_and_reads_back() {
     let bb = ink_with_annots(out).expect("ink");
     assert_near(bb, (10.0, 60.0, 150.0, 190.0), 0.6, "squares");
 }
+
+/// How many annotations PDFium finds on each page (the file must open).
+fn annot_counts(bytes: Vec<u8>) -> Vec<i32> {
+    pdfium()
+        .run_on_worker(move |ctx| {
+            let b = ctx.bindings();
+            unsafe {
+                let doc = b.FPDF_LoadMemDocument64(&bytes, None);
+                assert!(!doc.is_null(), "the file opens");
+                let out = (0..b.FPDF_GetPageCount(doc))
+                    .map(|i| {
+                        let page = b.FPDF_LoadPage(doc, i);
+                        let n = b.FPDFPage_GetAnnotCount(page);
+                        b.FPDF_ClosePage(page);
+                        n
+                    })
+                    .collect();
+                b.FPDF_CloseDocument(doc);
+                out
+            }
+        })
+        .unwrap()
+}
+
+/// Two pages whose /Annots is one indirect array, holding `inside` (from page 0 of `bytes`).
+fn sharing_annots(bytes: &[u8]) -> Vec<u8> {
+    let mut doc = lopdf::Document::load_mem(bytes).unwrap();
+    let pages: Vec<_> = doc.get_pages().values().copied().collect();
+    let inside = match doc.get_dictionary(pages[0]).unwrap().get(b"Annots") {
+        Ok(lopdf::Object::Array(a)) => a.clone(),
+        Ok(lopdf::Object::Reference(r)) => doc.get_object(*r).unwrap().as_array().unwrap().clone(),
+        _ => vec![],
+    };
+    let shared = doc.add_object(lopdf::Object::Array(inside));
+    for p in &pages {
+        doc.get_dictionary_mut(*p).unwrap().set("Annots", lopdf::Object::Reference(shared));
+    }
+    let mut out = Vec::new();
+    doc.save_to(&mut out).unwrap();
+    out
+}
+
+#[test]
+fn a_markup_added_to_a_page_sharing_its_annots_array_stays_on_that_page() {
+    // docs/review-0.2.0.md, 6. Two pages pointing at one empty /Annots array.
+    let file = sharing_annots(&make_pdf(vec![page(300.0, 200.0, &[]), page(300.0, 200.0, &[])]));
+    assert_eq!(annot_counts(file.clone()), vec![0, 0]);
+    let out = annot::apply(file, "", &[Change::Add { spec: square(0, "a", [10.0, 10.0, 60.0, 40.0]) }]).unwrap();
+    assert_eq!(annot_counts(out.clone()), vec![1, 0]);
+    assert_eq!(nms(out.clone()), vec!["a"]);
+    // A second save adds to page 1: page 0 keeps its own.
+    let more = annot::apply(out, "", &[Change::Add { spec: square(1, "b", [10.0, 10.0, 60.0, 40.0]) }]).unwrap();
+    assert_eq!(annot_counts(more), vec![1, 1]);
+}
+
+#[test]
+fn a_delete_on_a_page_sharing_its_annots_array_leaves_the_others_alone() {
+    // The shared array already lists "a": deleting it from page 0 takes it off page 0 only.
+    let one = annot::apply(make_pdf(vec![page(300.0, 200.0, &[]), page(300.0, 200.0, &[])]), "", &[Change::Add { spec: square(0, "a", [10.0, 10.0, 60.0, 40.0]) }]).unwrap();
+    let file = sharing_annots(&one);
+    assert_eq!(annot_counts(file.clone()), vec![1, 1]);
+    let out = annot::apply(file, "", &[Change::Delete { page: 0, nm: "a".into(), at: None }]).unwrap();
+    assert_eq!(annot_counts(out), vec![0, 1]);
+}

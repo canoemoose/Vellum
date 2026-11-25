@@ -250,11 +250,25 @@ impl Writer {
     }
 
     /// The page's /Annots array in the new section, copying the page (and the array, when it
-    /// is an indirect object) forward first.
+    /// is an indirect object) forward first. An indirect array another page also points at
+    /// becomes this page's own (a direct copy) before it changes, or a markup added to one page
+    /// would appear on all of them (docs/review-0.2.0.md, 6).
     fn annots_mut(&mut self, page: usize) -> Result<&mut Vec<Object>, String> {
         let pid = self.page_id(page)?;
         self.inc.opt_clone_object_to_new_document(pid).map_err(|e| e.to_string())?;
-        let existing = self.inc.new_document.get_dictionary(pid).map_err(|e| e.to_string())?.get(b"Annots").ok().cloned();
+        let mut existing = self.inc.new_document.get_dictionary(pid).map_err(|e| e.to_string())?.get(b"Annots").ok().cloned();
+        if let Some(Object::Reference(aid)) = existing {
+            let annots_of = |p: ObjectId| self.get(p).and_then(|o| o.as_dict().ok()).and_then(|d| d.get(b"Annots").ok()).and_then(|o| o.as_reference().ok());
+            let shared = self.pages.iter().any(|&p| p != pid && annots_of(p) == Some(aid));
+            if shared {
+                let own = match self.get(aid) {
+                    Some(Object::Array(a)) => Object::Array(a.clone()),
+                    _ => return Err("/Annots does not point at an array".into()),
+                };
+                self.inc.new_document.get_dictionary_mut(pid).map_err(|e| e.to_string())?.set("Annots", own.clone());
+                existing = Some(own);
+            }
+        }
         match existing {
             Some(Object::Reference(aid)) => {
                 self.inc.opt_clone_object_to_new_document(aid).map_err(|e| e.to_string())?;
