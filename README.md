@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="https://github.com/canoemoose/Vellum/releases/latest"><img src="https://img.shields.io/github/v/release/canoemoose/Vellum?label=download&color=2ea44f" alt="Latest release"></a>
-  <a href="https://github.com/canoemoose/Vellum/releases"><img src="https://img.shields.io/github/downloads/canoemoose/Vellum/total?color=2ea44f" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white" alt="Windows 10 and 11">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/canoemoose/Vellum" alt="MIT licence"></a>
   <br>
