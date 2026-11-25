@@ -13,8 +13,13 @@ export interface PrintDoc {
   /** File name shown in the UI. */
   title: string;
   info: DocInfo;
-  /** Drawing scale N in 1:N, or null when not known. */
-  scale: number | null;
+  /**
+   * Page `page`'s drawing scale N in 1:N, or null when not known. Pages of a set can each be at
+   * their own scale (a 1:5000 site plan, then 1:100 sheets). The shell's answer can change
+   * while the dialog is open, as title blocks not yet read come in; it reads reactive state,
+   * so whatever derives from it follows.
+   */
+  scaleOf: (page: number) => number | null;
 }
 
 /** A rectangle on one page, in page points, y down from the top of the page. */

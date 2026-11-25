@@ -767,12 +767,13 @@
     if (have) return have;
     try {
       const info = await context.renderer.open(path);
-      const doc: PrintDoc = { docId: info.docId, path, title: fileName(path), info, scale: null };
-      // Drawing scale from the title block, as the shell does for tabs.
+      // Drawing scale from page 1's title block, for every page (unlike a tab's, read per page).
+      let ratio: number | null = null;
       if (info.kind === "pdf" && context.renderer.findScale) {
         const c = await context.renderer.findScale(info.docId, 0).catch(() => []);
-        if (c[0]) doc.scale = c[0].ratio;
+        if (c[0]) ratio = c[0].ratio;
       }
+      const doc: PrintDoc = { docId: info.docId, path, title: fileName(path), info, scaleOf: () => ratio };
       extraDocs = [...extraDocs, doc];
       return doc;
     } catch (e) {

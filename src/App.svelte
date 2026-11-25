@@ -489,7 +489,7 @@
    * open, by detectScale). Each sheet of a set can be at its own scale (the Fieldwork set:
    * 1:5000, 1:2500, 1:500, 1:100).
    */
-  function detectPageScale(t: Tab, page: number) {
+  function detectPageScale(t: Tab, page: number, soon = true) {
     if (t.status !== "open" || !t.info || t.info.kind !== "pdf" || page === 0 || t.detectedPages[page] !== undefined) return;
     const key = `${t.id}:${page}`;
     const r = rendererFor(t.path);
@@ -497,17 +497,44 @@
     detecting.add(key);
     const { id } = t;
     const info = t.info;
-    r.findScale(info.docId, page)
-      .catch((e) => {
-        console.warn("scale detection failed on page", page + 1, String(e));
-        return [] as ScaleCandidate[];
-      })
-      .then((c) => {
-        const auto = pickDetectedScale(c, info.sizes[page].w, info.sizes[page].h);
-        const cur = tabById(id);
-        if (cur) updateTab(id, { detectedPages: { ...cur.detectedPages, [page]: auto }, pageCandidates: { ...cur.pageCandidates, [page]: c } });
-      })
-      .finally(() => detecting.delete(key));
+    const read = () => {
+      // Closed (or reopened as another document) while it waited: nothing to read.
+      if (tabById(id)?.info?.docId !== info.docId) {
+        detecting.delete(key);
+        return Promise.resolve();
+      }
+      return r.findScale!(info.docId, page)
+        .catch((e) => {
+          console.warn("scale detection failed on page", page + 1, String(e));
+          return [] as ScaleCandidate[];
+        })
+        .then((c) => {
+          const auto = pickDetectedScale(c, info.sizes[page].w, info.sizes[page].h);
+          const cur = tabById(id);
+          if (cur) updateTab(id, { detectedPages: { ...cur.detectedPages, [page]: auto }, pageCandidates: { ...cur.pageCandidates, [page]: c } });
+        })
+        .finally(() => detecting.delete(key));
+    };
+    // The page in view (or being measured) goes first; Print's pages wait their turn.
+    if (soon) scaleReads.unshift(read);
+    else scaleReads.push(read);
+    pumpScaleReads();
+  }
+
+  /**
+   * Title-block reads waiting to start. Two at a time: each holds PDFium while it reads, and
+   * Print on a 200-page set asks for every page at once, which would hold up the preview.
+   */
+  const scaleReads: (() => Promise<void>)[] = [];
+  let scaleReading = 0;
+  function pumpScaleReads() {
+    while (scaleReading < 2 && scaleReads.length) {
+      scaleReading++;
+      void scaleReads.shift()!().finally(() => {
+        scaleReading--;
+        pumpScaleReads();
+      });
+    }
   }
 
   // The page in view gets its title block read, so the status bar can show its own scale.
@@ -1930,12 +1957,26 @@
     });
   }
 
+  /**
+   * A tab's per-page drawing scales for Print, by the status bar's rule (resolvePageScale).
+   * Reads the tab live, so a title block read while the dialog is open updates the preview,
+   * and asks for a page's title block to be read the first time Print needs it.
+   */
+  function printScaleOf(id: number): (page: number) => number | null {
+    return (page) => {
+      const t = tabById(id);
+      if (!t) return null;
+      untrack(() => detectPageScale(t, page, false));
+      return scaleForPage(t.scale, pagesOf(t), page, titleBlocks(t))?.ratio ?? null;
+    };
+  }
+
   function openPrint() {
     if (!hasDoc || !viewer) return;
     printContext = {
       docs: tabs.tabs
         .filter((t) => t.status === "open" && t.info)
-        .map((t) => ({ docId: t.info!.docId, path: t.path, title: t.title, info: t.info!, scale: t.scale?.ratio ?? null })),
+        .map((t) => ({ docId: t.info!.docId, path: t.path, title: t.title, info: t.info!, scaleOf: printScaleOf(t.id) })),
       activeDocId: active?.info?.docId ?? null,
       currentPage: ui.page,
       viewRect: viewRect(),

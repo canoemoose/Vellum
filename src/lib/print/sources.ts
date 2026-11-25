@@ -17,7 +17,7 @@ export function pageRef(doc: PrintDoc, page: number): PageRef {
     title: doc.title,
     w: s.w,
     h: s.h,
-    drawingScale: doc.scale,
+    drawingScale: doc.scaleOf(page),
   };
 }
 

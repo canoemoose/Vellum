@@ -141,7 +141,8 @@
   }
 
   const sheetCount = $derived(shown?.job.sheets.length ?? 0);
-  const info = $derived(result ? sizingInfo(options, result.sheets[0]) : null);
+  // About the sheet in the preview: pages of a set can each be at their own size and scale.
+  const info = $derived(result ? sizingInfo(options, result.sheets[manualMode ? 0 : sheetIndex] ?? result.sheets[0]) : null);
   const printerMarginMm = $derived(Math.max(margins.portrait.left, margins.portrait.top) / mmToPt(1));
 
   $effect(() => {
@@ -332,8 +333,8 @@
     if (n) settings.scaleRatio = n;
   }
 
-  /** The document printed from has a drawing scale: To scale is a ratio, else a percentage. */
-  const scaleKnown = $derived(!!doc?.scale);
+  /** A page being printed has a drawing scale: To scale is a ratio, else a percentage. */
+  const scaleKnown = $derived(!!(picked?.ok && picked.sources.some((s) => s.ref.drawingScale)));
   let customPercent = $state(false);
 
   function setPercentText(t: string) {

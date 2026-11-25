@@ -7,7 +7,7 @@ function doc(docId: number, n: number, extra: Partial<PrintDoc> = {}): PrintDoc 
     docId,
     path: `C:/plans/d${docId}.pdf`,
     title: `d${docId}.pdf`,
-    scale: 100,
+    scaleOf: () => 100,
     info: {
       docId,
       kind: "pdf",
@@ -37,6 +37,18 @@ describe("pickSources", () => {
     const r = pickSources(ctx, "range", "1-2, 5", null);
     expect(r.ok && r.sources.map((s) => s.ref.page)).toEqual([0, 1, 4]);
     expect(pickSources(ctx, "range", "9", null)).toEqual({ ok: false, error: "Pages run from 1 to 5." });
+  });
+
+  it("gives each page its own drawing scale", () => {
+    // The Fieldwork set: a 1:5000 site plan, then sheets at 1:2500, 1:500 and 1:100.
+    const set = doc(3, 5, { scaleOf: (p) => [5000, 2500, 500, 100, null][p] ?? null });
+    const c = { docs: [set], activeDocId: 3, currentPage: 3, viewRect: { page: 4, x0: 0, y0: 0, x1: 9, y1: 9 } };
+    const all = pickSources(c, "all", "", null);
+    expect(all.ok && all.sources.map((s) => s.ref.drawingScale)).toEqual([5000, 2500, 500, 100, null]);
+    const cur = pickSources(c, "current", "", null);
+    expect(cur.ok && cur.sources[0].ref.drawingScale).toBe(100);
+    const v = pickSources(c, "view", "", null);
+    expect(v.ok && v.sources[0].ref.drawingScale).toBeNull();
   });
 
   it("view and marquee crop the page", () => {
