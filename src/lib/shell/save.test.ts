@@ -75,7 +75,8 @@ describe("markup preferences", () => {
 });
 
 // Existing annotations (phase 7b)
-import { forbidsChanges, unlockWarnings } from "./save";
+import { forbidsChanges, unlockWarnings, winAnsiNote } from "./save";
+import { outsideWinAnsi } from "../markup/fonts";
 
 describe("unlocking Edit file", () => {
   it("goes ahead without a word on an ordinary file", () => {
@@ -94,5 +95,20 @@ describe("unlocking Edit file", () => {
     expect(forbidsChanges({ ...plain, encryption: "V2 R3", permissions: all & ~32 })).toBe(true);
     expect(forbidsChanges({ ...plain, permissions: 0 })).toBe(false); // not encrypted: no permissions apply
     expect(unlockWarnings("a.pdf", { ...plain, encryption: "V2 R3", permissions: all & ~8 })).toEqual(["a.pdf's permissions ask for it not to be changed."]);
+  });
+});
+
+describe("text other PDF apps can't show (review 0.2.0, 12)", () => {
+  const add = (subtype: string, contents: string) => ({ op: "add", spec: { subtype, contents } });
+  it("names the characters a save draws as ? for other apps", () => {
+    expect(winAnsiNote([add("FreeText", "Δ 5 mm ≥ 3 → Ø ✓ Δ")])).toBe('Other PDF apps show Δ ≥ → ✓ as "?" in these markups; Vellum shows them as typed.');
+    expect(outsideWinAnsi("Café £5 – “ok” ½")).toEqual([]);
+  });
+  it("says nothing for plain text, or for text that's never drawn (a note, a highlight's comment)", () => {
+    expect(winAnsiNote([add("FreeText", "Check the bolts, 25 °C")])).toBeNull();
+    expect(winAnsiNote([add("Text", "Δ"), add("Highlight", "Ω"), { op: "delete" }])).toBeNull();
+  });
+  it("keeps the list short", () => {
+    expect(winAnsiNote([add("FreeText", "αβγδεζ")])).toContain("α β γ δ ε …");
   });
 });

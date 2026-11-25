@@ -1,6 +1,8 @@
 // Wording and keys for saving markups. Pure. The decisions behind the warnings are in
 // docs/editing-scope.md ("Decisions made", 14 November 2026).
 
+import { outsideWinAnsi } from "../markup/fonts";
+
 /** What annot_inspect reports about a file (src-tauri/src/annot/writer.rs, FileInfo). */
 export interface FileInfo {
   bytes: number;
@@ -138,4 +140,23 @@ export function newSignatureIds(saved: { id: string }[], current: { id: string; 
 export function withBakes<C extends { op: string; spec?: { nm: string } }>(changes: C[], bake: ReadonlySet<string>): (C | { op: "bake"; spec: NonNullable<C["spec"]> })[] {
   if (!bake.size) return changes;
   return changes.map((c) => (c.op === "add" && c.spec && bake.has(c.spec.nm) ? { op: "bake" as const, spec: c.spec } : c));
+}
+
+/** Subtypes whose text is only in /Contents, never drawn in the appearance (notes, text marks). */
+const UNDRAWN_TEXT = new Set(["Text", "Highlight", "Underline", "StrikeOut", "Squiggly"]);
+
+/**
+ * A line for the "Saved" message when a save draws text WinAnsi can't hold (Δ, Ω, ≥, CJK): other
+ * PDF apps show those as "?" in the markup, though its /Contents (and Vellum) keep them
+ * (fonts.ts toWinAnsi; docs/review-0.2.0.md, 12). Null when there's nothing to say.
+ */
+export function winAnsiNote(changes: readonly { op: string; spec?: { subtype: string; contents?: string | null } }[]): string | null {
+  const chars: string[] = [];
+  for (const c of changes) {
+    if ((c.op !== "add" && c.op !== "replace" && c.op !== "bake") || !c.spec?.contents || UNDRAWN_TEXT.has(c.spec.subtype)) continue;
+    for (const ch of outsideWinAnsi(c.spec.contents)) if (!chars.includes(ch)) chars.push(ch);
+  }
+  if (!chars.length) return null;
+  const shown = chars.slice(0, 5).join(" ") + (chars.length > 5 ? " …" : "");
+  return `Other PDF apps show ${shown} as "?" in these markups; Vellum shows them as typed.`;
 }

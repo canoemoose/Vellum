@@ -25,7 +25,7 @@
   import type { Frame } from "./lib/markup/pdf";
   import { TEXT_PAD } from "./lib/markup/ops";
   import type { Markup, Style, TextStyle } from "./lib/markup/types";
-  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage } from "./lib/shell/save";
+  import { type FileInfo, type Stamp, copyName, recoveryKey, saveConfirmation, unlockWarnings, unsavedMessage, winAnsiNote } from "./lib/shell/save";
   import { RecoveryRecords, restoreTarget, restoredMarkups } from "./lib/shell/recovery";
   import { type AnnotRead, fromFile, stampHashes, withStampImages } from "./lib/markup/fileAnnots"; // Existing annotations
   import EditLock from "./lib/components/EditLock.svelte"; // Existing annotations
@@ -1306,9 +1306,10 @@
     if (t.marks.reading) await t.marks.reading;
     // What this save writes: edits made while it's under way are not in it and stay unsaved.
     const written = t.marks.markups;
+    const changes = saveChanges(t, pendingBake.get(t));
     let p: Prepared;
     try {
-      p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, pendingBake.get(t)), target: null, expect: expect ? t.stamp : null });
+      p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes, target: null, expect: expect ? t.stamp : null });
     } catch (e) {
       if (!hasCode(e, "changed_on_disk")) throw e;
       const a = await ask("The file has changed", `${t.title} changed on disk since you opened it. Add your markups to it as it is now?`, ["Save", "Save a copy…", "Cancel"]);
@@ -1350,7 +1351,8 @@
     if (t.marks.dirty) scheduleRecovery();
     else recovery.drop(recoveryKey(pathKey(t.path)));
     markVersion++;
-    notify(p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`);
+    const note = winAnsiNote(changes);
+    notify((p.rebuilt ? `Saved ${t.title} (the file was rewritten to repair it)` : `Saved ${t.title}`) + (note ? `. ${note}` : ""));
     return true;
   }
 
@@ -1401,9 +1403,11 @@
     try {
       if (t.marks.reading) await t.marks.reading; // Existing annotations
       await ensureFrames(t, v.doc.docId);
-      const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes: saveChanges(t, bake), target: dest, expect: null });
+      const changes = saveChanges(t, bake);
+      const p = await invoke<Prepared>("annot_prepare", { path: t.path, password: t.password, changes, target: dest, expect: null });
       await invoke("annot_commit", { temp: p.temp, target: p.target });
-      notify(`Saved a copy as ${fileName(dest)}`);
+      const note = winAnsiNote(changes);
+      notify(`Saved a copy as ${fileName(dest)}` + (note ? `. ${note}` : ""));
       return true;
     } catch (e) {
       console.warn("save a copy failed:", String((e as Error)?.message ?? e));

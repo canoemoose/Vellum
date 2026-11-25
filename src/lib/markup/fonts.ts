@@ -140,6 +140,16 @@ export function toWinAnsi(s: string): number[] {
   return out;
 }
 
+/** The characters in `s` WinAnsi lacks (toWinAnsi writes "?" for them), each once, in order. */
+export function outsideWinAnsi(s: string): string[] {
+  const out: string[] = [];
+  for (const ch of s) {
+    if (out.includes(ch) || /\s/.test(ch)) continue;
+    if (toWinAnsi(ch)[0] === 0x3f && ch !== "?") out.push(ch);
+  }
+  return out;
+}
+
 /** Width of a WinAnsi byte in 1/1000 em. */
 export function glyphWidth(b: number, face: Face = HELVETICA): number {
   const t = table(face);
