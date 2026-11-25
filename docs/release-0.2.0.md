@@ -12,8 +12,8 @@ under Releasing in [CLAUDE.md](../CLAUDE.md); the review that is holding the rel
       per-page scales in Print and in manual layout, Actual and To scale never shrinking, Print
       waiting for scales, saves flushed to disk.
 - [x] README rewritten and pushed.
-- [ ] The six "Before 0.2.0" items in [review-0.2.0.md](review-0.2.0.md). **Nothing is tagged
-      until these are done.**
+- [x] The six "Before 0.2.0" items in [review-0.2.0.md](review-0.2.0.md), and items 7 to 13
+      as well (25 November). Most are covered by tests only: see the Status column there.
 - [ ] Check the three points under "Check before publishing" below.
 - [ ] `node tools/set-version.mjs 0.2.0`, commit "Release 0.2.0", push `main`.
 - [ ] `git tag v0.2.0`, `git push origin v0.2.0`; the workflow takes about 16 minutes.
@@ -38,8 +38,8 @@ Written from the rc1 and rc3 notes and the code, not from using the app:
    is replaced by the Edit lock section. Confirm nothing still calls it a padlock in a way the
    notes should mention.
 
-If item 12 of the review (symbols outside Western European text saved as "?") isn't fixed for
-0.2.0, add a line under a "Known limits" heading.
+Item 12 of the review (symbols outside Western European text saved as "?") is only warned
+about in 0.2.0, not fixed: add a line under a "Known limits" heading.
 
 ## The notes
 
