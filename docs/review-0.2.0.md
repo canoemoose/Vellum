@@ -16,10 +16,10 @@ models, the viewer engine, components) have not been reviewed.
 
 | What | Where | Status |
 |---|---|---|
-| Print could run before per-page scales were read (To scale) | `PrintDialog.svelte` `scalesToRead`, `PrintDoc.scalePending` | fixed, not committed |
-| A page in view waited behind Print's queued title-block reads | `limiter.ts` `promote`, `App.svelte` `detectPageScale` | fixed, not committed |
-| Saves not flushed to disk before the rename (PDF, signature and stamp libraries, the pdfium.dll copy) | `src-tauri/src/fsutil.rs` | fixed, not committed |
-| Manual layout called `findScale` detached from its renderer | `ManualLayout.svelte` `fileScales` | fixed, not committed |
+| Print could run before per-page scales were read (To scale) | `PrintDialog.svelte` `scalesToRead`, `PrintDoc.scalePending` | fixed, committed, not tried in the app |
+| A page in view waited behind Print's queued title-block reads | `limiter.ts` `promote`, `App.svelte` `detectPageScale` | fixed, committed, not tried in the app |
+| Saves not flushed to disk before the rename (PDF, signature and stamp libraries, the pdfium.dll copy) | `src-tauri/src/fsutil.rs` | fixed, committed, not tried in the app |
+| Manual layout called `findScale` detached from its renderer | `ManualLayout.svelte` `fileScales` | fixed, committed, not tried in the app |
 
 ## Before 0.2.0: can lose work or damage a file
 
