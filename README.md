@@ -1,234 +1,126 @@
-# Vellum
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="96" height="96" alt="">
+</p>
 
-A PDF and image viewer for people who open drawings, not documents.
+<h1 align="center">Vellum</h1>
 
-Stage plans, rigging plots, venue drawings, 1:19 aerial photos, sixty-year-old scanned
-blueprints: the files that make general-purpose PDF readers sit and think. Vellum opens them
-fast, zooms where your cursor is, and prints them at a scale you chose rather than one the
-printer driver made up.
+<p align="center">
+  <strong>A fast PDF and image viewer for people who open drawings, not documents.</strong>
+</p>
 
-It's for Windows, it's built with Tauri, and it renders with PDFium (the engine inside Chrome),
-because the rendering spike tried the alternatives and PDFium won. The numbers are in
-[RESULTS.md](RESULTS.md).
+<p align="center">
+  <a href="https://github.com/canoemoose/Vellum/releases/latest"><img src="https://img.shields.io/github/v/release/canoemoose/Vellum?label=download&color=2ea44f" alt="Latest release"></a>
+  <a href="https://github.com/canoemoose/Vellum/releases"><img src="https://img.shields.io/github/downloads/canoemoose/Vellum/total?color=2ea44f" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white" alt="Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/canoemoose/Vellum" alt="MIT licence"></a>
+  <br>
+  <img src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white" alt="Tauri 2">
+  <img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white" alt="Rust">
+  <img src="https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white" alt="Svelte 5">
+  <img src="https://img.shields.io/badge/renders%20with-PDFium-4285F4" alt="Renders with PDFium">
+</p>
 
-## What it's good at
+<p align="center">
+  <a href="https://github.com/canoemoose/Vellum/releases/latest"><strong>Download</strong></a> ·
+  <a href="https://canoemoose.github.io/Vellum/">Homepage</a> ·
+  <a href="https://github.com/canoemoose/Vellum/releases">Release notes</a>
+</p>
 
-- **Opening big drawings quickly, and staying smooth.** Pages render as tiles, low-resolution
-  previews fill the gaps while you move, and previews are cached on disk so a drawing you opened
-  yesterday is on screen before you've let go of the mouse. Huge embedded JPEGs are decoded by
-  Vellum itself, once, with their colour profile applied, instead of by PDFium on every redraw.
-- **Navigating like a CAD program.** The wheel zooms at the cursor, middle-drag pans, double
-  middle-click fits the page. Office documents get Document navigation instead (the wheel
-  scrolls), picked automatically from the page size. **N** swaps them if it guesses wrong.
-- **Knowing where you are.** A mini map for drawings bigger than the window. The drawing scale
-  read from the title block, so the status bar shows real-world metres under the cursor. Tabs
-  that remember each file's page, zoom, rotation, layout and mini map, next time as well as
-  this time.
-- **Printing properly.**
-  - **Sizing:** Fit, Actual size, To scale (a real ratio like 1:200 when the drawing scale is
-    known, a percentage when it isn't), or Tile with cut marks.
-  - **Manual layout:** lay pages and crops out by hand across as many sheets as you need, with
-    scale labels. It's remembered with the file you printed from.
-  - **Black lines:** turns grubby scans into clean linework. Paper texture and stains go,
-    lines go solid black, and blueprints are flipped to black on white, page by page.
-  - **Save as PDF** honours all of that, colour modes included.
-- **Images too.** JPEG, PNG, WebP, TIFF, BMP and GIF open the same way.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/img/hero-dark.webp">
+  <img src="site/img/hero-light.webp" alt="Vellum showing an A1 event layout drawing, fitted to the window">
+</picture>
+
+<sub>The screenshot is the fictional Fieldwork Festival drawing set. Map data © OpenStreetMap
+contributors (ODbL). Contains OS data © Crown copyright and database right 2026 (Open
+Government Licence).</sub>
+
+Stage plans, rigging plots, site layouts, sixty-year-old scanned blueprints: the files that
+make ordinary PDF readers sit and think. Vellum opens them fast, zooms where your cursor is,
+measures in real-world units and prints at the scale you asked for.
+
+## Why it's nice
+
+- ⚡ **Quick on big drawings.** Tiled rendering, previews cached on disk, and sharp 16 ms
+  after you stop zooming (one wheel notch, typical drawings).
+- 🖱️ **Moves like CAD.** Wheel zooms at the cursor, middle-drag pans, double middle-click
+  fits. Office documents scroll like documents instead; **N** swaps.
+- 📏 **Real-world scale.** Each sheet's scale read from its own title block, metric or
+  imperial. Length, area and angle, dimensions, calibration.
+- ✏️ **Markup, stamps and signatures.** Clouds, arrows, shapes, text, pen and highlighter,
+  saved as standard PDF annotations that Acrobat and Edge read.
+- 🖨️ **Prints to scale.** Fit, actual size, a real ratio like 1:200, or tiled with cut marks.
+  Lay crops out by hand across sheets. Black lines cleans up grubby scans.
+- 🖼️ **Images too.** JPEG, PNG, WebP, TIFF, BMP and GIF, colour profiles and all.
 
 ## What it isn't (yet)
 
-- **An editor.** No markup, no annotations, no measuring tools. Markup and light editing are
-  next on the list; PDF layers come alongside or after them.
-- **Cross-platform.** It's Windows-only: printing talks to GDI and the driver directly. Most of
-  the rest would port; nobody's asked.
-- **A document reader.** No text search, no forms. If your PDF is mostly words, Edge already
-  does that well.
+- **Cross-platform.** Windows only: printing talks to GDI and the printer driver directly.
+- **A page editor.** No inserting, deleting or reordering pages, and no forms. Both on the list.
+- **OCR.** Drawings whose text was exploded into outlines can't be searched or have their scale
+  read. On the list.
 
-## Installing and updates
+## Install
 
-The installer for the latest version is on the
-[releases page](https://github.com/canoemoose/Vellum/releases/latest). Windows SmartScreen
-warns about it the first time, because the installer isn't code signed: "More info", then
-"Run anyway".
+Grab the installer from the [latest release](https://github.com/canoemoose/Vellum/releases/latest).
+It isn't code signed, so SmartScreen warns the first time: **More info**, then **Run anyway**.
 
-After that, Vellum keeps itself up to date. It looks for a new version when it starts, at most
-once a day, and shows a small notice when there is one; nothing downloads until you press
-"Install and restart", and your tabs come back afterwards. The check is one request to GitHub
-and sends nothing about you or your files. Turn it off, or check on demand, from the Help menu.
+After that it keeps itself up to date: one check a day at start-up, a small notice when there's
+a new version, and nothing downloads until you say so. The check sends nothing about you or
+your files. Help menu to turn it off.
 
-## Getting it running
+## Keys worth knowing
 
-You need these once:
+| | |
+|---|---|
+| Zoom at cursor | Wheel (CAD) / Ctrl+wheel (Document) |
+| Pan | Middle-drag, or Space+drag |
+| Fit page / fit width / actual size | Ctrl+0 / Ctrl+2 / Ctrl+1 |
+| Switch navigation mode | N |
+| Rotate view | ] / [ |
+| Measure | D |
+| Markup | A, L, R, E, G, C, P, H, T, S, I |
+| Print | Ctrl+P |
+| **Everything else** | **F1** |
 
-1. **Node.js through [Volta](https://volta.sh).** `package.json` pins the versions; Volta
-   picks them up.
-2. **Rust**, from <https://rustup.rs>, defaults are fine.
-3. **Microsoft C++ Build Tools** ("Build Tools for Visual Studio", with **Desktop development
-   with C++**). Rust needs them to link Windows programs.
-4. **WebView2 Runtime.** Already on Windows 11 and current Windows 10. Older machines: the
-   "Evergreen Bootstrapper" from Microsoft.
+## Build it
 
-Tauri's own list is at <https://tauri.app/start/prerequisites/> if you want the long version.
-
-Then, in this folder:
+Once: [Volta](https://volta.sh) (Node versions are pinned in `package.json`),
+[Rust](https://rustup.rs), and the Microsoft C++ Build Tools with **Desktop development with
+C++**. Tauri's [prerequisites](https://tauri.app/start/prerequisites/) have the long version.
 
 ```bash
 npm install
-```
-
-```bash
 npm run tauri dev
 ```
 
-PDFium (`pdfium.dll`) downloads itself the first time you run or build. To fetch it by hand:
+`pdfium.dll` downloads itself on the first run. `npm run tauri build -- --no-bundle` makes a
+release exe; installers are built and signed by GitHub Actions from a version tag (see
+Releasing in [CLAUDE.md](CLAUDE.md)).
 
 ```bash
-node tools/fetch-pdfium.mjs
+npm test                    # Vitest: navigation maths, print model, markup, settings
+npm run check               # svelte-check, strict
+cd src-tauri && cargo test  # Rust: rendering, cache, print composition, a real print to PDF
 ```
-
-To open a file straight away in development:
-
-```bash
-npm run tauri dev -- -- "C:\path\to\drawing.pdf"
-```
-
-Release builds: `npm run tauri build -- --no-bundle` makes the exe. A copied exe needs
-`pdfium.dll` beside it. Installers are built and signed by GitHub Actions from a version tag,
-not at the desk; the steps are under Releasing in [CLAUDE.md](CLAUDE.md).
-
-The exe takes a file path, so Explorer's "Open with" works. Only one Vellum runs at a time:
-opening another file adds a tab to the running window. `--new-instance` starts a separate one,
-`--debug` starts with the performance overlay. The installer adds Vellum to "Open with" for PDFs
-and images without making itself the default for anything; that's your call.
-
-## Using it
-
-Open files with **Ctrl+O**, the **+** after the tabs, by dropping them on the window, or from
-Explorer. New files open in the Continuous layout; files you've opened before open as you left
-them. Hover over a tab for a preview of where you were.
-
-| Action | CAD navigation | Document navigation |
-|---|---|---|
-| Pan | Middle-drag, or Space+drag | Same |
-| Zoom at cursor | Mouse wheel | Ctrl+wheel |
-| Scroll | Touchpad two-finger scroll | Mouse wheel |
-| Horizontal scroll | Shift+wheel | Shift+wheel |
-| Pinch zoom | Touchpad pinch | Touchpad pinch |
-| Fit page | Double middle-click, Ctrl+0 | Same |
-| Fit width | Ctrl+2 | Same |
-| Actual size | Ctrl+1 | Same |
-| Zoom in / out | + / - | Same |
-| Single page / Continuous / Columns | Ctrl+Shift+1 / 2 / 3 | Same |
-| Switch navigation | N | Same |
-| Previous / next page | Page Up / Page Down | Same |
-| First / last page | Home / End | Same |
-| Rotate the view (or turn a selected stamp, image, polygon or cloud, or a stamp about to be placed; Shift for 15°) | ] / [ | Same |
-| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab | Same |
-| Close tab | Ctrl+W, or middle-click the tab | Same |
-| Print | Ctrl+P | Same |
-| Document properties | Ctrl+D | Same |
-| Sidebar (pages and bookmarks) | Ctrl+B | Same |
-| All the shortcuts | F1 | Same |
-| Performance overlay | F12 (or Ctrl+Shift+D) | Same |
-| Menus from the keyboard | Alt or F10 | Same |
-
-The **View** menu has navigation, layout, theme (Dark, Light or System), units (paper sizes,
-read-outs, and measurements set to Auto), the sidebar and
-the mini map (Automatic, Show or Hide). The mini map resizes from its top-left corner
-(double-click resets it); click or drag inside it to move around.
-
-The status bar shows the drawing scale (click it to set it by hand when the title block doesn't
-say), the cursor position (metres on site when the scale is known, millimetres on paper when it
-isn't, from the page's bottom-left corner) and the page size.
-
-### Printing, briefly
-
-**Ctrl+P.** Pick the printer and paper (A sizes first; the US sizes the driver insists on are
-under "Other sizes"), then Pages, then Layout:
-
-- **Automatic** sizes each page by the Sizing you pick, with N-up, centring, borders and a
-  margin stamp under Arrangement.
-- **Manual** opens the layout editor. Drag pages in from the strip, crop by dragging an edge,
-  scale from a corner or by ratio, label with file name, page and scale in any mix. Back in the
-  dialog, Colour, Output and Advanced apply to it as they would to anything else.
-
-The preview zooms (wheel; drag to move; double-click to fit). For Black lines, use **View 1:1**:
-it judges dots, and you can only judge dots at print resolution.
 
 ## How it's built
 
-Rust does the heavy work; the web view draws the interface.
+- **`src-tauri/`** (Rust): PDFium on a worker pool, tile rendering, the disk cache, colour
+  profiles, PDF annotations and saving, print composition and GDI printing.
+- **`src/lib/engine`, `render`, `view`** (TypeScript, no Svelte): the viewer, tile scheduling,
+  input and navigation maths. Pure and tested.
+- **`src/lib/print`, `src/lib/markup`** (TypeScript): the print and markup models, as pure
+  functions.
+- **`src/`** (Svelte 5): the shell. Components call into the engine, never the other way round.
 
-- **`src-tauri/`** (Rust): PDFium on a pool of worker threads, tile rendering, the disk preview
-  cache, image documents, colour profiles, print composition, GDI printing, and the Black lines
-  filter.
-- **`src/lib/engine`, `src/lib/render`, `src/lib/view`** (TypeScript, no Svelte): the viewer,
-  tile scheduling, input, and the navigation maths. The maths is pure and tested, and stays
-  that way.
-- **`src/lib/print`** (TypeScript): the print model (automatic layout, manual layout, page
-  ranges, settings) as pure functions, plus the preview painter.
-- **`src/`** (Svelte 5): the shell. Components call into the engine; the engine never imports
-  Svelte.
-
-The long version is [ARCHITECTURE.md](ARCHITECTURE.md). Speed work starts at
-[docs/speed-handoff.md](docs/speed-handoff.md): what's been measured, what's been tried, what
-didn't work.
-
-## Tests
-
-```bash
-npm test
-```
-
-runs the TypeScript tests (Vitest): navigation maths, layouts, the print model, Black lines,
-settings, menus and keys. Then:
-
-```bash
-cd src-tauri && cargo test
-```
-
-runs the Rust ones: documents, images, colour swaps, the preview cache, print composition and
-geometry, Black lines, and a real print to "Microsoft Print to PDF".
-
-`npm run check` type-checks the lot (svelte-check, strict).
-
-## Measuring performance
-
-With the overlay showing (F12), every re-render is logged to
-`%LOCALAPPDATA%\Vellum\perf-log.csv`.
-
-The benchmark runs a scripted open, zoom and pan sequence several times per file and reports
-medians:
-
-```bash
-npm run gen:synthetic
-```
-
-```bash
-npm run tauri build -- --no-bundle
-```
-
-```bash
-npm run bench -- --runs 3 --pdfium-threads 8
-```
-
-Drop your own PDFs in `test-files\` (git ignores it) and they're included. Results go to
-`bench-output\` (also ignored): a summary table and a screenshot at each zoom level, for
-spotting seams and missing content. The benchmark window stays on top; leave the machine alone
-until it's done.
+More: [ARCHITECTURE.md](ARCHITECTURE.md) for how it works,
+[RESULTS.md](RESULTS.md) for why PDFium,
+[docs/speed-handoff.md](docs/speed-handoff.md) for speed work and how it's measured, and
+[CLAUDE.md](CLAUDE.md) for every command.
 
 ## Licence
 
-Vellum is MIT licensed ([LICENSE](LICENSE)). It ships PDFium and a few hundred open-source
-crates and packages; `tauri build` collects every one of their notices and licences into
-`THIRD-PARTY-NOTICES.txt` ([tools/make-notices.mjs](tools/make-notices.mjs)), which the
-installer puts beside the exe and Help > About opens.
-
-## Where things are written down
-
-- [ARCHITECTURE.md](ARCHITECTURE.md): how it works.
-- [RESULTS.md](RESULTS.md) and [PLAN.md](PLAN.md): the rendering spike and why PDFium.
-- [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-brief.md) and
-  [docs/v0.1-report.md](docs/v0.1-report.md): what v0.1 set out to do, and where it got to.
-- [docs/ui-review.md](docs/ui-review.md): the interface review, every decision, and what's
-  still open.
-- [CLAUDE.md](CLAUDE.md): commands and conventions in one place.
+[MIT](LICENSE). Vellum ships PDFium and a few hundred open-source crates and packages; their
+notices are collected into `THIRD-PARTY-NOTICES.txt`, which the installer puts beside the exe
+and Help > About opens.

@@ -71,6 +71,8 @@ that work's brief or scope file and comes off this list.
 
 ## Other
 
+- **PDF forms**: filling in (and perhaps saving) a PDF's form fields. Other viewers do it, so
+  Vellum will, eventually. Listed as not there yet in the README.
 - **An easter egg.**
 - **Investigate KillerPDF** (another PDF viewer): what it does, and anything worth learning.
 
