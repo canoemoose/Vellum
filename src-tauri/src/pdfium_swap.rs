@@ -688,8 +688,46 @@ unsafe fn build(b: &dyn PdfiumLibraryBindings, reopen: &Reopen, password: Option
         if timing() {
             eprintln!("[swap] page {}: swapped copy ready in {} ms", index + 1, t0.elapsed().as_millis());
         }
+        copy_annot_flags(b, original, page);
         Some(Swapped { doc, page, bytes })
     }
+}
+
+/// Give the swapped copy's annotations the flags of the original's (the same file, so the same
+/// annotations in the same order). The copy is what renders, and an annotation hidden on the
+/// original (PdfiumState::hide_annots: the overlay draws it instead) must be hidden there too,
+/// or it is drawn twice.
+unsafe fn copy_annot_flags(b: &dyn PdfiumLibraryBindings, original: FPDF_PAGE, copy: FPDF_PAGE) {
+    unsafe {
+        let n = b.FPDFPage_GetAnnotCount(original).min(b.FPDFPage_GetAnnotCount(copy)).max(0);
+        for i in 0..n {
+            let from = b.FPDFPage_GetAnnot(original, i);
+            let to = b.FPDFPage_GetAnnot(copy, i);
+            if !from.is_null() && !to.is_null() {
+                let f = b.FPDFAnnot_GetFlags(from);
+                if b.FPDFAnnot_GetFlags(to) != f {
+                    b.FPDFAnnot_SetFlags(to, f);
+                }
+            }
+            if !from.is_null() {
+                b.FPDFPage_CloseAnnot(from);
+            }
+            if !to.is_null() {
+                b.FPDFPage_CloseAnnot(to);
+            }
+        }
+    }
+}
+
+/// The original page's annotation flags have changed (one was hidden or shown): bring this
+/// worker's swapped copy of the page, if it has one, into line.
+pub fn annot_flags_changed(b: &dyn PdfiumLibraryBindings, handle: FPDF_DOCUMENT, index: usize, original: FPDF_PAGE) {
+    WORKER.with(|w| {
+        let w = w.borrow();
+        if let Some(Some(s)) = w.docs.get(&(handle as usize)).and_then(|d| d.pages.get(&index)) {
+            unsafe { copy_annot_flags(b, original, s.page) };
+        }
+    });
 }
 
 /// Our decode of the image as a BGRx bitmap. None if it can't be done.

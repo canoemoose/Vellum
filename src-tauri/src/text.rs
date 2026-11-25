@@ -319,10 +319,11 @@ impl PdfiumState {
     /// annotations matched on one worker.
     pub fn hide_annots(&self, doc_id: u64, page: usize, nms: Vec<String>, indices: Vec<usize>, hidden: bool) -> Result<usize, String> {
         const HIDDEN: i32 = 2;
-        let mut matched = 0;
-        for w in 0..self.worker_count()? {
+        // Every worker at once: one after another, the hide would wait in turn behind whatever
+        // each is rendering (a sidebar thumbnail, say) while the user is already dragging.
+        let one = |w: usize| {
             let (nms, indices) = (nms.clone(), indices.clone());
-            matched = self.run_on_worker_index(w, move |ctx| -> Result<usize, String> {
+            self.run_on_worker_index(w, move |ctx| -> Result<usize, String> {
                 let b = ctx.bindings();
                 let p = ctx.page(doc_id, page)?;
                 let mut n = 0;
@@ -352,8 +353,22 @@ impl PdfiumState {
                     }
                     unsafe { b.FPDFPage_CloseAnnot(a) };
                 }
+                // A page with a swapped image renders from its own copy (pdfium_swap).
+                if let Some(doc) = ctx.document(doc_id) {
+                    crate::pdfium_swap::annot_flags_changed(b, doc, page, p);
+                }
                 Ok(n)
-            })??;
+            })
+        };
+        let workers = self.worker_count()?;
+        let results: Vec<Result<Result<usize, String>, String>> = std::thread::scope(|s| {
+            let one = &one;
+            let waiting: Vec<_> = (0..workers).map(|w| s.spawn(move || one(w))).collect();
+            waiting.into_iter().map(|h| h.join().unwrap_or_else(|_| Err("hiding an annotation panicked".into()))).collect()
+        });
+        let mut matched = 0;
+        for r in results {
+            matched = r??;
         }
         Ok(matched)
     }

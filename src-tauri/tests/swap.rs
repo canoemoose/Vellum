@@ -415,3 +415,43 @@ fn pages_with_a_swap_render_as_one_band_others_stay_banded() {
     assert_eq!(pdfium().known_bands(doc, 0, 1200, 1200), Some(1), "60.7 MB image, swapped: one band");
     assert_eq!(pdfium().known_bands(doc, 1, 1200, 1200), Some(workers), "11 MP image PDFium keeps: banded");
 }
+
+#[test]
+fn an_annotation_hidden_in_pdfium_is_hidden_on_a_swapped_page_too() {
+    use vellum_lib::annot::spec::Appearance;
+    use vellum_lib::annot::{self, AnnotSpec, Change};
+    // A swapped page renders from its own copy of the page: hiding an annotation (the overlay
+    // draws it instead) has to reach that copy, or the annotation is drawn twice.
+    let (w, h) = (1000, 600);
+    let pages = [Pg { w, h, data: jpeg(&quadrants(w, h), w, h), filter: "/Filter/DCTDecode", colour: "", icc: Some(lut_profile()), in_form: false }];
+    // A black square in the grey quadrant (bottom right).
+    let r = [350.0, 50.0, 400.0, 100.0];
+    let spec = AnnotSpec {
+        page: 0,
+        nm: "h".into(),
+        subtype: "Square".into(),
+        rect: r,
+        appearance: Appearance { ops: "0 0 0 rg 350 50 50 50 re f".into(), bbox: r, ..Default::default() },
+        ..Default::default()
+    };
+    let bytes = annot::apply(make(&pages, 500.0, 300.0), "", &[Change::Add { spec }]).unwrap();
+    let dark = |doc: u64| {
+        let buf = pdfium().render(doc, RegionArgs { id: 0, page: 0, rs: 1.0, x: 0, y: 0, w: 500, h: 300 }).unwrap().unwrap();
+        rgb_at(&buf, 500, 375, 225).iter().all(|&c| c < 40)
+    };
+
+    // Hidden after the swapped copy was built.
+    let (doc, _) = open_fixture("swap-hide", &bytes);
+    let before = SWAPS_OURS.load(Ordering::Relaxed) + SWAPS_PDFIUM.load(Ordering::Relaxed);
+    assert!(dark(doc), "the annotation draws");
+    assert!(SWAPS_OURS.load(Ordering::Relaxed) + SWAPS_PDFIUM.load(Ordering::Relaxed) > before, "the page is swapped");
+    assert_eq!(docs().hide_annots(pdfium(), doc, 0, vec!["h".into()], vec![], true).unwrap(), 1);
+    assert!(!dark(doc), "hidden annotation still drawn on the swapped page");
+    docs().hide_annots(pdfium(), doc, 0, vec!["h".into()], vec![], false).unwrap();
+    assert!(dark(doc), "shown again");
+
+    // Hidden before the swapped copy is built (as after a save's reopen).
+    let (doc, _) = open_fixture("swap-hide-first", &bytes);
+    docs().hide_annots(pdfium(), doc, 0, vec!["h".into()], vec![], true).unwrap();
+    assert!(!dark(doc), "an annotation hidden before the first render is drawn on the swapped page");
+}
