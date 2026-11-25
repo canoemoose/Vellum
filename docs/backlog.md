@@ -88,7 +88,5 @@ that work's brief or scope file and comes off this list.
 
 ## Bugs
 
-- **Double-clicking the left column's edge to reset its width** sizes it below its minimum
-  width.
 - **The canvas strobes while it resizes**, whether from resizing the window or the left
   sidebar.

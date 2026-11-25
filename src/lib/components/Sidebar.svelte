@@ -1,11 +1,11 @@
 <script lang="ts">
-  // Sidebar (196 px by default, resizable, collapsible): Pages, Bookmarks (the PDF's outline;
+  // Sidebar (SIDEBAR_DEFAULT wide, double-click the grip to go back to it; resizable, collapsible): Pages, Bookmarks (the PDF's outline;
   // the setting keeps its old name, "outline") and Markups (MarkupsList). Search results show
   // in a card under the toolbar's search box instead.
   import type { OutlineNode } from "../render/types";
   import type { PageSize } from "../view/layout";
   import type { SidebarTab } from "../settings";
-  import { SIDEBAR_MAX, SIDEBAR_MIN } from "../settings";
+  import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "../settings";
   import Thumbnails from "./Thumbnails.svelte";
   import OutlineTree from "./OutlineTree.svelte";
   import { userMessage } from "../shell/messages";
@@ -116,7 +116,7 @@
       if (resizing) p.onWidth(p.width, true);
       resizing = null;
     }}
-    ondblclick={() => p.onWidth(196, true)}
+    ondblclick={() => p.onWidth(SIDEBAR_DEFAULT, true)}
   ></div>
 </aside>
 
