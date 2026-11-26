@@ -46,7 +46,8 @@ rest of the brief is kept as the record of what was asked for first.
   and a "Try the 0.2.0-rc1 release candidate" line appears under the download button while a
   published prerelease is ahead of the latest release.
 - **Kept out of git:** the title block footer, the drag handle and the revisions-table build
-  code, as `mockups/title-block-footer-and-drag.patch` on the machine that built this.
+  code, as `mockups/title-block-footer-and-drag.patch` on the machine that built this
+  (deleted on 26 November 2026: Matt had rejected all three and it no longer applied).
 - **Still to do:** recapture `site/img/og.png` (it shows the old design); the speed section;
   and the 16 ms figure's remaining checks in the speed scope. *(The page went live with 0.2.0
   on 25 November. All three are in [backlog.md](backlog.md); `og.png` was last replaced on
@@ -61,14 +62,15 @@ Matt's verdict on the redesign (commit aa313df): it needs more oomph.
 - The feature tiles don't fit together. Every card shows a whole shrunken window pinned
   top-left, so they all look the same, and row partners come out at different heights.
 
-Sixteen ideas were mocked up in `mockups/ideas/` (untracked in this worktree; open
+Sixteen ideas were mocked up in `mockups/ideas/` (never in git, and deleted on 26 November 2026 once the page was
+built, so the file names below are a record only; they were opened with
 `mockups/ideas/index.html` in Edge or Chrome, `t` flips the theme). Matt picked the ones
 below. The mockups use the real stylesheet and screenshots, so they're close to finished, but
 treat their CSS as a sketch: positions were set by eye and the crops are done in CSS.
 
 ## 1. Hero: split on wide screens, tighter stack on narrow
 
-Reference: [mockups/ideas/h8-combined.html](../mockups/ideas/h8-combined.html). Same copy
+Reference: `mockups/ideas/h8-combined.html`. Same copy
 and parts as now (pill, headline, lede, both buttons, meta line, screenshot); only the layout
 changes.
 
@@ -96,7 +98,7 @@ changes.
 
 ## 2. One huge number, replacing the stats strip
 
-Reference: [mockups/ideas/b1-number.html](../mockups/ideas/b1-number.html). Directly under
+Reference: `mockups/ideas/b1-number.html`. Directly under
 the hero, where the stats strip is now.
 
 - **97 ms**, centred, in the mono face at `clamp(120px, 22vw, 300px)`, with the heading
@@ -120,7 +122,7 @@ the hero, where the stats strip is now.
 
 ## 3. Features: detail callouts
 
-Reference: [mockups/ideas/f1-callouts.html](../mockups/ideas/f1-callouts.html). This
+Reference: `mockups/ideas/f1-callouts.html`. This
 replaces the bento grid. Same five features, same headings and copy as the current page;
 the line about images and map credits under the grid stays.
 
@@ -170,7 +172,7 @@ the line about images and map credits under the grid stays.
 ## 4. Both themes, and buttons to switch them
 
 Reference: the first, draggable split in
-[mockups/ideas/h7-themes.html](../mockups/ideas/h7-themes.html). A band of its own, after the
+`mockups/ideas/h7-themes.html`. A band of its own, after the
 features. Heading along the lines of "Light or dark, it follows Windows.", with a line
 saying the app follows the Windows setting and can be set either way.
 
@@ -205,7 +207,7 @@ override it.
 
 ## 5. Footer as a title block (Matt: "maybe")
 
-Reference: [mockups/ideas/b3-titleblock.html](../mockups/ideas/b3-titleblock.html). Build it
+Reference: `mockups/ideas/b3-titleblock.html`. Build it
 last, in its own commit, so it can be dropped without touching the rest. Matt decides on it
 once he's seen the built page.
 

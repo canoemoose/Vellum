@@ -19,7 +19,8 @@ and rejected as pastiche.
 
 ## The agreed direction
 
-The reference is [mockups/2-dark.html](../mockups/2-dark.html) in this worktree (untracked; it
+The reference is `mockups/2-dark.html` (never in git, and deleted on
+26 November 2026 once the page was built; it
 loads the screenshots from `../site-dist/img/`, so run `npm run site` first and open it in a
 real browser, not the preview pane). Treat it as a sketch of layout and tone, not finished CSS.
 Take from it:
