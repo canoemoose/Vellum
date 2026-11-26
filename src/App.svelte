@@ -2306,6 +2306,14 @@
     if (isWebViewAccelerator(e)) e.preventDefault();
   }
 
+  // Ctrl+wheel over anything but the drawing (a toolbar, the sidebar, a dialog) would zoom the
+  // whole web view: its page zoom has to stay switched on, because that is what lets a touchpad
+  // pinch through (ARCHITECTURE.md, "Navigation"). The drawing and the print previews do their
+  // own zooming from the same event; this only cancels the browser's.
+  function guardWebViewZoom(e: WheelEvent) {
+    if (e.ctrlKey) e.preventDefault();
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
@@ -2481,6 +2489,7 @@
     const onScheme = () => (systemDark = mq.matches);
     mq.addEventListener("change", onScheme);
     window.addEventListener("keydown", guardWebView, true);
+    window.addEventListener("wheel", guardWebViewZoom, { passive: false });
     window.addEventListener("keydown", onKeyDown);
 
     (async () => {
@@ -2692,6 +2701,7 @@
       ro?.disconnect();
       mq.removeEventListener("change", onScheme);
       window.removeEventListener("keydown", guardWebView, true);
+      window.removeEventListener("wheel", guardWebViewZoom);
       window.removeEventListener("keydown", onKeyDown);
     };
   });
