@@ -1,5 +1,11 @@
 # Vellum homepage: brief
 
+**Status (26 November 2026): built (17 November) and live since 0.2.0 (25 November).** The look
+was then replaced, by [homepage-redesign-brief.md](homepage-redesign-brief.md) and after it
+[homepage-layout-brief.md](homepage-layout-brief.md); where they differ, the latest wins. What
+this brief says about the README, the 0.1.4 button and when to switch Pages on is as it was
+written, before 0.2.0.
+
 A single public page where people can find out what Vellum is and download it. It's hosted on
 GitHub Pages from this repository. This brief is for one build session: read it, build it,
 commit it, then hand back with the open questions at the end answered or listed.

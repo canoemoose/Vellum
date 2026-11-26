@@ -30,9 +30,9 @@ full release is never offered a release candidate. Same signed, in-app update as
 - A full-release copy must never see an RC. This is the property not to break.
 - Updates stay signed with the same key. Nothing here touches the key or the public half in
   `tauri.conf.json`.
-- Only published releases count. A draft RC (as rc2 and rc3 are today) is offered to nobody.
+- Only published releases count. A draft RC is offered to nobody.
 - No new service to run: GitHub Releases and Actions only.
-- RCs already built (rc1 to rc3) have the full-release address baked in and cannot be moved.
+- RCs already built (0.2.0's rc1 to rc5) have the full-release address baked in and cannot be moved.
   The first RC built after this lands is the first that updates to another RC.
 
 ## Approach (recommended): an RC channel file, and RC builds that read it
@@ -82,8 +82,9 @@ release, after which it reads "latest" like everyone else.
 2. Create the `rc-channel` release by hand once (prerelease, one line of text).
 3. Add `rc-channel.yml`. Third-party actions pinned to commits, as elsewhere.
 4. Add the RC-only address override to `release.yml`.
-5. Prove it with throwaway versions: publish 0.2.0-rc4, install it, publish 0.2.0-rc5, check
-   rc4 is offered rc5 and a 0.1.4 copy is offered nothing.
+5. Prove it with throwaway versions: publish two release candidates of the next version
+   (0.2.0's rc1 to rc5 are used up), install the first, publish the second, check the first is
+   offered the second and a full-release copy is offered nothing.
 6. Update `CLAUDE.md` and `docs/release-pipeline-scope.md`.
 
 ## Done looks like
@@ -99,7 +100,8 @@ release, after which it reads "latest" like everyone else.
 1. Should an RC copy say so anywhere (Help > About, the title bar)? Today only the version
    number shows it.
 2. Should people on a full release be able to opt in to RCs? That needs the run-time approach
-   above and is out of scope here.
+   above and is out of scope here. *(Not needed: the testers are two people Matt has named
+   (26 November 2026), who can be sent an RC installer.)*
 3. GitHub serves a replaced file from cache for up to a minute or so (the same delay noted for
    "latest"). Acceptable?
 4. Does a `--config` overlay passed through tauri-action reach the updater address as

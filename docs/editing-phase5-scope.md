@@ -127,7 +127,9 @@ Added while building (15 November 2026):
    imported one as its picture. The ink colour is the one saved with the signature.
 8. *(Superseded by the tool consistency brief, stage 8: the stamp and signature pickers are
    in the context bar, with an Image tool (I) beside them; the panels below open only for
-   managing the libraries, or for choosing when `VELLUM_STAMP_POPOUTS=1` is set.)*
+   managing the libraries, or for choosing when `VELLUM_STAMP_POPOUTS=1` is set. Since then the
+   libraries are dialogs and that variable has gone:
+   [stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md).)*
    **The stamp tools open their pickers each time they're chosen** (palette, or S, which
    steps between Stamp and Signature). A panel drops from the top of the drawing area and
    catches clicks until something is picked, so nothing is placed by accident; closing it

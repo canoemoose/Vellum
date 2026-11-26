@@ -1,5 +1,11 @@
 # Speed work: hand-over (8 November 2026)
 
+**Status (26 November 2026): superseded as the place to start** by
+[speed-diagnosis-scope.md](speed-diagnosis-scope.md), which holds the current numbers and the
+agreed order of fixes. The "numbers to beat" here predate the flight, wheel and landing fixes.
+Still useful: how to measure, what was tried and rejected, and the ideas not yet tried (indexed
+in [backlog.md](backlog.md), "Speed").
+
 For a fresh session picking up rendering, pan and zoom speed. Read this first, then
 [v0.1-heavy-pdfs.md](v0.1-heavy-pdfs.md) (the Bayou image analysis) and the "Navigation"
 and "Documents" parts of [ARCHITECTURE.md](../ARCHITECTURE.md).
@@ -140,7 +146,7 @@ Where the time goes on page 48 (from `VELLUM_PDFIUM_TIMING=1`):
    Extend the large-image one-band rule to these pages (speed-ideas 1.9).
 4. **Pre-parse the next and previous page before they're needed.** First visit to a page
    costs 230 to 550 ms of parsing. *Tried 10 Nov for the pages on screen only: no gain, so
-   it was stashed (`git stash list`, "Pre-parse visible pages").* A page on screen has
+   it was stashed (`git stash list`, "Pre-parse visible pages"; the stash has since gone).* A page on screen has
    already been parsed by the render that drew it: at fit a banded render parses it on all
    8 workers. Only a page first rendered small (one worker) and then zoomed into gained.
    Matt's measurement shows what the neighbour version would save: Curtis Hall at about

@@ -1,7 +1,8 @@
 # Signatures: the back end (phase 5, first part)
 
 Status: **built and tested (14 November 2026); Matt found the standalone pad fine
-(15 November). Next: build it into the main window, which is where it can be tested properly.**
+(15 November). Since built into the main window (phase 5) and released in 0.2.0; the standalone
+page and `npm run dev:signatures` below are retired.**
 Built on `claude/signatures-834cd1`, cut from `editing` at 78c59d5 and since merged into
 `editing` (the branch is deleted). Built as a side
 session while phases 2 and 3 of [editing-scope.md](editing-scope.md) were being built on

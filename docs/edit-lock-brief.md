@@ -1,8 +1,9 @@
 # The edit lock, the Markups list and measurement numbers: modification brief
 
 Status: **agreed with Matt on 16 November 2026; all eight steps built on `editing`, 16 November
-(one session, autonomous). Awaiting Matt's look: see "For Matt to check" at the end.** Nothing
-in it is open. For the 0.2.0 markup release, after `0.2.0-rc1`.
+(one session, autonomous); Matt reviewed the build on 17 November ("Matt's review of the
+build") and it was released in 0.2.0.** Nothing in it is open. Whether the "For Matt to check"
+list at the end was gone through isn't recorded ([backlog.md](backlog.md), "For Matt to check").
 Parent: [editing-scope.md](editing-scope.md), "The edit lock". Came out of the backlog item
 "The markup toolbar: move the padlock, and go through the tools' order".
 

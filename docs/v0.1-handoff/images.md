@@ -1,5 +1,9 @@
 # WP-Images handoff
 
+**Status (26 November 2026): a hand-over note from v0.1 (8 November), kept as a record.** How
+things work now is in [ARCHITECTURE.md](../../ARCHITECTURE.md); known problems nobody has gone
+back to are indexed in [backlog.md](../backlog.md).
+
 Built by the integrator session itself: the app refused to start a separate worker session
 or subagent overnight (see the report), and this package was small and self-contained.
 

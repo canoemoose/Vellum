@@ -305,7 +305,8 @@ the 200k-lines settle at 1600% (111 → 239 ms), which the text drawing's 1600% 
 
 ## For the three sessions
 
-- Free letters to take: M for Measure (repeat to step through its tools), S for Stamp, H
+- *(Since: the measuring tools are on D; see the [tool consistency brief](editing-tool-consistency-brief.md).)*
+  Free letters to take: M for Measure (repeat to step through its tools), S for Stamp, H
   for the highlighter (Pen group). A letter can't be shared across groups.
 - An angle is a points kind with `min: 3, max: 3`.
 - The image op (phase 5) and blend mode (phase 7) have blocks in `draw.ts`, `pdf.ts`,

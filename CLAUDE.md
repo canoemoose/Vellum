@@ -1,13 +1,21 @@
 # Vellum
 
-Fast PDF/image viewer for CAD drawings. Tauri 2 + Svelte 5 + TypeScript. Phase 0 (the rendering
-spike) is done: see [RESULTS.md](RESULTS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [PLAN.md](PLAN.md)
-and its brief in [docs/vellum-scope-spike.md](docs/vellum-scope-spike.md). The current work is
-v0.1, the first real app: brief in [docs/vellum-v0.1-brief.md](docs/vellum-v0.1-brief.md).
-Next up, on separate branches: editing, markup, measuring and reading (scope, nothing built:
-[docs/editing-scope.md](docs/editing-scope.md)). Releases are built by GitHub Actions and
-installed copies update themselves: see Releasing below and
-[docs/release-pipeline-scope.md](docs/release-pipeline-scope.md).
+Fast PDF/image viewer for CAD drawings, with markup, measuring, signatures and stamps. Tauri 2 +
+Svelte 5 + TypeScript. Released: 0.2.0 (25 November 2026), from `main`.
+
+- What isn't built or checked yet: [docs/backlog.md](docs/backlog.md), the one list. Each entry
+  links to the scope that covers it. The order, release by release:
+  [docs/roadmap.md](docs/roadmap.md) (shape agreed, contents a suggestion).
+- The editor's scope, built and unbuilt (page operations and form filling are the unbuilt
+  phases): [docs/editing-scope.md](docs/editing-scope.md).
+- How it works: [ARCHITECTURE.md](ARCHITECTURE.md) (not yet caught up with 0.2.0; it says what
+  is missing).
+- History, not kept up to date: the phase 0 spike ([RESULTS.md](RESULTS.md), [PLAN.md](PLAN.md),
+  brief in [docs/vellum-scope-spike.md](docs/vellum-scope-spike.md)) and v0.1
+  ([docs/vellum-v0.1-brief.md](docs/vellum-v0.1-brief.md), [docs/v0.1-report.md](docs/v0.1-report.md)).
+
+Releases are built by GitHub Actions and installed copies update themselves: see Releasing below
+and [docs/release-pipeline-scope.md](docs/release-pipeline-scope.md).
 
 ## Commands
 
@@ -26,10 +34,11 @@ installed copies update themselves: see Releasing below and
   overlay (viewer-bench sets it).
   Image swaps (`pdfium_swap.rs`) are always on and log each swap and colour-profile check
   as `[swap]` lines on stderr.
-- Speed work: start from [docs/speed-handoff.md](docs/speed-handoff.md) (state, numbers,
-  ideas ranked, how to measure). The current baseline, the comparison with other viewers and
-  the agreed order of fixes are in [docs/speed-diagnosis-scope.md](docs/speed-diagnosis-scope.md)
-  (current truth; its dated log is [docs/speed-diagnosis-log.md](docs/speed-diagnosis-log.md)).
+- Speed work: start from [docs/speed-diagnosis-scope.md](docs/speed-diagnosis-scope.md), the
+  current truth: the baseline, the comparison with other viewers and the agreed order of fixes
+  (its dated log is [docs/speed-diagnosis-log.md](docs/speed-diagnosis-log.md)).
+  [docs/speed-handoff.md](docs/speed-handoff.md) (8 November) is older: its numbers and order
+  are superseded, but its list of ideas not yet tried, and how to measure, still stand.
 - `tools/viewer-bench` (C#, `dotnet build -c Release` in that folder): times Vellum and six
   other viewers from outside by watching the screen. `ViewerBench.exe run [--apps a,b]
   [--runs 3] [--quiet 10000] files...` for cold opens, fit page and fit width, and a Ctrl+wheel

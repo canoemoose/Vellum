@@ -372,6 +372,7 @@ in both (Chrome 33 and 118 ms; Vellum 25 to 67 ms on three notches, 0 on the res
 
 - **The homepage's 97 ms** (the spike's settle to sharp at 1600%) is true but not what anyone
   waits for. Replace it with the number from next step 2. The homepage session owns the copy.
+  *(Done: the homepage shows 16 ms.)*
 - **Feel measures not built:** input to first changed frame, frame pacing during a drag that
   keeps reaching new content, reopen time. The spike's pan test only draws cached bitmaps
   (log, "Follow-ups outside this scope").

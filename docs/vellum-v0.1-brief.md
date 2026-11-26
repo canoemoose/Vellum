@@ -1,5 +1,8 @@
 # Vellum v0.1: the first real app
 
+**Status (26 November 2026): the brief v0.1 was built from, kept as a record.** It is not how the
+app is now (the accent, for one, became a fixed teal): see [ARCHITECTURE.md](../ARCHITECTURE.md).
+
 **Mode:** autonomous, overnight, several workers in parallel. Nobody is at the keyboard. Make
 decisions, record them, keep going. Batch questions into the final report.
 

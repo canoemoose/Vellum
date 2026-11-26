@@ -1,8 +1,8 @@
 # Stamp and signature library dialogs: scope
 
-Status: **in progress on `editing`** (15 to 16 November 2026). Steps 1 to 4 built and
+Status: **finished, step 6 aside, and released in 0.2.0** (built on `editing`, 15 to 16 November 2026). Steps 1 to 4 built and
 committed; step 5 built and committed; step 6 deferred (Matt, 16 November); steps 7 and 8 done. The work this scope set out is finished, step 6 aside. App-wide requests Matt raised along the way are in
-[backlog.md](backlog.md) (on `main`). Part of Matt's review of the tool
+[backlog.md](backlog.md). Part of Matt's review of the tool
 consistency brief ([editing-tool-consistency-brief.md](editing-tool-consistency-brief.md));
 follows the stamp grid (the Stamp and Signature buttons open a grid of tiles beside the
 toolbar; the context bar only appears once one is placed; "Replace…" swaps a placed one).

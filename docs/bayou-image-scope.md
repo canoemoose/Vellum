@@ -264,7 +264,8 @@ Replaces the "16 MP or more" rule committed in `acd32d2`. Code moves to a new
 2. **Swap an image** when its decoded size is over 60,000,000 bytes, or it has a
    lookup-table profile and is at least 0.5 MP. Never for images with transparency or
    masks, nor 1-bit images (JBIG2, CCITT: PDFium keeps them). At most 64 MP swapped per page,
-   biggest first.
+   biggest first. *(Now a cap on decoded bytes: 400 MB a page, `PAGE_SWAP_BYTES` in
+   `pdfium_swap.rs`.)*
 3. **Where the pixels come from:** our decode (`jpeg-decoder` plus `moxcms`, tetrahedral)
    for a single-filter JPEG in grey or RGB, with no profile or a profile that passes the
    check. Otherwise PDFium's own decode, once (`FPDFImageObj_GetBitmap`): v4 table

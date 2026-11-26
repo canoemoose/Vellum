@@ -1,5 +1,9 @@
 # WP-Print handoff
 
+**Status (26 November 2026): a hand-over note from v0.1 (8 November), kept as a record.** How
+things work now is in [ARCHITECTURE.md](../../ARCHITECTURE.md); known problems nobody has gone
+back to are indexed in [backlog.md](../backlog.md).
+
 Branch `v0.1/print`. Printing for v0.1: the print dialog (brief 3.3), the manual sheet layout
 (3.4), PDF composition with PDFium and output through GDI.
 

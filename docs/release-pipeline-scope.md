@@ -4,7 +4,7 @@ Status: **phases 1 to 4 done and merged to `main`** (14 November 2026). 0.1.1 an
 published, and an installed 0.1.1 updated itself to 0.1.2 and came back with its tabs. 0.1.3
 and 0.1.4 then proved the quiet install (below): 0.1.3 updated to 0.1.4 with no installer
 window and came back with its tabs. Phase 5 (docs) is done: Releasing in `CLAUDE.md`, and
-"Installing and updates" in the README. Nothing remains. This is the
+"Install" in the README. Nothing remains. This is the
 source of truth for the work.
 
 ## Objective

@@ -566,7 +566,7 @@ What changed after Matt used the build. Where it differs from a stage above, thi
 ## Later: asked for during Matt's review (not built)
 
 The markup tools' own. Everything else Matt asked for along the way is app-wide and lives in
-the backlog, [backlog.md](backlog.md) (on `main`).
+the backlog, [backlog.md](backlog.md).
 
 - Fields ({author}, {date}...) in text boxes and callouts, filled in when typing ends (the
   chip box, `FieldInput`, is ready for it).

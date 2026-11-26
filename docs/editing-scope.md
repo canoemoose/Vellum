@@ -11,7 +11,7 @@ Where they differ from the phase scopes, the brief wins: see
 15 and 16 November and the changes he asked for are in (the brief's "Matt's review"); the
 stamp and signature libraries were then reworked as dialogs
 ([stamp-library-dialogs-scope.md](stamp-library-dialogs-scope.md)). **Not started: phase 6
-(form filling) and phase 8 (page operations).** Nothing is on `main` or released. Phase 7b brings a file's own annotations, and markups saved in an earlier session, back
+(form filling) and phase 8 (page operations).** Everything built is on `main` and was released in 0.2.0 (25 November 2026); what is left is indexed in [backlog.md](backlog.md). Phase 7b brings a file's own annotations, and markups saved in an earlier session, back
 for editing behind the padlock. The signatures back end (part of phase 5) and the OCR search spike
 (phase 9) were built on side branches and are merged into `editing`, along with `main` at
 0.1.4. See "Phase 0 results" below,
@@ -319,8 +319,8 @@ Each phase ships on its own. Order is by dependency, then by value per day of wo
 3. **First five markup tools:** arrow, rectangle, cloud, text box, pen.
    **Phases 2 and 3 done (built 14 November 2026; Matt reviewed the tools as they were
    built, and phase 2 has nothing to review on its own):** see
-   [editing-phase2-scope.md](editing-phase2-scope.md). Not yet built from phase 2: the edit
-   lock's padlock (nothing to unlock until lifting or page operations exist).
+   [editing-phase2-scope.md](editing-phase2-scope.md). (The edit lock's padlock, left out of
+   phase 2, came with 7b.)
 4. **Measuring** and calibration. **Built and reviewed by Matt:**
    [editing-phase4-scope.md](editing-phase4-scope.md).
 5. **Stamps and signatures.** **Built and reviewed by Matt** (stamps, signatures placed as stamps, baking in,
@@ -379,7 +379,7 @@ by keeping both sides. Two joins were made by hand: the live readout phase 4 add
 passes the draw context phase 7a added to the points gesture, and the Markups list shows a
 measurement's values (`LIST_TEXT` in `markup/listing.ts`, from `measurementLine`). Left for
 later: the callout imports the text box's drawing from `kinds/text.ts`, against the "a kind
-never imports another kind" rule; move that drawing into a shared file when next in there.
+never imports another kind" rule; move that drawing into a shared file when next in there. *(Done: `markup/textbox.ts`.)*
 What each phase assumed and couldn't verify is at the end of its own scope file.
 
 Why the groundwork is alone and first: a markup kind is spread across switch statements in

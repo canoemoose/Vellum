@@ -465,7 +465,9 @@ Built 15 November 2026, autonomous, one session, directly on `editing`. One comm
   hidden again in the reopened file (`hideAfterSave`), and the file is read again so each
   annotation's position is current (`reread`: by /NM where it has one, else by order, which a
   save never changes); a save waits for that read.
-- **The lock:** per tab, locked on every open (the padlock beside the tools, and Edit > Unlock
+- **The lock** *(since changed by [edit-lock-brief.md](edit-lock-brief.md): the switch is "Edit
+  file" beside the page layout buttons, the menu says "Unlock file…", and a locked markup can
+  be picked and shows a padlock)*: per tab, locked on every open (the padlock beside the tools, and Edit > Unlock
   document). Locked, what came with the file can't be picked on the canvas, by the marquee, from
   the list (its row has no delete button) or by double-clicking a note, except your own Vellum
   markups (below). Unlocking asks first, naming why, if the file is certified, signed, or its

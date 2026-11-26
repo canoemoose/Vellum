@@ -1,4 +1,4 @@
-# Speed diagnosis: working log (18 to 23 November 2026)
+# Speed diagnosis: working log (18 to 24 November 2026)
 
 The dated log behind [speed-diagnosis-scope.md](speed-diagnosis-scope.md), moved here word for
 word on 23 Nov to keep the scope doc short. Read the scope doc first: it is the current truth.

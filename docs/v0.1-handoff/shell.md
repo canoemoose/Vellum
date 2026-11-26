@@ -1,5 +1,9 @@
 # WP-Shell hand-over (branch `v0.1/shell`)
 
+**Status (26 November 2026): a hand-over note from v0.1 (8 November), kept as a record.** How
+things work now is in [ARCHITECTURE.md](../../ARCHITECTURE.md); known problems nobody has gone
+back to are indexed in [backlog.md](../backlog.md).
+
 Brief: `docs/vellum-v0.1-brief.md` sections 1, 3.1 (UI parts), 3.2 and 7; mockups `Main` and
 `Light`. Built on main after WP-Engine, WP-Images and WP-LOD were merged, so it uses the real
 viewer API (no adapter was needed).

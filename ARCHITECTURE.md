@@ -305,7 +305,7 @@ operations (`markup/ops.ts`): paths and lines of text. The same operations are p
 canvas (`engine/markupPainter.ts`, through `Viewer.setPainter`, above the tiles and highlights)
 and turned into the annotation's appearance stream in PDF user space when saved
 (`markup/pdf.ts`, using the page's frame from `doc_page_frame`), so the screen and the file
-agree. Text uses Helvetica's widths (`markup/helvetica.ts`; Arial on screen has the same).
+agree. Text uses Helvetica's widths (`markup/fonts.ts`; Arial on screen has the same).
 `engine/markupTool.ts` draws and edits; each tab has a `MarkupDoc` (undo history, what the file
 holds, frames, selection). Saving: `annot_prepare` applies add / replace / delete specs with
 `lopdf` and writes a temporary file beside the original; `Viewer.reopen` closes the document on
@@ -314,6 +314,26 @@ file into place, and the document is reopened with the same view, tiles and prev
 session's markups hidden in PDFium (`doc_hide_annots`) so the overlay keeps drawing them. Files
 with broken cross-reference data are rewritten by PDFium first. Unsaved markups go to
 `%LOCALAPPDATA%\Vellum\recovery` a second after each change and are offered back after a crash.
+
+**Not written up here yet** (26 November 2026). 0.2.0 shipped these, and until this file catches
+up their scope documents are the record:
+
+- measuring and dimensions (`markup/measure.ts`, `markup/dimension.ts`, `annot/measure.rs`):
+  [editing-phase4-scope.md](docs/editing-phase4-scope.md) and the
+  [tool consistency brief](docs/editing-tool-consistency-brief.md);
+- stamps and signatures (`stamps.rs`, `signature/`, `src/lib/stamps`, `src/lib/signature`):
+  [editing-phase5-scope.md](docs/editing-phase5-scope.md),
+  [signatures-backend.md](docs/signatures-backend.md),
+  [stamp-library-dialogs-scope.md](docs/stamp-library-dialogs-scope.md);
+- text markups, notes and editing a file's own annotations:
+  [editing-phase7-scope.md](docs/editing-phase7-scope.md);
+- the edit lock: [edit-lock-brief.md](docs/edit-lock-brief.md);
+- the updater (`update.rs`, `src/lib/updater.ts`, `shell/update.ts`):
+  [release-pipeline-scope.md](docs/release-pipeline-scope.md);
+- the reset (`reset.rs`, `shell/reset.ts`) and the system clipboard (`clipboard.rs`): the code's
+  own comments.
+
+The dependency table at the end lacks `lopdf`, `moxcms` and `tauri-plugin-updater`.
 
 ### Running code on a PDFium worker (`run_on_worker`)
 
@@ -501,8 +521,8 @@ formatting, shortcuts, theme maths, export size limits).
 - **Window.** No native decorations; the title bar is HTML with `data-tauri-drag-region` on
   empty space only, window buttons call the Tauri window API. Size, position and maximised
   state are stored in the settings and restored before the window is shown, fitted to a
-  monitor's work area (`shell/windowPlacement.ts`). Snap layouts on hovering maximise are
-  not available on a custom title bar.
+  monitor's work area (`shell/windowPlacement.ts`). Snap layouts on hovering maximise come
+  from `snap.rs` ("Snap layouts on the custom title bar", above).
 - **Single instance** (`src-tauri/src/shell.rs`): `tauri-plugin-single-instance` forwards a
   second launch's file to the running window (`vellum://open-files` event); files that
   arrive before the front end listens are queued and collected with `shell_take_pending`.

@@ -293,7 +293,8 @@ Beyond the six "Assumed" above, all of which were built as written:
 14. **Measurements re-value without an undo step:** undo brings back geometry, and the
     values always follow the page's current scale. "Says how many changed" is a passing
     notice in the status bar; angles aren't counted.
-15. **Letters:** M for every Measure tool, stepping Length, Polyline length, Area, Angle,
+15. *(Since: the measuring tools are on D; see the [tool consistency brief](editing-tool-consistency-brief.md).)*
+    **Letters:** M for every Measure tool, stepping Length, Polyline length, Area, Angle,
     Calibrate.
 16. **The loupe** shows whenever a measuring tool is out and the pointer is over the
     drawing: 132 px round, 4x, above and right of the pointer (flipping at the edges), with

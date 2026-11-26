@@ -1,5 +1,9 @@
 # WP-LOD handoff: image level of detail (prototype)
 
+**Status (26 November 2026): a hand-over note from v0.1 (8 November), kept as a record.** How
+things work now is in [ARCHITECTURE.md](../../ARCHITECTURE.md); known problems nobody has gone
+back to are indexed in [backlog.md](../backlog.md).
+
 Built by the integrator session itself (worker sessions couldn't be started overnight; see
 the report). Time-boxed to one evening, as the brief asked.
 

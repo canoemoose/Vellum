@@ -1,5 +1,8 @@
 # Vellum — Phase 0 scope: rendering and navigation spike
 
+**Status (26 November 2026): the brief for phase 0, kept as a record.** The spike is done
+([RESULTS.md](../RESULTS.md)); section 1 is still a fair description of the product.
+
 **Mode:** autonomous. Work through this without check-ins, batch any questions, and finish with a summary of what was built, assumptions made, measured results and flags.
 
 **Working name:** Vellum (codename only; final name undecided).

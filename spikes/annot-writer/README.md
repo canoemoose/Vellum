@@ -7,7 +7,8 @@ findings. This folder is the evidence and the first cut of the writer.
 - `src/writer.rs`: open a PDF with lopdf (decrypting it if needed), add, replace or delete
   annotations, append the update. `src/appearance.rs`: the appearance streams (arrowheads,
   cloud scallops, text boxes, dimensions). `src/helvetica.rs`: Helvetica widths and line
-  breaking. These three are meant to move to `src-tauri/src/annot/` in phase 2.
+  breaking. The writer moved to `src-tauri/src/annot/` in phase 2 and has grown since: that is the live
+  code, and this folder is only the evidence.
 - `src/pdfium_check.rs`: reads the output back through the same `pdfium.dll` and render flags
   Vellum uses. `src/main.rs`: the sample runner. `tests/writer.rs`: the fast checks.
 - `fixtures.py` makes the awkward input files; `verify.py` checks the output with qpdf and

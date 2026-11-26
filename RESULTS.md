@@ -1,5 +1,8 @@
 # Vellum phase 0: results
 
+**Status (26 November 2026): the record of phase 0 (the spike).** Its recommendation was taken.
+Where speed stands now: [docs/speed-diagnosis-scope.md](docs/speed-diagnosis-scope.md).
+
 **Question:** can pdf.js inside Tauri render and navigate very large CAD PDFs smoothly enough,
 or does rendering need to move to PDFium in the Rust backend?
 

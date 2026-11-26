@@ -1,5 +1,9 @@
 # WP-Engine hand-over (branch `v0.1/engine`)
 
+**Status (26 November 2026): a hand-over note from v0.1 (8 November), kept as a record.** How
+things work now is in [ARCHITECTURE.md](../../ARCHITECTURE.md); known problems nobody has gone
+back to are indexed in [backlog.md](../backlog.md).
+
 Brief: `docs/vellum-v0.1-brief.md` section 3.5 and the WP-Engine row of section 5. The
 interface, streaming and viewer API are written up in ARCHITECTURE.md ("Documents (v0.1)",
 "Streaming", "The viewer API (for the shell)"); this file is what the integrator and Matt

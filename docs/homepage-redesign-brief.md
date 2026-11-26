@@ -1,5 +1,10 @@
 # Vellum homepage: redesign brief
 
+**Status (26 November 2026): built, then largely replaced** by
+[homepage-layout-brief.md](homepage-layout-brief.md): the stats strip (and its 97 ms), the
+features grid and the comparison table here were changed or dropped there. Its speed section
+was never built ([backlog.md](backlog.md), "Homepage").
+
 Follows [homepage-brief.md](homepage-brief.md). Everything there still stands (relative paths,
 no third-party requests, no client-side JavaScript needed, the download-button build, APCA,
 UK English, phone width, the Pages workflow) unless this file changes it. Only the look and

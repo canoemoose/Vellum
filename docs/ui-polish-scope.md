@@ -42,11 +42,11 @@ checked by Matt yet unless it says so. How it works is in ARCHITECTURE.md ("Gett
 ## Still open
 
 - **Wheel scrolling at fit page:** in single-page layout it's now a page per notch (item 16); in continuous layout it scrolls smoothly as before.
-- **Search and markup tools:** their places in the toolbar are kept; the features aren't built.
+- **Search and markup tools:** their places in the toolbar are kept; the features aren't built. *(Both built since.)*
 - **App identity:** authorship and identifier (`engineering.event.vellum`, "Event
   Engineering") in `src-tauri/Cargo.toml` and `tauri.conf.json`. Vellum is a personal
   project, so these should change before installing; the identifier names the settings
-  folder, so changing it later means a fresh profile. Waiting on Matt for the name.
+  folder, so changing it later means a fresh profile. Waiting on Matt for the name. *(Done: `io.github.canoemoose.vellum`.)*
 - **When the mini map shows: parked as it is (Matt, 12 Nov).** Four geometric rules in a day, each fixing one case and breaking another, because whether the map is useful depends on context (finding your way round a drawing, or reading a document), which page dimensions only stand in for. Two lessons for whoever revisits it: decide it by context, not dimensions (one idea, not taken: default on for CAD navigation and off for Document, the View > Mini map choice per file being the real signal); and the map must never appear and disappear in normal scrolling, because a map that fades in and out between pages looks broken, however good the reason.
 - **Mini map and tall pages, to revisit if it's in the way:** making tall pages count in CAD navigation only would keep documents read at fit width clear of the map while the aerial drawing keeps it. Built and tried, then kept out (Matt, 12 Nov); `mapUseful` still takes the flag, so it's a one-line change in `App.svelte`.
 - **How many files to remember:** 200 (about 40 KB). Matt wondered about matching Recent (10); open.
@@ -54,4 +54,4 @@ checked by Matt yet unless it says so. How it works is in ARCHITECTURE.md ("Gett
 
 ## Then
 
-Release build and installer; Matt installs and uses it for a while.
+Release build and installer; Matt installs and uses it for a while. *(Done: 0.1.0 onwards.)*

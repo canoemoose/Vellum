@@ -24,6 +24,7 @@ Autonomous; uncommitted (shared checkout, see `docs/ui-review.md`).
 ## Not doing
 
 - Keeping sharp tiles across tab switches (memory trade-off; offered earlier, not asked for).
+  *(Asked for since: [backlog.md](backlog.md), "Speed".)*
 - Vector recolouring for Black lines (raster is the right tool for scans).
 
 ## Result

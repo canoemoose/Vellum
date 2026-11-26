@@ -48,7 +48,9 @@ rest of the brief is kept as the record of what was asked for first.
 - **Kept out of git:** the title block footer, the drag handle and the revisions-table build
   code, as `mockups/title-block-footer-and-drag.patch` on the machine that built this.
 - **Still to do:** recapture `site/img/og.png` (it shows the old design); the speed section;
-  and the 16 ms figure's remaining checks in the speed scope.
+  and the 16 ms figure's remaining checks in the speed scope. *(The page went live with 0.2.0
+  on 25 November. All three are in [backlog.md](backlog.md); `og.png` was last replaced on
+  24 November and hasn't been checked against this line.)*
 
 ## Why
 

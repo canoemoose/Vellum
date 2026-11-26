@@ -1,5 +1,10 @@
 # Speed: further ideas and a two-hour test plan (8 November 2026)
 
+**Status (26 November 2026): a record.** The tests were run on 9 and 10 November (results
+below) and nothing here is the current plan: that is
+[speed-diagnosis-scope.md](speed-diagnosis-scope.md). The ideas in section 1 that were never
+tried are indexed in [backlog.md](backlog.md), "Speed".
+
 Companion to [speed-handoff.md](speed-handoff.md) (where things stand, what was tried) and
 [v0.1-heavy-pdfs.md](v0.1-heavy-pdfs.md) (the Bayou image analysis). Nothing here repeats
 those; read them first. The yardstick throughout is Foxit on Curtis Hall page 48.
